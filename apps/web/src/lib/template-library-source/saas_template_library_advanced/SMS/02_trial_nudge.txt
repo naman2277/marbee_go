@@ -1,0 +1,1 @@
+{{brand_name}}: Your trial is {{days_left}} days from ending. Finish setup and get more from your workspace: {{short_url}}

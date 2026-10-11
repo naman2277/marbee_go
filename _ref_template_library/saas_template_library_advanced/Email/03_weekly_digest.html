@@ -1,0 +1,25 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Your weekly growth digest</title><style>
+:root{
+  --ink:#111827;--muted:#667085;--line:#e6e8ec;--bg:#f6f8fb;
+  --brand:#5b5bd6;--brand2:#7c3aed;--success:#16a34a;--warning:#f59e0b;
+}
+*{box-sizing:border-box} body{margin:0;background:var(--bg);font-family:Inter,Arial,sans-serif;color:var(--ink)}
+.wrap{max-width:680px;margin:32px auto;background:#fff;border:1px solid var(--line);border-radius:22px;overflow:hidden;box-shadow:0 12px 40px rgba(16,24,40,.08)}
+.header{padding:22px 30px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between}
+.logo{font-size:20px;font-weight:800;letter-spacing:-.5px}.badge{font-size:12px;padding:6px 10px;border-radius:99px;background:#f0efff;color:var(--brand);font-weight:700}
+.hero{padding:46px 42px 30px}.eyebrow{font-size:12px;text-transform:uppercase;letter-spacing:1.2px;font-weight:800;color:var(--brand);margin-bottom:12px}
+h1{font-size:34px;line-height:1.08;letter-spacing:-1.4px;margin:0 0 16px}.lead{font-size:16px;line-height:1.7;color:var(--muted)}
+.card{margin:10px 42px 30px;padding:22px;border:1px solid var(--line);border-radius:16px;background:#fbfcff}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.stat{padding:16px;background:#fff;border:1px solid var(--line);border-radius:12px}.stat b{display:block;font-size:22px}.stat span{font-size:12px;color:var(--muted)}
+.cta{display:inline-block;background:var(--brand);color:#fff!important;text-decoration:none;padding:13px 19px;border-radius:10px;font-weight:750;font-size:14px}
+.secondary{display:inline-block;color:var(--ink);text-decoration:none;padding:13px 16px;font-weight:700;font-size:14px}
+.footer{padding:24px 42px 30px;border-top:1px solid var(--line);font-size:11px;line-height:1.6;color:#98a2b3}
+.visual{height:170px;background:linear-gradient(135deg,#eeefff,#faf5ff);display:flex;align-items:center;justify-content:center;color:var(--brand);font-size:42px;font-weight:900}
+@media(max-width:700px){.wrap{margin:0;border-radius:0}.hero{padding:34px 24px 24px}.card{margin:10px 24px 24px}.footer{padding:24px}.header{padding:20px 24px}h1{font-size:29px}}
+</style></head>
+<body><div class="wrap">
+<div class="header"><div class="logo">{{brand_name}}</div><div class="badge">Marketing Automation</div></div>
+<div class="hero"><div class="eyebrow">For {first_name}</div><h1>Here’s what happened this week</h1><p class="lead">A concise view of activity, engagement and the opportunities worth acting on next.</p><p><a class="cta" href="{{dashboard_url}}">View Dashboard</a></p></div>
+<div class="grid"><div class="stat"><b>{{messages_sent}}</b><span>Messages sent</span></div><div class="stat"><b>{{engagement_rate}}</b><span>Engagement</span></div><div class="stat"><b>{{conversions}}</b><span>Conversions</span></div><div class="stat"><b>{{revenue}}</b><span>Attributed revenue</span></div></div>
+<div class="footer">You’re receiving this message because you have an account or opted in to {brand_name} communications.<br><br>Manage preferences · Unsubscribe · {company_address}</div>
+</div></body></html>

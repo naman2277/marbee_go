@@ -1,0 +1,18 @@
+{
+  "template_id": "09_booking",
+  "channel": "whatsapp",
+  "category": "utility",
+  "body": "Booking confirmed ✅\n\nReference: *{{booking_id}}*\nDate: {{booking_date}}\nTime: {{booking_time}}\n\nWe’ll see you there.",
+  "buttons": [
+    {
+      "type": "url",
+      "text": "View Booking",
+      "url": "{{booking_url}}"
+    }
+  ],
+  "variable_map": [
+    "booking_date",
+    "booking_id",
+    "booking_time"
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "template_id": "06_payment",
+  "channel": "whatsapp",
+  "category": "utility",
+  "body": "Payment reminder\n\nAmount: *{{amount_due}}*\nDue: {{due_date}}\n\nPlease complete your payment securely.",
+  "buttons": [
+    {
+      "type": "url",
+      "text": "Pay Now",
+      "url": "{{payment_url}}"
+    }
+  ],
+  "variable_map": [
+    "amount_due",
+    "due_date"
+  ]
+}

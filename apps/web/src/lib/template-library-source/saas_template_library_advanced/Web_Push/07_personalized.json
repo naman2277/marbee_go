@@ -1,0 +1,20 @@
+{
+  "template_id": "07_personalized",
+  "channel": "web_push",
+  "title": "Picked for you ✨",
+  "body": "A recommendation based on your recent activity: {{product_name}}.",
+  "url": "{{product_url}}",
+  "icon": "{{icon_url}}",
+  "badge": "{{badge_url}}",
+  "tag": "{{campaign_id}}",
+  "actions": [
+    {
+      "action": "open",
+      "title": "View",
+      "url": "{{product_url}}"
+    }
+  ],
+  "personalization": [
+    "product_name"
+  ]
+}

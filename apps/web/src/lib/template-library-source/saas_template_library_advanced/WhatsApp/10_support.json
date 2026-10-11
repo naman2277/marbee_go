@@ -1,0 +1,17 @@
+{
+  "template_id": "10_support",
+  "channel": "whatsapp",
+  "category": "utility",
+  "body": "Hi {{first_name}},\n\nWe’re following up on ticket *{{ticket_id}}*.\nIs your issue resolved?",
+  "buttons": [
+    {
+      "type": "url",
+      "text": "View Support Case",
+      "url": "{{ticket_url}}"
+    }
+  ],
+  "variable_map": [
+    "first_name",
+    "ticket_id"
+  ]
+}

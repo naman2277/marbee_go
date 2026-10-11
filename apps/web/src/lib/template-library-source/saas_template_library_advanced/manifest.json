@@ -1,0 +1,12 @@
+{
+  "library": "Advanced SaaS Marketing Template Library",
+  "version": "2.0",
+  "templates": 50,
+  "channels": {
+    "Email": 10,
+    "SMS": 10,
+    "WhatsApp": 10,
+    "Web_Push": 10,
+    "RCS": 10
+  }
+}

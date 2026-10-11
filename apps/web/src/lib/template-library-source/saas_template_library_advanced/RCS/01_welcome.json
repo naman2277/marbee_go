@@ -1,0 +1,23 @@
+{
+  "template_id": "01_welcome",
+  "channel": "rcs",
+  "format": "rich_card",
+  "orientation": "VERTICAL",
+  "title": "Welcome to {{brand_name}}",
+  "description": "Your workspace is ready. Complete setup and launch your first automated experience.",
+  "media": {
+    "url": "{{welcome_image_url}}",
+    "height": "MEDIUM"
+  },
+  "suggestions": [
+    {
+      "type": "open_url",
+      "text": "Start Setup",
+      "url": "{{setup_url}}"
+    }
+  ],
+  "fallback": {
+    "channel": "sms",
+    "text": "Welcome to {{brand_name}}: Your workspace is ready. Complete setup and launch your first automated experience. {{setup_url}}"
+  }
+}

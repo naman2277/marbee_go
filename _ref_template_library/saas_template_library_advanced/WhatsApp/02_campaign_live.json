@@ -1,0 +1,19 @@
+{
+  "template_id": "02_campaign_live",
+  "channel": "whatsapp",
+  "category": "campaign",
+  "body": "🚀 *{{campaign_name}} is live*\n\nAudience: {{audience_size}}\nStart time: {{start_time}}\nOwner: {{owner_name}}\n\nYour campaign is now executing.",
+  "buttons": [
+    {
+      "type": "url",
+      "text": "Open Campaign",
+      "url": "{{campaign_url}}"
+    }
+  ],
+  "variable_map": [
+    "audience_size",
+    "campaign_name",
+    "owner_name",
+    "start_time"
+  ]
+}

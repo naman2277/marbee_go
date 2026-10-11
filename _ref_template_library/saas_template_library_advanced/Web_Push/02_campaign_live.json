@@ -1,0 +1,20 @@
+{
+  "template_id": "02_campaign_live",
+  "channel": "web_push",
+  "title": "{{campaign_name}} is live",
+  "body": "Your campaign has started. Monitor delivery and engagement in real time.",
+  "url": "{{campaign_url}}",
+  "icon": "{{icon_url}}",
+  "badge": "{{badge_url}}",
+  "tag": "{{campaign_id}}",
+  "actions": [
+    {
+      "action": "open",
+      "title": "View",
+      "url": "{{campaign_url}}"
+    }
+  ],
+  "personalization": [
+    "campaign_name"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "template_id": "04_offer",
+  "channel": "rcs",
+  "format": "rich_card",
+  "orientation": "VERTICAL",
+  "title": "Exclusive offer",
+  "description": "Get {{discount}} off {{product_name}} with code {{coupon_code}}.",
+  "media": {
+    "url": "{{offer_image_url}}",
+    "height": "MEDIUM"
+  },
+  "suggestions": [
+    {
+      "type": "open_url",
+      "text": "Shop Now",
+      "url": "{{offer_url}}"
+    }
+  ],
+  "fallback": {
+    "channel": "sms",
+    "text": "Exclusive offer: Get {{discount}} off {{product_name}} with code {{coupon_code}}. {{offer_url}}"
+  }
+}

@@ -1,0 +1,1 @@
+{{brand_name}}: {{discount}} off {{product_name}} with code {{coupon_code}}. Ends {{expiry_date}}: {{short_url}}

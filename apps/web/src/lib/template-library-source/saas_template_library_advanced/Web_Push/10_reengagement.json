@@ -1,0 +1,20 @@
+{
+  "template_id": "10_reengagement",
+  "channel": "web_push",
+  "title": "Good to see you again",
+  "body": "See what’s new in {{brand_name}}.",
+  "url": "{{whats_new_url}}",
+  "icon": "{{icon_url}}",
+  "badge": "{{badge_url}}",
+  "tag": "{{campaign_id}}",
+  "actions": [
+    {
+      "action": "open",
+      "title": "View",
+      "url": "{{whats_new_url}}"
+    }
+  ],
+  "personalization": [
+    "brand_name"
+  ]
+}

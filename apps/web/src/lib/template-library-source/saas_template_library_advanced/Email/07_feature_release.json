@@ -1,0 +1,15 @@
+{
+  "template_id": "07_feature_release",
+  "channel": "email",
+  "subject": "A smarter way to build journeys",
+  "personalization": [
+    "first_name",
+    "brand_name"
+  ],
+  "cta": {
+    "label": "Explore Feature",
+    "url": "{{feature_url}}"
+  },
+  "responsive": true,
+  "design_system": "SaaS Modern"
+}

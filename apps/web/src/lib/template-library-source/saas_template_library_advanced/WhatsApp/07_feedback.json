@@ -1,0 +1,17 @@
+{
+  "template_id": "07_feedback",
+  "channel": "whatsapp",
+  "category": "marketing",
+  "body": "Hi {{first_name}}, we’d love your feedback 💜\n\nHow was your recent experience with {{brand_name}}? It takes less than a minute.",
+  "buttons": [
+    {
+      "type": "url",
+      "text": "Give Feedback",
+      "url": "{{feedback_url}}"
+    }
+  ],
+  "variable_map": [
+    "brand_name",
+    "first_name"
+  ]
+}

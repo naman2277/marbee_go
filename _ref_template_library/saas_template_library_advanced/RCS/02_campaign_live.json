@@ -1,0 +1,23 @@
+{
+  "template_id": "02_campaign_live",
+  "channel": "rcs",
+  "format": "rich_card",
+  "orientation": "VERTICAL",
+  "title": "{{campaign_name}} is live",
+  "description": "Monitor audience, delivery and engagement as your campaign runs.",
+  "media": {
+    "url": "{{campaign_image_url}}",
+    "height": "MEDIUM"
+  },
+  "suggestions": [
+    {
+      "type": "open_url",
+      "text": "Open Campaign",
+      "url": "{{campaign_url}}"
+    }
+  ],
+  "fallback": {
+    "channel": "sms",
+    "text": "{{campaign_name}} is live: Monitor audience, delivery and engagement as your campaign runs. {{campaign_url}}"
+  }
+}

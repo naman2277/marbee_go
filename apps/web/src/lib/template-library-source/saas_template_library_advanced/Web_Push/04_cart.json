@@ -1,0 +1,18 @@
+{
+  "template_id": "04_cart",
+  "channel": "web_push",
+  "title": "You left something behind 🛒",
+  "body": "Your cart is still saved. Pick up where you left off.",
+  "url": "{{cart_url}}",
+  "icon": "{{icon_url}}",
+  "badge": "{{badge_url}}",
+  "tag": "{{campaign_id}}",
+  "actions": [
+    {
+      "action": "open",
+      "title": "View",
+      "url": "{{cart_url}}"
+    }
+  ],
+  "personalization": []
+}

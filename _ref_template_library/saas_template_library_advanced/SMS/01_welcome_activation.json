@@ -1,0 +1,10 @@
+{
+  "template_id": "01_welcome_activation",
+  "channel": "sms",
+  "body": "{{brand_name}}: Welcome, {{first_name}}! Your workspace is ready. Complete setup: {{short_url}} Reply STOP to opt out.",
+  "controls": {
+    "unsubscribe": "STOP",
+    "short_link_recommended": true,
+    "unicode_safe": true
+  }
+}

@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Marbee — Customer Engagement Platform</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <!-- Marbee Web Analytics SDK -->
+    <script>
+      (function(w,d,s,id){
+        if(w.__marbee_loaded) return;
+        var j=d.createElement(s); j.async=true;
+        j.src="/sdk/v1/marbee-analytics.js";
+        j.dataset.site=id;
+        d.head.appendChild(j);
+      })(window, document, 'script', 'site_k6anf9');
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

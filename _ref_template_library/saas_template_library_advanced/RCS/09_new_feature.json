@@ -1,0 +1,23 @@
+{
+  "template_id": "09_new_feature",
+  "channel": "rcs",
+  "format": "rich_card",
+  "orientation": "VERTICAL",
+  "title": "Meet {{feature_name}}",
+  "description": "A faster way to build, personalise and measure customer journeys.",
+  "media": {
+    "url": "{{feature_image_url}}",
+    "height": "MEDIUM"
+  },
+  "suggestions": [
+    {
+      "type": "open_url",
+      "text": "Explore Feature",
+      "url": "{{feature_url}}"
+    }
+  ],
+  "fallback": {
+    "channel": "sms",
+    "text": "Meet {{feature_name}}: A faster way to build, personalise and measure customer journeys. {{feature_url}}"
+  }
+}

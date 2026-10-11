@@ -1,0 +1,23 @@
+{
+  "template_id": "06_booking",
+  "channel": "rcs",
+  "format": "rich_card",
+  "orientation": "VERTICAL",
+  "title": "Booking confirmed",
+  "description": "{{booking_id}} · {{booking_date}} · {{booking_time}}",
+  "media": {
+    "url": "{{booking_image_url}}",
+    "height": "MEDIUM"
+  },
+  "suggestions": [
+    {
+      "type": "open_url",
+      "text": "View Booking",
+      "url": "{{booking_url}}"
+    }
+  ],
+  "fallback": {
+    "channel": "sms",
+    "text": "Booking confirmed: {{booking_id}} · {{booking_date}} · {{booking_time}} {{booking_url}}"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "template_id": "06_back_in_stock",
+  "channel": "web_push",
+  "title": "Back in stock",
+  "body": "{{product_name}} is available again.",
+  "url": "{{product_url}}",
+  "icon": "{{icon_url}}",
+  "badge": "{{badge_url}}",
+  "tag": "{{campaign_id}}",
+  "actions": [
+    {
+      "action": "open",
+      "title": "View",
+      "url": "{{product_url}}"
+    }
+  ],
+  "personalization": [
+    "product_name"
+  ]
+}

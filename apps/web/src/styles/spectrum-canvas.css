@@ -1,0 +1,239 @@
+/**
+ * Campaign workflow canvas — Adobe Spectrum token styling for React Flow.
+ * Scoped to `.spectrum-canvas` so journey/flow canvases stay unchanged.
+ */
+.spectrum-canvas {
+  --spectrum-canvas-bg: rgb(248, 248, 248);
+  --spectrum-canvas-node-bg: rgb(255, 255, 255);
+  --spectrum-canvas-node-subtle: rgb(248, 248, 248);
+  --spectrum-canvas-border: rgb(218, 218, 218);
+  --spectrum-canvas-border-strong: rgb(177, 177, 177);
+  --spectrum-canvas-text: rgb(41, 41, 41);
+  --spectrum-canvas-text-secondary: rgb(109, 109, 109);
+  --spectrum-canvas-text-muted: rgb(142, 142, 142);
+  --spectrum-canvas-accent: rgb(75, 117, 255);
+  --spectrum-canvas-accent-focus: rgb(59, 99, 251);
+  --spectrum-canvas-positive: rgb(18, 184, 103);
+  --spectrum-canvas-positive-muted: rgb(45, 203, 132);
+  --spectrum-canvas-negative: rgb(255, 118, 101);
+  --spectrum-canvas-informative: rgb(75, 117, 255);
+  --spectrum-canvas-radius: 5px;
+  --spectrum-canvas-radius-sm: 4px;
+  --spectrum-canvas-font-sm: 12px;
+  --spectrum-canvas-font-md: 14px;
+  --spectrum-canvas-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+  background-color: var(--spectrum-canvas-bg);
+  font-size: var(--spectrum-canvas-font-sm);
+}
+
+.spectrum-canvas .react-flow__controls {
+  border-radius: var(--spectrum-canvas-radius) !important;
+  border: 1px solid var(--spectrum-canvas-border) !important;
+  background: var(--spectrum-canvas-node-bg) !important;
+  box-shadow: var(--spectrum-canvas-shadow) !important;
+}
+
+.spectrum-canvas .react-flow__controls-button {
+  border-color: var(--spectrum-canvas-border) !important;
+  background: var(--spectrum-canvas-node-bg) !important;
+  fill: var(--spectrum-canvas-text-secondary) !important;
+}
+
+.spectrum-canvas .react-flow__controls-button:hover {
+  background: var(--spectrum-canvas-node-subtle) !important;
+}
+
+.spectrum-canvas .react-flow__minimap {
+  border-radius: var(--spectrum-canvas-radius) !important;
+  border: 1px solid var(--spectrum-canvas-border) !important;
+  background: var(--spectrum-canvas-node-bg) !important;
+  box-shadow: var(--spectrum-canvas-shadow) !important;
+}
+
+/* —— Node status animations (Spectrum colors) —— */
+@keyframes spectrum-node-run-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--spectrum-canvas-positive) 45%, transparent);
+    border-color: var(--spectrum-canvas-positive);
+  }
+  50% {
+    box-shadow: 0 0 0 8px color-mix(in srgb, var(--spectrum-canvas-positive) 0%, transparent);
+    border-color: var(--spectrum-canvas-positive-muted);
+  }
+}
+
+@keyframes spectrum-node-delivery-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--spectrum-canvas-informative) 45%, transparent);
+    border-color: var(--spectrum-canvas-informative);
+  }
+  50% {
+    box-shadow: 0 0 0 8px color-mix(in srgb, var(--spectrum-canvas-informative) 0%, transparent);
+  }
+}
+
+@keyframes spectrum-node-error-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--spectrum-canvas-negative) 35%, transparent);
+    border-color: var(--spectrum-canvas-negative);
+  }
+  50% {
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--spectrum-canvas-negative) 0%, transparent);
+  }
+}
+
+.spectrum-canvas .spectrum-campaign-node {
+  min-width: 220px;
+  max-width: 260px;
+  border-radius: var(--spectrum-canvas-radius);
+  border: 1px solid var(--spectrum-canvas-border);
+  background: var(--spectrum-canvas-node-bg);
+  box-shadow: var(--spectrum-canvas-shadow);
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.spectrum-canvas .spectrum-campaign-node:hover {
+  border-color: var(--spectrum-canvas-border-strong);
+}
+
+.spectrum-canvas .spectrum-campaign-node--selected {
+  border-color: var(--spectrum-canvas-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--spectrum-canvas-accent) 25%, transparent);
+}
+
+.spectrum-canvas .spectrum-campaign-node--running.spectrum-campaign-node--selected,
+.spectrum-canvas .spectrum-campaign-node--done.spectrum-campaign-node--selected {
+  border-color: var(--spectrum-canvas-positive);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--spectrum-canvas-positive) 30%, transparent);
+}
+
+.spectrum-canvas .spectrum-campaign-node--running {
+  animation: spectrum-node-run-pulse 0.85s ease-in-out infinite;
+  border-color: var(--spectrum-canvas-positive);
+  z-index: 10;
+}
+
+.spectrum-canvas .spectrum-campaign-node__run-ring {
+  border: 2px solid var(--spectrum-canvas-positive-muted);
+  animation: spectrum-node-run-ring 0.85s ease-in-out infinite;
+}
+
+.spectrum-canvas .spectrum-campaign-node__run-dot {
+  background: var(--spectrum-canvas-positive-muted);
+  animation: spectrum-node-run-dot 0.9s ease-out infinite;
+}
+
+@keyframes spectrum-node-run-ring {
+  0%, 100% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.015);
+  }
+}
+
+@keyframes spectrum-node-run-dot {
+  0% {
+    transform: scale(1);
+    opacity: 0.85;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+.spectrum-canvas .spectrum-campaign-node--delivery-pending {
+  animation: spectrum-node-delivery-pulse 0.9s ease-in-out infinite;
+  border-color: var(--spectrum-canvas-informative);
+  z-index: 12;
+}
+
+.spectrum-canvas .spectrum-campaign-node--done {
+  border: 2px solid var(--spectrum-canvas-positive);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--spectrum-canvas-positive) 35%, transparent);
+}
+
+.spectrum-canvas .spectrum-campaign-node__done-ring {
+  border: 2px solid var(--spectrum-canvas-positive);
+  opacity: 0.9;
+}
+
+.spectrum-canvas .spectrum-campaign-node--error {
+  animation: spectrum-node-error-pulse 1.3s ease-in-out infinite;
+  border-color: var(--spectrum-canvas-negative);
+}
+
+.spectrum-canvas .spectrum-campaign-node__accent {
+  width: 3px;
+  flex-shrink: 0;
+  align-self: stretch;
+  border-radius: var(--spectrum-canvas-radius-sm) 0 0 var(--spectrum-canvas-radius-sm);
+}
+
+.spectrum-canvas .spectrum-campaign-node__category {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.spectrum-canvas .spectrum-campaign-node__title {
+  font-size: var(--spectrum-canvas-font-md);
+  font-weight: 600;
+  color: var(--spectrum-canvas-text);
+  line-height: 1.25;
+}
+
+.spectrum-canvas .spectrum-campaign-node__type {
+  font-size: var(--spectrum-canvas-font-sm);
+  color: var(--spectrum-canvas-text-muted);
+}
+
+.spectrum-canvas .spectrum-campaign-node__summary {
+  border-top: 1px solid var(--spectrum-canvas-border);
+  background: var(--spectrum-canvas-node-subtle);
+  font-size: 11px;
+  color: var(--spectrum-canvas-text-secondary);
+}
+
+.spectrum-canvas .spectrum-campaign-node__count {
+  border: 1px solid var(--spectrum-canvas-border);
+  background: var(--spectrum-canvas-accent);
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.spectrum-canvas .react-flow__handle {
+  border: 2px solid var(--spectrum-canvas-node-bg) !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12) !important;
+}
+
+.spectrum-canvas .spectrum-edge-label {
+  border: 1px solid var(--spectrum-canvas-border);
+  background: var(--spectrum-canvas-node-bg);
+  color: var(--spectrum-canvas-text-secondary);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.spectrum-canvas .spectrum-edge-label--active {
+  border-color: color-mix(in srgb, var(--spectrum-canvas-positive) 40%, var(--spectrum-canvas-border));
+  color: rgb(15, 120, 70);
+  background: color-mix(in srgb, var(--spectrum-canvas-positive) 8%, white);
+}
+
+.spectrum-canvas .spectrum-edge-label--selected {
+  border-color: var(--spectrum-canvas-accent);
+  color: var(--spectrum-canvas-accent-focus);
+  background: color-mix(in srgb, var(--spectrum-canvas-accent) 8%, white);
+}
+
+.spectrum-canvas .spectrum-edge-label--error {
+  border-color: color-mix(in srgb, var(--spectrum-canvas-negative) 45%, var(--spectrum-canvas-border));
+  color: rgb(180, 50, 40);
+  background: color-mix(in srgb, var(--spectrum-canvas-negative) 8%, white);
+}

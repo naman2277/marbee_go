@@ -1,0 +1,1 @@
+Alert: {{campaign_name}} needs attention. {{metric_name}} changed by {{metric_change}}. Review: {{short_url}}

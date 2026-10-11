@@ -1,0 +1,23 @@
+{
+  "template_id": "07_payment",
+  "channel": "rcs",
+  "format": "rich_card",
+  "orientation": "VERTICAL",
+  "title": "Payment reminder",
+  "description": "{{amount_due}} is due on {{due_date}}. Complete payment securely.",
+  "media": {
+    "url": "{{payment_image_url}}",
+    "height": "MEDIUM"
+  },
+  "suggestions": [
+    {
+      "type": "open_url",
+      "text": "Pay Now",
+      "url": "{{payment_url}}"
+    }
+  ],
+  "fallback": {
+    "channel": "sms",
+    "text": "Payment reminder: {{amount_due}} is due on {{due_date}}. Complete payment securely. {{payment_url}}"
+  }
+}

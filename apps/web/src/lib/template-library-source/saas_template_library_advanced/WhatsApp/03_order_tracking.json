@@ -1,0 +1,19 @@
+{
+  "template_id": "03_order_tracking",
+  "channel": "whatsapp",
+  "category": "utility",
+  "body": "Hi {{first_name}},\n\nYour order *{{order_id}}* is now *{{status}}*.\n\nExpected delivery: {{delivery_date}}",
+  "buttons": [
+    {
+      "type": "url",
+      "text": "Track Order",
+      "url": "{{tracking_url}}"
+    }
+  ],
+  "variable_map": [
+    "delivery_date",
+    "first_name",
+    "order_id",
+    "status"
+  ]
+}

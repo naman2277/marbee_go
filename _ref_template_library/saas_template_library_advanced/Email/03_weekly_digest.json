@@ -1,0 +1,15 @@
+{
+  "template_id": "03_weekly_digest",
+  "channel": "email",
+  "subject": "Your weekly growth digest",
+  "personalization": [
+    "first_name",
+    "brand_name"
+  ],
+  "cta": {
+    "label": "View Dashboard",
+    "url": "{{dashboard_url}}"
+  },
+  "responsive": true,
+  "design_system": "SaaS Modern"
+}

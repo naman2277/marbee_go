@@ -1,0 +1,21 @@
+{
+  "template_id": "03_anomaly",
+  "channel": "web_push",
+  "title": "Performance alert",
+  "body": "{{metric_name}} moved {{metric_change}} outside the expected range.",
+  "url": "{{alert_url}}",
+  "icon": "{{icon_url}}",
+  "badge": "{{badge_url}}",
+  "tag": "{{campaign_id}}",
+  "actions": [
+    {
+      "action": "open",
+      "title": "View",
+      "url": "{{alert_url}}"
+    }
+  ],
+  "personalization": [
+    "metric_change",
+    "metric_name"
+  ]
+}

@@ -1,0 +1,1 @@
+We miss you, {{first_name}}. {{new_feature}} is now live in {{brand_name}}. Explore: {{short_url}}

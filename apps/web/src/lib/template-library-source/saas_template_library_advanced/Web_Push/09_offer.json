@@ -1,0 +1,22 @@
+{
+  "template_id": "09_offer",
+  "channel": "web_push",
+  "title": "Your {{discount}} offer",
+  "body": "Use {{coupon_code}} before {{expiry_date}}.",
+  "url": "{{offer_url}}",
+  "icon": "{{icon_url}}",
+  "badge": "{{badge_url}}",
+  "tag": "{{campaign_id}}",
+  "actions": [
+    {
+      "action": "open",
+      "title": "View",
+      "url": "{{offer_url}}"
+    }
+  ],
+  "personalization": [
+    "coupon_code",
+    "discount",
+    "expiry_date"
+  ]
+}

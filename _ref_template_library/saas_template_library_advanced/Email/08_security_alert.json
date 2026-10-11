@@ -1,0 +1,15 @@
+{
+  "template_id": "08_security_alert",
+  "channel": "email",
+  "subject": "Security notification",
+  "personalization": [
+    "first_name",
+    "brand_name"
+  ],
+  "cta": {
+    "label": "Review Activity",
+    "url": "{{security_url}}"
+  },
+  "responsive": true,
+  "design_system": "SaaS Modern"
+}

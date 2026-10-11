@@ -1,0 +1,1651 @@
+// Marbee Chat Bot Module — public + admin-test runtime pipeline.
+//
+// Every visitor message flows through here: load config → load session/
+// conversation → load captured attributes → retrieve knowledge → call the
+// configured LLM → extract structured fields → run sentiment → persist →
+// evaluate CTAs → execute schema mapping → respond. The service-role client
+// is the only thing that ever touches chatbot tables for anonymous callers,
+// so RLS never needs to trust the public internet, and LLM provider keys are
+// resolved from Edge Function secrets — never from the browser.
+import { serve } from 'https://deno.land/std@0.208.0/http/server.ts';
+import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { callLlm, resolveProviderApiKey, type LlmProvider } from './llm.ts';
+
+type Mode = 'live' | 'test';
+
+type Json = Record<string, unknown>;
+
+// ---------------------------------------------------------------------------
+// Inlined Supabase helpers (kept self-contained — no "../_shared" import —
+// so this function deploys correctly both via the Dashboard editor, which
+// only bundles files added to this function, and via the CLI.)
+// ---------------------------------------------------------------------------
+
+function getServiceClient(): SupabaseClient {
+  return createClient(
+    Deno.env.get('SUPABASE_URL') ?? '',
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+  );
+}
+
+function corsHeaders(origin = '*') {
+  return {
+    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-tenant-id, x-environment',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+  };
+}
+
+function jsonResponse(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { ...corsHeaders(), 'Content-Type': 'application/json' },
+  });
+}
+
+function errorResponse(message: string, status = 400) {
+  return jsonResponse({ error: message }, status);
+}
+
+// ---------------------------------------------------------------------------
+// Small pure helpers
+// ---------------------------------------------------------------------------
+
+function friendlyError(message: string) {
+  // Never leak stack traces, table names, or provider errors to the visitor.
+  return message;
+}
+
+function uuid(): string {
+  return crypto.randomUUID();
+}
+
+function stripJsonFences(text: string): string {
+  const trimmed = text.trim();
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  return (fenced ? fenced[1] : trimmed).trim();
+}
+
+type ApiLookupConfig = {
+  lookup_key: string;
+  name: string;
+  description: string;
+  http_method: 'GET' | 'POST';
+  url_template: string;
+  headers: Record<string, string>;
+  body_template: string;
+  params: Array<{ param_key: string; display_label: string; ask_question: string; data_type: string }>;
+  response_path: string;
+  error_message: string;
+  enabled: boolean;
+};
+
+type ExtractedTurn = {
+  reply: string;
+  captured: Record<string, unknown>;
+  intent: string;
+  sentiment: 'positive' | 'neutral' | 'negative' | 'mixed';
+  sentiment_score: number;
+  escalate: boolean;
+  cta_hint: string | null;
+  api_lookup: { lookup_key: string; params: Record<string, string> } | null;
+};
+
+function parseLlmJson(raw: string, fallback: string): ExtractedTurn {
+  try {
+    const parsed = JSON.parse(stripJsonFences(raw));
+    let apiLookup: ExtractedTurn['api_lookup'] = null;
+    if (parsed.api_lookup && typeof parsed.api_lookup === 'object' && parsed.api_lookup.lookup_key) {
+      apiLookup = {
+        lookup_key: String(parsed.api_lookup.lookup_key),
+        params: parsed.api_lookup.params && typeof parsed.api_lookup.params === 'object' ? parsed.api_lookup.params : {},
+      };
+    }
+    return {
+      reply: typeof parsed.reply === 'string' && parsed.reply.trim() ? parsed.reply.trim() : fallback,
+      captured: parsed.captured && typeof parsed.captured === 'object' ? parsed.captured : {},
+      intent: typeof parsed.intent === 'string' ? parsed.intent.slice(0, 80) : 'general',
+      sentiment: ['positive', 'neutral', 'negative', 'mixed'].includes(parsed.sentiment) ? parsed.sentiment : 'neutral',
+      sentiment_score: typeof parsed.sentiment_score === 'number' ? Math.max(0, Math.min(1, parsed.sentiment_score)) : 0.5,
+      escalate: Boolean(parsed.escalate),
+      cta_hint: typeof parsed.cta_hint === 'string' ? parsed.cta_hint : null,
+      api_lookup: apiLookup,
+    };
+  } catch {
+    return { reply: fallback, captured: {}, intent: 'general', sentiment: 'neutral', sentiment_score: 0.5, escalate: false, cta_hint: null, api_lookup: null };
+  }
+}
+
+function validateAndNormalize(dataType: string, raw: unknown): { valid: boolean; normalized: string } {
+  const value = String(raw ?? '').trim();
+  if (!value) return { valid: false, normalized: '' };
+
+  switch (dataType) {
+    case 'email': {
+      const ok = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+      return { valid: ok, normalized: value.toLowerCase() };
+    }
+    case 'phone': {
+      const digits = value.replace(/[^\d+]/g, '');
+      return { valid: digits.replace(/\D/g, '').length >= 7, normalized: digits };
+    }
+    case 'integer': {
+      const ok = /^-?\d+$/.test(value);
+      return { valid: ok, normalized: value };
+    }
+    case 'decimal': {
+      const ok = !Number.isNaN(Number(value));
+      return { valid: ok, normalized: String(Number(value)) };
+    }
+    case 'boolean': {
+      const truthy = ['true', 'yes', 'y', '1'].includes(value.toLowerCase());
+      const falsy = ['false', 'no', 'n', '0'].includes(value.toLowerCase());
+      return { valid: truthy || falsy, normalized: truthy ? 'true' : 'false' };
+    }
+    case 'date':
+    case 'datetime': {
+      const ok = !Number.isNaN(Date.parse(value));
+      return { valid: ok, normalized: ok ? new Date(value).toISOString() : value };
+    }
+    case 'json': {
+      try {
+        JSON.parse(value);
+        return { valid: true, normalized: value };
+      } catch {
+        return { valid: false, normalized: value };
+      }
+    }
+    default:
+      return { valid: value.length <= 2000, normalized: value };
+  }
+}
+
+function applyTransformation(
+  transform: string,
+  rawValue: string | undefined,
+  config: Json,
+  captured: Record<string, string>,
+): string {
+  const value = rawValue ?? '';
+  switch (transform) {
+    case 'lowercase': return value.toLowerCase();
+    case 'uppercase': return value.toUpperCase();
+    case 'trim': return value.trim();
+    case 'format_phone': {
+      const digits = value.replace(/\D/g, '');
+      const cc = typeof config.default_country_code === 'string' ? config.default_country_code : '';
+      return digits ? (cc && !value.startsWith('+') ? `${cc}${digits}` : `+${digits}`) : value;
+    }
+    case 'format_date': {
+      const parsed = new Date(value);
+      return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString().slice(0, 10);
+    }
+    case 'default_value': return value || String(config.default ?? '');
+    case 'static_value': return String(config.value ?? '');
+    case 'concatenate': {
+      const fields = Array.isArray(config.fields) ? (config.fields as string[]) : [];
+      const sep = typeof config.separator === 'string' ? config.separator : ' ';
+      return fields.map((f) => captured[f] ?? '').filter(Boolean).join(sep);
+    }
+    case 'expression': {
+      // Safe template substitution only — never eval() visitor-influenced code.
+      const template = typeof config.template === 'string' ? config.template : value;
+      return template.replace(/\{\{\s*(\w+)\s*\}\}/g, (_m, key) => captured[key] ?? '');
+    }
+    default:
+      return value;
+  }
+}
+
+function evaluateCondition(
+  condition: { field?: string; operator?: string; value?: string } | null | undefined,
+  state: Record<string, string>,
+): boolean {
+  if (!condition || !condition.field || !condition.operator) return true;
+  const actual = (state[condition.field] ?? '').toString();
+  const expected = (condition.value ?? '').toString();
+  switch (condition.operator) {
+    case 'equals': return actual.toLowerCase() === expected.toLowerCase();
+    case 'not_equals': return actual.toLowerCase() !== expected.toLowerCase();
+    case 'contains': return actual.toLowerCase().includes(expected.toLowerCase());
+    case 'is_empty': return !actual;
+    case 'is_not_empty': return Boolean(actual);
+    default: return true;
+  }
+}
+
+/** Cheap keyword-overlap retrieval — avoids injecting the whole knowledge base into every prompt. */
+function retrieveKnowledge(
+  sources: Array<{ source_name: string; content: string | null }>,
+  query: string,
+  topN = 3,
+  maxChars = 2200,
+): string {
+  const terms = query.toLowerCase().split(/\W+/).filter((t) => t.length > 2);
+  if (terms.length === 0 || sources.length === 0) return '';
+
+  const scored = sources
+    .map((s) => {
+      const text = (s.content ?? '').toLowerCase();
+      const score = terms.reduce((acc, t) => acc + (text.includes(t) ? 1 : 0), 0);
+      return { s, score };
+    })
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, topN);
+
+  const picked = scored.length > 0 ? scored.map((x) => x.s) : sources.slice(0, topN);
+  let out = '';
+  for (const src of picked) {
+    const chunk = `[${src.source_name}]\n${(src.content ?? '').slice(0, 800)}\n\n`;
+    if (out.length + chunk.length > maxChars) break;
+    out += chunk;
+  }
+  return out.trim();
+}
+
+function buildSystemPrompt(
+  bot: Json,
+  missingFields: Array<{ field_key: string; ask_question: string | null; display_label: string; required: boolean }>,
+  ctaKeys: string[],
+  knowledge: string,
+  captured: Record<string, string>,
+  apiLookups: ApiLookupConfig[],
+): string {
+  const ctx = (bot.context ?? {}) as Json;
+  const styleGuide: Record<string, string> = {
+    concise: 'Keep every reply to 1-2 short sentences.',
+    balanced: 'Keep replies to 2-4 sentences, clear and friendly.',
+    detailed: 'You may use up to a short paragraph when the question needs it.',
+  };
+
+  const lines: string[] = [];
+  lines.push(`You are "${bot.name}", a chat assistant for ${bot.business_name || 'this business'}.`);
+  if (bot.llm_system_instruction) lines.push(String(bot.llm_system_instruction));
+  if (ctx.personality) lines.push(`Personality: ${ctx.personality}`);
+  if (ctx.business_context) lines.push(`Business context: ${ctx.business_context}`);
+  if (ctx.product_info) lines.push(`Product/service info: ${ctx.product_info}`);
+  if (ctx.faqs) lines.push(`FAQs:\n${ctx.faqs}`);
+  if (ctx.policies) lines.push(`Policies: ${ctx.policies}`);
+  if (ctx.conversation_rules) lines.push(`Conversation rules: ${ctx.conversation_rules}`);
+  const doRules = Array.isArray(ctx.do_rules) ? (ctx.do_rules as string[]) : [];
+  const dontRules = Array.isArray(ctx.dont_rules) ? (ctx.dont_rules as string[]) : [];
+  if (doRules.length) lines.push(`Always: ${doRules.join('; ')}`);
+  if (dontRules.length) lines.push(`Never: ${dontRules.join('; ')}`);
+  if (ctx.escalation_rules) lines.push(`Escalation: ${ctx.escalation_rules}`);
+  const restricted = Array.isArray(ctx.restricted_topics) ? (ctx.restricted_topics as string[]) : [];
+  if (restricted.length) lines.push(`Restricted topics (politely decline and redirect): ${restricted.join(', ')}.`);
+  lines.push(styleGuide[String(bot.llm_response_style)] ?? styleGuide.balanced);
+  if (knowledge) lines.push(`Relevant knowledge for this turn:\n${knowledge}`);
+
+  // --- Lead-qualification flow ---------------------------------------------
+  lines.push(
+    'YOUR GOAL: have a helpful conversation AND qualify this visitor as a lead by collecting the fields listed below. ' +
+      'Flow: greet → answer their question → collect the next missing field → once all required fields are collected, ' +
+      'stop collecting and move toward a next step (offer the relevant call-to-action, or help close).',
+  );
+  lines.push(`Already captured from this visitor (never ask for these again): ${JSON.stringify(captured)}.`);
+
+  const requiredMissing = missingFields.filter((f) => f.required);
+  if (missingFields.length > 0) {
+    const asks = missingFields
+      .map((f) => `${f.field_key}${f.required ? ' [required]' : ' [optional]'} — ${f.ask_question || `ask for their ${f.display_label}`}`)
+      .join('; ');
+    lines.push(
+      `Fields still to collect, in priority order: ${asks}. ` +
+        'Each turn: first answer whatever the visitor said or asked, THEN naturally weave in a request for the NEXT single field from this list ' +
+        '(required fields first). Ask for ONE field at a time — never present a list or a form. If the visitor volunteers several values at once, capture them all. ' +
+        'If the visitor gives a value, put it in "captured" and do not ask for it again.',
+    );
+  } else {
+    lines.push(
+      'All fields are collected — this visitor is now a QUALIFIED LEAD. Do not ask for any more personal details. ' +
+        'Focus on answering their questions and guiding them to a next step or closing the conversation.',
+    );
+  }
+  if (requiredMissing.length === 0 && ctaKeys.length > 0) {
+    lines.push(`When it helps move things forward, surface one of these calls-to-action via "cta_hint": ${ctaKeys.join(', ')}.`);
+  }
+
+  // --- External API lookups ---------------------------------------------------
+  const enabledLookups = apiLookups.filter((l) => l.enabled && l.params.length > 0);
+  if (enabledLookups.length > 0) {
+    const lookupDescriptions = enabledLookups.map((l) => {
+      const paramList = l.params.map((p) => `${p.param_key} (${p.display_label}${p.ask_question ? ` — ask: "${p.ask_question}"` : ''})`).join(', ');
+      return `  • "${l.lookup_key}": ${l.description || l.name}. Needs: ${paramList}.`;
+    }).join('\n');
+    lines.push(
+      'EXTERNAL API LOOKUPS — you can call live external systems to fetch real-time data for the visitor:\n' +
+        lookupDescriptions + '\n' +
+        'When the visitor asks about something a lookup can answer (order status, flight info, tracking, etc.), ' +
+        'collect the required parameter(s) first (ask naturally, one at a time). ' +
+        'Once you have ALL required parameters for a lookup, set "api_lookup" in your response to trigger the call. ' +
+        'The system will execute the API call and provide the result — you will then format it into a natural reply. ' +
+        'IMPORTANT: Only trigger api_lookup when you have ALL the required parameters. If any are missing, ask for them first. ' +
+        'Your "reply" when triggering an api_lookup should be a brief acknowledgement like "Let me look that up for you…"',
+    );
+  }
+
+  lines.push(
+    `Never invent facts not in the context above. If asked something you don't know, use this fallback tone: "${ctx.fallback_response || "I'm not sure — let me connect you with our team."}"`,
+  );
+  lines.push(
+    'Respond with ONLY a single JSON object (no markdown fences, no prose outside it) matching exactly: ' +
+      '{"reply": string (what you say to the visitor — MUST include the natural question for the next missing field when one exists), ' +
+      '"captured": object mapping any field keys the visitor just gave you (from the list above, or corrections) to their raw stated value, ' +
+      '"intent": short string, "sentiment": "positive"|"neutral"|"negative"|"mixed", "sentiment_score": number 0-1, ' +
+      '"escalate": boolean (true if the visitor is frustrated, asks for a human, or needs escalation), ' +
+      `"cta_hint": string|null (a cta_key${ctaKeys.length ? ` from [${ctaKeys.join(', ')}]` : ''} if this reply should surface a call-to-action, else null), ` +
+      `"api_lookup": object|null (${enabledLookups.length ? `set to {"lookup_key": "<key>", "params": {<param_key>: "<value>", ...}} to trigger a lookup from [${enabledLookups.map((l) => l.lookup_key).join(', ')}]` : 'always null — no lookups configured'})}.`,
+  );
+
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// External API lookup execution
+// ---------------------------------------------------------------------------
+
+function interpolateTemplate(template: string, params: Record<string, string>): string {
+  return template.replace(/\{\{\s*(\w+)\s*\}\}/g, (_m, key) => params[key] ?? '');
+}
+
+function extractJsonPath(obj: unknown, path: string): unknown {
+  if (!path) return obj;
+  const parts = path.split('.');
+  let current: unknown = obj;
+  for (const part of parts) {
+    if (current == null || typeof current !== 'object') return undefined;
+    current = (current as Record<string, unknown>)[part];
+  }
+  return current;
+}
+
+async function executeApiLookup(
+  lookup: ApiLookupConfig,
+  params: Record<string, string>,
+): Promise<{ ok: boolean; data: unknown; error?: string }> {
+  const url = interpolateTemplate(lookup.url_template, params);
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  for (const [k, v] of Object.entries(lookup.headers)) {
+    if (k && v) headers[k] = interpolateTemplate(v, params);
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15_000);
+
+  try {
+    const fetchOpts: RequestInit = {
+      method: lookup.http_method,
+      headers,
+      signal: controller.signal,
+    };
+    if (lookup.http_method === 'POST' && lookup.body_template) {
+      fetchOpts.body = interpolateTemplate(lookup.body_template, params);
+    }
+
+    const res = await fetch(url, fetchOpts);
+    if (!res.ok) {
+      return { ok: false, data: null, error: `HTTP ${res.status}: ${(await res.text()).slice(0, 300)}` };
+    }
+
+    const contentType = res.headers.get('content-type') || '';
+    let body: unknown;
+    if (contentType.includes('json')) {
+      body = await res.json();
+    } else {
+      body = await res.text();
+    }
+
+    const extracted = lookup.response_path ? extractJsonPath(body, lookup.response_path) : body;
+    return { ok: true, data: extracted };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'API call failed';
+    return { ok: false, data: null, error: msg };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function renderSummary(bot: Json, captured: Record<string, string>, intent: string, sentiment: string, leadStatus: string): string {
+  const fields = Object.entries(captured)
+    .filter(([, v]) => v)
+    .map(([k, v]) => `${k}: ${v}`)
+    .join(', ');
+  return [
+    `Visitor interacted with ${bot.name}.`,
+    intent ? `Intent: ${intent}.` : '',
+    fields ? `Captured: ${fields}.` : '',
+    `Sentiment: ${sentiment}.`,
+    `Lead status: ${leadStatus}.`,
+  ].filter(Boolean).join(' ');
+}
+
+// ---------------------------------------------------------------------------
+// Auth helper for admin "test" mode — anonymous "live" mode never reaches this.
+// ---------------------------------------------------------------------------
+
+async function assertTenantAdmin(req: Request, tenantId: string): Promise<boolean> {
+  try {
+    const authHeader = req.headers.get('authorization');
+    if (!authHeader?.startsWith('Bearer ')) return false;
+    const jwt = authHeader.slice(7);
+    if (!jwt) return false;
+
+    const url = Deno.env.get('SUPABASE_URL');
+    const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
+    if (!url || !anonKey) return false;
+
+    const anon = createClient(url, anonKey, {
+      global: { headers: { Authorization: `Bearer ${jwt}` } },
+    });
+    const { data: userData } = await anon.auth.getUser();
+    if (!userData?.user) return false;
+
+    const service = getServiceClient();
+    const { data } = await service
+      .from('tenant_users')
+      .select('tenant_id')
+      .eq('user_id', userData.user.id)
+      .eq('tenant_id', tenantId)
+      .eq('status', 'active')
+      .maybeSingle();
+    return Boolean(data);
+  } catch (e) {
+    console.error('[chatbot-runtime] assertTenantAdmin error:', e);
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Handler
+// ---------------------------------------------------------------------------
+
+serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders() });
+
+  const supabase = getServiceClient();
+  let body: Json;
+  try {
+    body = await req.json();
+  } catch {
+    return errorResponse('Invalid JSON body', 400);
+  }
+
+  const action = String(body.action || '');
+  const mode: Mode = body.mode === 'test' ? 'test' : 'live';
+
+  try {
+    switch (action) {
+      case 'get_bot': {
+        const botId = String(body.bot_id || '');
+        const publicSlug = String(body.public_slug || '');
+        const BOT_COLUMNS =
+          'id, tenant_id, environment, name, avatar_url, welcome_message, placeholder_text, primary_language, supported_languages, business_name, powered_by_text, show_powered_by, status';
+
+        let bot: Json | null = null;
+        let publishInfo: Json | null = null;
+        if (publicSlug) {
+          const { data } = await supabase
+            .from('mb_chatbot_publish_configs')
+            .select(`widget_greeting, widget_primary_color, widget_position, mb_chatbots(${BOT_COLUMNS})`)
+            .eq('public_slug', publicSlug)
+            .maybeSingle();
+          bot = (data?.mb_chatbots as Json) ?? null;
+          publishInfo = data ? { widget_greeting: data.widget_greeting, widget_primary_color: data.widget_primary_color, widget_position: data.widget_position } : null;
+        } else if (botId) {
+          const { data } = await supabase.from('mb_chatbots').select(BOT_COLUMNS).eq('id', botId).maybeSingle();
+          bot = data;
+        }
+
+        if (!bot) return errorResponse(friendlyError('Chat bot not found.'), 404);
+        if (mode === 'live' && bot.status !== 'published') {
+          return errorResponse(friendlyError('This assistant is not currently available.'), 403);
+        }
+        if (mode === 'test' && !(await assertTenantAdmin(req, bot.tenant_id as string))) {
+          return errorResponse('Not authorized to test this bot.', 403);
+        }
+        const { tenant_id: _t, ...pub } = bot;
+        return jsonResponse({ bot: publishInfo ? { ...pub, ...publishInfo } : pub });
+      }
+
+      case 'start_session': {
+        const botId = String(body.bot_id || '');
+        const visitorId = String(body.visitor_id || uuid());
+        const channel = String(body.channel || 'web');
+
+        const { data: bot } = await supabase
+          .from('mb_chatbots')
+          .select('id, tenant_id, environment, status, conversation_timeout_minutes')
+          .eq('id', botId)
+          .maybeSingle();
+        if (!bot) return errorResponse(friendlyError('Chat bot not found.'), 404);
+        if (mode === 'live' && bot.status !== 'published') {
+          return errorResponse(friendlyError('This assistant is not currently available.'), 403);
+        }
+        if (mode === 'test' && !(await assertTenantAdmin(req, bot.tenant_id))) {
+          return errorResponse('Not authorized to test this bot.', 403);
+        }
+
+        const now = new Date();
+        const expiresAt = new Date(now.getTime() + (bot.conversation_timeout_minutes || 30) * 60_000);
+
+        const { data: existing } = await supabase
+          .from('mb_chatbot_sessions')
+          .select('id, expires_at, conversation_id')
+          .eq('chatbot_id', botId)
+          .eq('visitor_id', visitorId)
+          .eq('status', 'active')
+          .gt('expires_at', now.toISOString())
+          .order('started_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (existing) {
+          return jsonResponse({ session_id: existing.id, visitor_id: visitorId, conversation_id: existing.conversation_id });
+        }
+
+        const { data: session, error } = await supabase
+          .from('mb_chatbot_sessions')
+          .insert({
+            chatbot_id: botId,
+            tenant_id: bot.tenant_id,
+            environment: bot.environment,
+            visitor_id: visitorId,
+            channel,
+            expires_at: expiresAt.toISOString(),
+          })
+          .select('id')
+          .single();
+        if (error) return errorResponse(friendlyError('Could not start a new session.'), 500);
+
+        return jsonResponse({ session_id: session.id, visitor_id: visitorId, conversation_id: null });
+      }
+
+      case 'send_message': {
+        return await handleSendMessage(supabase, req, body, mode);
+      }
+
+      case 'execute_cta': {
+        const conversationId = String(body.conversation_id || '');
+        const ctaId = String(body.cta_id || '');
+        const eventType = String(body.event_type || 'clicked');
+        if (!conversationId || !ctaId) return errorResponse('conversation_id and cta_id are required', 400);
+
+        const { data: conv } = await supabase
+          .from('mb_chatbot_conversations')
+          .select('id, chatbot_id, tenant_id, environment')
+          .eq('id', conversationId)
+          .maybeSingle();
+        if (!conv) return errorResponse('Conversation not found', 404);
+
+        const { data: cta } = await supabase
+          .from('mb_chatbot_ctas')
+          .select('id, destination, conversion_event')
+          .eq('id', ctaId)
+          .maybeSingle();
+        if (!cta) return errorResponse('CTA not found', 404);
+
+        await supabase.from('mb_chatbot_cta_events').insert({
+          conversation_id: conversationId,
+          chatbot_id: conv.chatbot_id,
+          tenant_id: conv.tenant_id,
+          environment: conv.environment,
+          cta_id: ctaId,
+          event_type: ['shown', 'clicked', 'completed', 'failed'].includes(eventType) ? eventType : 'clicked',
+          destination: cta.destination,
+          clicked_at: new Date().toISOString(),
+          visitor_id: body.visitor_id ? String(body.visitor_id) : null,
+          metadata: (body.metadata as Json) || {},
+        });
+
+        if (eventType === 'completed') {
+          await supabase
+            .from('mb_chatbot_conversations')
+            .update({ lead_status: 'converted', status: 'converted', updated_at: new Date().toISOString() })
+            .eq('id', conversationId);
+        }
+
+        return jsonResponse({ success: true });
+      }
+
+      case 'idle_followup': {
+        return await handleIdleFollowup(supabase, req, body, mode);
+      }
+
+      case 'close_session': {
+        return await handleCloseSession(supabase, req, body, mode);
+      }
+
+      case 'submit_feedback': {
+        return await handleSubmitFeedback(supabase, body);
+      }
+
+      case 'process_queue': {
+        return await handleProcessQueue(supabase, req, body, mode);
+      }
+
+      default:
+        return errorResponse('Unknown action. Use get_bot|start_session|send_message|execute_cta|idle_followup|close_session|submit_feedback|process_queue', 400);
+    }
+  } catch (err) {
+    console.error(`[chatbot-runtime][action=${action}]`, err);
+    const detail = err instanceof Error ? err.message : String(err);
+    const stack = err instanceof Error && err.stack
+      ? err.stack.split('\n').slice(1, 4).map((l: string) => l.trim()).join(' → ')
+      : '';
+    if (mode === 'test') {
+      return errorResponse(
+        `[Test mode][${action}] ${detail}${stack ? ` — at: ${stack}` : ''}`,
+        500,
+      );
+    }
+    return errorResponse(friendlyError('Something went wrong. Please try again in a moment.'), 500);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// idle_followup — sends the nudge message when the visitor goes silent
+// ---------------------------------------------------------------------------
+
+async function handleIdleFollowup(supabase: ReturnType<typeof getServiceClient>, req: Request, body: Json, mode: Mode) {
+  const botId = String(body.bot_id || '');
+  const sessionId = String(body.session_id || '');
+  const conversationId = String(body.conversation_id || '');
+  if (!botId || !sessionId || !conversationId) return errorResponse('bot_id, session_id and conversation_id are required', 400);
+
+  const [{ data: bot }, { data: conversation }] = await Promise.all([
+    supabase.from('mb_chatbots').select('id, tenant_id, environment, status, context, name').eq('id', botId).maybeSingle(),
+    supabase.from('mb_chatbot_conversations').select('id, status, message_count, idle_followup_sent_at').eq('id', conversationId).maybeSingle(),
+  ]);
+  if (!bot) return errorResponse('Bot not found', 404);
+  if (mode === 'test' && !(await assertTenantAdmin(req, bot.tenant_id))) return errorResponse('Not authorized', 403);
+  if (!conversation || conversation.status !== 'active') return jsonResponse({ skipped: true, reason: 'conversation not active' });
+  if (conversation.idle_followup_sent_at) return jsonResponse({ skipped: true, reason: 'followup already sent' });
+
+  const ctx = (bot.context ?? {}) as Json;
+  const lifecycle = (ctx.session_lifecycle ?? {}) as Json;
+  const message = String(lifecycle.idle_followup_message || 'Hey, are we still connected? Let me know if you need anything else.');
+  const nextSeq = ((conversation.message_count as number) || 0) + 1;
+
+  await supabase.from('mb_chatbot_messages').insert({
+    conversation_id: conversationId,
+    tenant_id: bot.tenant_id,
+    environment: bot.environment,
+    sequence_number: nextSeq,
+    sender_type: 'bot',
+    message_type: 'system',
+    message_text: message,
+    request_id: uuid(),
+  });
+
+  await supabase.from('mb_chatbot_conversations').update({
+    message_count: nextSeq,
+    idle_followup_sent_at: new Date().toISOString(),
+    last_message_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  }).eq('id', conversationId);
+
+  return jsonResponse({ success: true, message, message_type: 'idle_followup' });
+}
+
+// ---------------------------------------------------------------------------
+// close_session — auto-close with optional LLM summary + schema persistence
+// ---------------------------------------------------------------------------
+
+async function handleCloseSession(supabase: ReturnType<typeof getServiceClient>, req: Request, body: Json, mode: Mode) {
+  const botId = String(body.bot_id || '');
+  const sessionId = String(body.session_id || '');
+  const conversationId = String(body.conversation_id || '');
+  const reason = String(body.reason || 'idle_timeout');
+  if (!botId || !sessionId || !conversationId) return errorResponse('bot_id, session_id and conversation_id are required', 400);
+
+  const [{ data: bot }, { data: conversation }, { data: session }] = await Promise.all([
+    supabase.from('mb_chatbots').select('*').eq('id', botId).maybeSingle(),
+    supabase.from('mb_chatbot_conversations').select('*').eq('id', conversationId).maybeSingle(),
+    supabase.from('mb_chatbot_sessions').select('*').eq('id', sessionId).maybeSingle(),
+  ]);
+  if (!bot) return errorResponse('Bot not found', 404);
+  if (mode === 'test' && !(await assertTenantAdmin(req, bot.tenant_id))) return errorResponse('Not authorized', 403);
+  if (!conversation) return errorResponse('Conversation not found', 404);
+  if (conversation.status === 'completed' || conversation.status === 'closed') {
+    return jsonResponse({ skipped: true, reason: 'already closed' });
+  }
+
+  const ctx = (bot.context ?? {}) as Json;
+  const lifecycle = (ctx.session_lifecycle ?? {}) as Json;
+  const sendSummary = Boolean(lifecycle.send_summary_on_close);
+  const persistOnComplete = Boolean(lifecycle.persist_on_complete);
+
+  let summaryMessage = '';
+  const nextSeq = ((conversation.message_count as number) || 0) + 1;
+
+  // Generate LLM summary if enabled
+  if (sendSummary) {
+    const { data: recentMessages } = await supabase
+      .from('mb_chatbot_messages')
+      .select('sender_type, message_text')
+      .eq('conversation_id', conversationId)
+      .order('sequence_number', { ascending: true })
+      .limit(30);
+
+    const transcript = (recentMessages || [])
+      .filter((m) => m.message_text)
+      .map((m) => `${m.sender_type === 'user' ? 'Visitor' : 'Bot'}: ${m.message_text}`)
+      .join('\n');
+
+    // Try to use the LLM for a natural summary
+    let providerRow: Json | null = null;
+    if (bot.llm_provider_id) {
+      const { data } = await supabase.from('ai_engine_providers').select('*').eq('id', bot.llm_provider_id).maybeSingle();
+      providerRow = data;
+    }
+    const provider = (providerRow?.provider as string) || 'openai';
+    const apiKey = resolveProviderApiKey(provider as 'openai' | 'anthropic' | 'google' | 'mistral', providerRow?.api_key_encrypted as string | undefined);
+
+    if (apiKey && transcript) {
+      try {
+        const summaryPrompt =
+          'Summarize this chat conversation in 2-3 concise sentences. Include what the visitor wanted, ' +
+          'any information collected, and the outcome. Be factual and brief.\n\nConversation:\n' + transcript.slice(0, 3000);
+
+        const result = await callLlm({
+          provider: provider as 'openai' | 'anthropic' | 'google' | 'mistral',
+          model: (providerRow?.model_name as string) || 'gpt-4o-mini',
+          apiKey,
+          systemPrompt: `You are a conversation summarizer for ${bot.name || 'a chat bot'}. Output only the summary text, no JSON.`,
+          userMessage: summaryPrompt,
+          temperature: 0.3,
+          maxTokens: 200,
+          timeoutMs: 10_000,
+        }, 1);
+        summaryMessage = result.text.trim();
+      } catch {
+        // Fallback to a basic summary from existing data
+        const captured = (conversation.captured_data ?? {}) as Record<string, string>;
+        summaryMessage = renderSummary(bot, captured, String(conversation.intent || ''), String(conversation.sentiment || 'neutral'), String(conversation.lead_status || 'new'));
+      }
+    } else {
+      const captured = (conversation.captured_data ?? {}) as Record<string, string>;
+      summaryMessage = renderSummary(bot, captured, String(conversation.intent || ''), String(conversation.sentiment || 'neutral'), String(conversation.lead_status || 'new'));
+    }
+
+    // Persist the summary + closing message
+    const closingText = summaryMessage
+      ? `Here's a summary of our conversation:\n\n${summaryMessage}\n\nThank you for chatting with us! This conversation is now closed.`
+      : 'Thank you for chatting with us! This conversation is now closed.';
+
+    await supabase.from('mb_chatbot_messages').insert({
+      conversation_id: conversationId,
+      tenant_id: bot.tenant_id,
+      environment: bot.environment,
+      sequence_number: nextSeq,
+      sender_type: 'bot',
+      message_type: 'system',
+      message_text: closingText,
+      message_json: { type: 'close_summary', summary: summaryMessage },
+      request_id: uuid(),
+    });
+  }
+
+  // Mark conversation as completed
+  await supabase.from('mb_chatbot_conversations').update({
+    status: 'completed',
+    closed_reason: reason,
+    summary: summaryMessage || (conversation.summary as string) || null,
+    message_count: sendSummary ? nextSeq : (conversation.message_count as number),
+    last_message_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  }).eq('id', conversationId);
+
+  // Close the session
+  await supabase.from('mb_chatbot_sessions').update({
+    status: 'closed',
+    ended_at: new Date().toISOString(),
+  }).eq('id', sessionId);
+
+  // Persist captured data to schema — read directly from mb_chatbot_captured_data rows
+  const dataProcessing = ((bot.context as Json)?.data_processing ?? {}) as Json;
+  const dpTrigger = String(dataProcessing.trigger || 'on_complete');
+  let schemaMappingResult = 'skipped';
+
+  try {
+    // Read captured data rows — include both 'pending' and 'failed' (failed rows
+    // may exist from earlier per-message mapping attempts that failed validation)
+    const { data: capturedRows } = await supabase
+      .from('mb_chatbot_captured_data')
+      .select('field_name, field_value, mapped_status')
+      .eq('conversation_id', conversationId)
+      .in('mapped_status', ['pending', 'failed']);
+
+    // Build captured state from DB rows (most reliable source)
+    const captured: Record<string, string> = {};
+    for (const row of (capturedRows || [])) {
+      if (row.field_name && row.field_value) captured[row.field_name] = row.field_value;
+    }
+    // Merge conversation-level JSONB as fallback
+    const convData = (conversation.captured_data ?? {}) as Record<string, string>;
+    for (const [k, v] of Object.entries(convData)) {
+      if (v && !captured[k]) captured[k] = String(v);
+    }
+    // Add system fields
+    captured.sentiment = String(conversation.sentiment || 'neutral');
+    captured.intent = String(conversation.intent || 'general');
+    captured.lead_status = String(conversation.lead_status || 'new');
+    captured.session_id = sessionId;
+    captured.summary = summaryMessage || '';
+    captured.language = String(conversation.language || '');
+
+    console.log(`[chatbot-runtime][close_session] captured data: ${JSON.stringify(captured)}`);
+    console.log(`[chatbot-runtime][close_session] bot config: target_schema_id=${bot.target_schema_id}, enable_data_capture=${bot.enable_data_capture}, trigger=${dpTrigger}`);
+
+    if (!bot.target_schema_id) {
+      schemaMappingResult = 'no_target_schema';
+    } else {
+      const { data: mappings } = await supabase.from('mb_chatbot_field_mappings').select('*').eq('chatbot_id', botId);
+      console.log(`[chatbot-runtime][close_session] mappings found: ${mappings?.length ?? 0}`);
+
+      if (!mappings || mappings.length === 0) {
+        schemaMappingResult = 'no_mappings';
+      } else if (Object.keys(captured).length === 0) {
+        schemaMappingResult = 'no_captured_data';
+      } else if (dpTrigger === 'on_complete') {
+        const mapResult = await executeSchemaMapping(supabase, bot, mappings, captured, conversationId, mode === 'test');
+        schemaMappingResult = mapResult.ok ? 'success' : `failed@${mapResult.step}: ${mapResult.detail}`;
+      } else if (dpTrigger === 'scheduled') {
+        const delayValue = Number(dataProcessing.delay_value || 30);
+        const delayUnit = String(dataProcessing.delay_unit || 'minutes');
+        const delayMs = delayValue * (delayUnit === 'days' ? 86_400_000 : delayUnit === 'hours' ? 3_600_000 : 60_000);
+        await supabase.from('mb_chatbot_data_processing_queue').insert({
+          chatbot_id: botId, conversation_id: conversationId, tenant_id: bot.tenant_id, environment: bot.environment,
+          trigger_type: 'scheduled', process_after: new Date(Date.now() + delayMs).toISOString(),
+        });
+        schemaMappingResult = `scheduled_${delayValue}_${delayUnit}`;
+      } else if (dpTrigger === 'workflow') {
+        await supabase.from('mb_chatbot_data_processing_queue').insert({
+          chatbot_id: botId, conversation_id: conversationId, tenant_id: bot.tenant_id, environment: bot.environment,
+          trigger_type: 'workflow', process_after: new Date().toISOString(),
+          workflow_id: dataProcessing.workflow_id || null, workflow_node_id: dataProcessing.workflow_node_id || null,
+        });
+        schemaMappingResult = 'queued_for_workflow';
+      }
+    }
+  } catch (schemaErr) {
+    console.error('[chatbot-runtime][close_session] schema mapping error:', schemaErr);
+    schemaMappingResult = `exception: ${schemaErr instanceof Error ? schemaErr.message : String(schemaErr)}`;
+  }
+  console.log(`[chatbot-runtime][close_session] schema_mapping_result=${schemaMappingResult}`);
+
+  const feedbackEnabled = Boolean(lifecycle.feedback_enabled);
+  return jsonResponse({
+    success: true,
+    status: 'completed',
+    closed_reason: reason,
+    summary: summaryMessage || null,
+    show_feedback: feedbackEnabled,
+    message_type: 'close_session',
+    ...(mode === 'test' ? { _schema_mapping_result: schemaMappingResult } : {}),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// submit_feedback — stores 1-5 emoji rating from the visitor
+// ---------------------------------------------------------------------------
+
+async function handleSubmitFeedback(supabase: ReturnType<typeof getServiceClient>, body: Json) {
+  const conversationId = String(body.conversation_id || '');
+  const rating = Number(body.rating);
+  const comment = body.comment ? String(body.comment).slice(0, 1000) : null;
+
+  if (!conversationId) return errorResponse('conversation_id is required', 400);
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5) return errorResponse('rating must be an integer 1-5', 400);
+
+  const { data: conversation } = await supabase
+    .from('mb_chatbot_conversations')
+    .select('id, feedback_rating')
+    .eq('id', conversationId)
+    .maybeSingle();
+  if (!conversation) return errorResponse('Conversation not found', 404);
+  if (conversation.feedback_rating) return jsonResponse({ skipped: true, reason: 'feedback already submitted' });
+
+  await supabase.from('mb_chatbot_conversations').update({
+    feedback_rating: rating,
+    feedback_comment: comment,
+    updated_at: new Date().toISOString(),
+  }).eq('id', conversationId);
+
+  return jsonResponse({ success: true, rating, comment });
+}
+
+// ---------------------------------------------------------------------------
+// send_message pipeline
+// ---------------------------------------------------------------------------
+
+async function handleSendMessage(supabase: ReturnType<typeof getServiceClient>, req: Request, body: Json, mode: Mode) {
+  const requestId = uuid();
+  const botId = String(body.bot_id || '');
+  const sessionId = String(body.session_id || '');
+  const visitorId = String(body.visitor_id || '');
+  const messageText = String(body.message || '').trim();
+  const clientMessageId = body.client_message_id ? String(body.client_message_id) : null;
+
+  if (!botId || !sessionId || !messageText) {
+    return errorResponse('bot_id, session_id and message are required', 400);
+  }
+  if (messageText.length > 4000) {
+    return errorResponse(friendlyError('That message is too long.'), 400);
+  }
+
+  // 1. Load bot + related config
+  const [{ data: bot }, { data: fields }, { data: ctas }, { data: knowledgeSources }, { data: mappings }] = await Promise.all([
+    supabase.from('mb_chatbots').select('*').eq('id', botId).maybeSingle(),
+    supabase.from('mb_chatbot_fields').select('*').eq('chatbot_id', botId).order('collection_order'),
+    supabase.from('mb_chatbot_ctas').select('*').eq('chatbot_id', botId).eq('is_active', true).order('sort_order'),
+    supabase.from('mb_chatbot_knowledge_sources').select('source_name, content').eq('chatbot_id', botId).eq('status', 'active'),
+    supabase.from('mb_chatbot_field_mappings').select('*').eq('chatbot_id', botId),
+  ]);
+
+  if (!bot) return errorResponse(friendlyError('Chat bot not found.'), 404);
+  if (mode === 'live' && bot.status !== 'published') {
+    return errorResponse(friendlyError('This assistant is not currently available.'), 403);
+  }
+  if (mode === 'test' && !(await assertTenantAdmin(req, bot.tenant_id))) {
+    return errorResponse('Not authorized to test this bot.', 403);
+  }
+
+  // 2. Load session
+  const { data: session } = await supabase
+    .from('mb_chatbot_sessions')
+    .select('*')
+    .eq('id', sessionId)
+    .eq('chatbot_id', botId)
+    .maybeSingle();
+  if (!session || session.status !== 'active' || new Date(session.expires_at) < new Date()) {
+    return errorResponse(friendlyError('Your session has expired. Please refresh to start a new conversation.'), 410);
+  }
+
+  // 3. Load or create conversation
+  let conversationId = session.conversation_id as string | null;
+  let conversation: Json | null = null;
+  if (conversationId) {
+    const { data } = await supabase.from('mb_chatbot_conversations').select('*').eq('id', conversationId).maybeSingle();
+    conversation = data;
+  }
+  if (!conversation) {
+    const { data: created, error } = await supabase
+      .from('mb_chatbot_conversations')
+      .insert({
+        chatbot_id: botId,
+        chatbot_version_id: bot.published_version_id,
+        tenant_id: bot.tenant_id,
+        environment: bot.environment,
+        session_id: sessionId,
+        visitor_id: visitorId || session.visitor_id,
+        channel: session.channel,
+        language: bot.primary_language,
+      })
+      .select('*')
+      .single();
+    if (error || !created) return errorResponse(friendlyError('Could not start the conversation.'), 500);
+    conversation = created;
+    conversationId = created.id;
+    await supabase.from('mb_chatbot_sessions').update({ conversation_id: conversationId }).eq('id', sessionId);
+  }
+
+  if ((conversation!.message_count as number) >= bot.max_conversation_length) {
+    return jsonResponse({
+      conversation_id: conversationId,
+      session_id: sessionId,
+      reply: "We've reached the length limit for this conversation. Please start a new chat to continue.",
+      captured: {},
+      ctas: [],
+      status: 'completed',
+    });
+  }
+
+  // 4. Idempotency — replay the prior bot reply instead of reprocessing
+  if (clientMessageId) {
+    const { data: dup } = await supabase
+      .from('mb_chatbot_messages')
+      .select('id, sequence_number')
+      .eq('conversation_id', conversationId)
+      .eq('client_message_id', clientMessageId)
+      .maybeSingle();
+    if (dup) {
+      const { data: botReply } = await supabase
+        .from('mb_chatbot_messages')
+        .select('message_text, message_json')
+        .eq('conversation_id', conversationId)
+        .eq('sender_type', 'bot')
+        .gt('sequence_number', dup.sequence_number)
+        .order('sequence_number', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      return jsonResponse({
+        conversation_id: conversationId,
+        session_id: sessionId,
+        reply: botReply?.message_text ?? '',
+        captured: {},
+        ctas: (botReply?.message_json as Json)?.ctas ?? [],
+        deduplicated: true,
+      });
+    }
+  }
+
+  // 5. Persist the user's message
+  const nextSeq = ((conversation!.message_count as number) || 0) + 1;
+  const { data: userMsg, error: userMsgError } = await supabase
+    .from('mb_chatbot_messages')
+    .insert({
+      conversation_id: conversationId,
+      tenant_id: bot.tenant_id,
+      environment: bot.environment,
+      client_message_id: clientMessageId,
+      sequence_number: nextSeq,
+      sender_type: 'user',
+      message_type: 'text',
+      message_text: messageText,
+      request_id: requestId,
+    })
+    .select('id')
+    .single();
+  if (userMsgError || !userMsg) return errorResponse(friendlyError('Could not save your message.'), 500);
+
+  // 6. Captured-attribute state + all still-missing fields (required first,
+  //    then in collection order) so the bot proactively works through the whole
+  //    data-capture list, not only the required fields.
+  const captured: Record<string, string> = { ...(session.captured_attributes as Record<string, string> | null || {}) };
+  const missing = (fields || [])
+    .filter((f) => !captured[f.field_key])
+    .sort((a, b) => (b.required ? 1 : 0) - (a.required ? 1 : 0) || (a.collection_order ?? 0) - (b.collection_order ?? 0));
+
+  // 7. Knowledge retrieval
+  const knowledge = retrieveKnowledge((knowledgeSources || []) as Array<{ source_name: string; content: string | null }>, messageText);
+
+  // 8. Recent transcript window (context management — last 12 turns, else fall back to stored summary)
+  const { data: recentMessages } = await supabase
+    .from('mb_chatbot_messages')
+    .select('sender_type, message_text, sequence_number')
+    .eq('conversation_id', conversationId)
+    .order('sequence_number', { ascending: false })
+    .limit(12);
+  const transcript = (recentMessages || [])
+    .slice()
+    .reverse()
+    .filter((m) => m.message_text)
+    .map((m) => `${m.sender_type === 'user' ? 'Visitor' : 'Assistant'}: ${m.message_text}`)
+    .join('\n');
+  const priorSummary = conversation!.summary ? `Conversation so far (summarized): ${conversation!.summary}\n\n` : '';
+  const userTurn = `${priorSummary}${transcript ? `Recent turns:\n${transcript}\n\n` : ''}Latest visitor message: ${messageText}`;
+
+  // 9. Resolve LLM provider + key
+  let providerRow: Json | null = null;
+  if (bot.llm_provider_id) {
+    const { data } = await supabase.from('ai_engine_providers').select('*').eq('id', bot.llm_provider_id).maybeSingle();
+    providerRow = data;
+  }
+  const provider = (providerRow?.provider as LlmProvider) || 'openai';
+  const rawKey = resolveProviderApiKey(provider, providerRow?.api_key_encrypted as string | undefined);
+  const apiKey = rawKey && rawKey.trim() ? rawKey.trim() : null;
+
+  const ctaKeys = (ctas || []).map((c) => c.cta_key as string);
+  const ctxObj = (bot.context ?? {}) as Json;
+  const apiLookups: ApiLookupConfig[] = Array.isArray(ctxObj.api_lookups) ? (ctxObj.api_lookups as ApiLookupConfig[]) : [];
+  const systemPrompt = buildSystemPrompt(bot, missing, ctaKeys, knowledge, captured, apiLookups);
+
+  let extracted: ExtractedTurn;
+  let latencyMs = 0;
+  let tokenUsage = { prompt: 0, completion: 0, total: 0 };
+  let llmFailed = false;
+  let llmError: string | null = null;
+  let apiLookupResult: { lookup_key: string; ok: boolean; data: unknown; error?: string } | null = null;
+
+  if (!apiKey) {
+    llmFailed = true;
+    const diagParts = [
+      `provider=${provider}`,
+      `llm_provider_id=${bot.llm_provider_id || 'null'}`,
+      `provider_row_found=${!!providerRow}`,
+      `db_key_present=${!!(providerRow?.api_key_encrypted)}`,
+    ];
+    llmError = `No LLM API key for provider "${provider}". Checked: env var, then ai_engine_providers DB row. [${diagParts.join(', ')}]`;
+    extracted = fallbackTurn(bot);
+    if (mode === 'test') {
+      extracted = {
+        ...extracted,
+        reply:
+          `Test note: no LLM API key found for "${provider}". ` +
+          (bot.llm_provider_id
+            ? (providerRow
+              ? `The DB row exists but api_key_encrypted is empty. Re-save the key in Settings → AI Engine.`
+              : `llm_provider_id="${bot.llm_provider_id}" was set, but no matching row found in ai_engine_providers. ` +
+                'Run the SQL migration (76_ai_engine_provider_fixes.sql), then re-save in Settings → AI Engine.')
+            : 'No llm_provider_id is set on this chatbot. Select a provider in the LLM Configuration tab and save.'),
+      };
+    }
+  } else {
+    try {
+      const llmInput = {
+        provider,
+        model: (providerRow?.model_name as string) || 'gpt-4o-mini',
+        apiKey,
+        systemPrompt,
+        userMessage: userTurn,
+        temperature: Number(bot.llm_temperature ?? 0.7),
+        maxTokens: Number(bot.llm_max_output_tokens ?? 1024),
+        timeoutMs: Number(bot.llm_timeout_seconds ?? 20) * 1000,
+      };
+      const result = await callLlm(llmInput, Number(bot.llm_retry_count ?? 2));
+      latencyMs = result.latencyMs;
+      tokenUsage = { prompt: result.promptTokens, completion: result.completionTokens, total: result.totalTokens };
+      extracted = parseLlmJson(result.text, String((bot.context as Json)?.fallback_response || "I'm not sure — let me connect you with our team."));
+
+      // --- External API lookup execution ---
+      if (extracted.api_lookup) {
+        const lookupCfg = apiLookups.find((l) => l.lookup_key === extracted.api_lookup!.lookup_key && l.enabled);
+        if (lookupCfg) {
+          const allParamsPresent = lookupCfg.params.every((p) => extracted.api_lookup!.params[p.param_key]);
+          if (allParamsPresent) {
+            try {
+              const apiResult = await executeApiLookup(lookupCfg, extracted.api_lookup.params);
+              apiLookupResult = { lookup_key: lookupCfg.lookup_key, ...apiResult };
+
+              // Follow-up LLM call: feed the API response back so the bot can
+              // formulate a natural-language reply with the live data.
+              const followUpPrompt =
+                `You just called the "${lookupCfg.name}" API for the visitor. ` +
+                (apiResult.ok
+                  ? `The API returned this data:\n${JSON.stringify(apiResult.data, null, 2).slice(0, 2000)}\n\n` +
+                    'Now reply to the visitor with a helpful, natural-language summary of this data. ' +
+                    'Present the key information clearly. Do not dump raw JSON — summarize it conversationally.'
+                  : `The API call failed: ${apiResult.error || 'unknown error'}.\n` +
+                    `Tell the visitor: "${lookupCfg.error_message}"`
+                ) +
+                '\nRespond with ONLY a JSON object: {"reply": string, "captured": {}, "intent": string, ' +
+                '"sentiment": "positive"|"neutral"|"negative"|"mixed", "sentiment_score": number, ' +
+                '"escalate": false, "cta_hint": null, "api_lookup": null}.';
+
+              const followUp = await callLlm(
+                { ...llmInput, systemPrompt: systemPrompt, userMessage: followUpPrompt, maxTokens: 512 },
+                1,
+              );
+              latencyMs += followUp.latencyMs;
+              tokenUsage.prompt += followUp.promptTokens;
+              tokenUsage.completion += followUp.completionTokens;
+              tokenUsage.total += followUp.totalTokens;
+
+              const followUpExtracted = parseLlmJson(followUp.text, apiResult.ok
+                ? `Here's what I found: ${JSON.stringify(apiResult.data).slice(0, 300)}`
+                : lookupCfg.error_message);
+              extracted.reply = followUpExtracted.reply;
+              extracted.api_lookup = null;
+            } catch (err) {
+              console.error('[chatbot-runtime] API lookup failed', err);
+              apiLookupResult = { lookup_key: lookupCfg.lookup_key, ok: false, data: null, error: err instanceof Error ? err.message : 'API call failed' };
+              extracted.reply += ` ${lookupCfg.error_message}`;
+              extracted.api_lookup = null;
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[chatbot-runtime] LLM call failed', err);
+      llmFailed = true;
+      llmError = err instanceof Error ? err.message : 'Unknown LLM error';
+      extracted = fallbackTurn(bot);
+      if (mode === 'test') {
+        extracted = { ...extracted, reply: `Test note: LLM call to "${provider}" (model: ${providerRow?.model_name || 'default'}) failed — ${llmError}. Check the provider key/model in Settings → AI Engine and redeploy chatbot-runtime.` };
+      }
+    }
+  }
+
+  // Record LLM health on the bot so the admin UI can surface provider problems.
+  try {
+    if (llmFailed) {
+      await supabase.from('mb_chatbots').update({ llm_last_error: (llmError || 'LLM unavailable').slice(0, 500), llm_last_error_at: new Date().toISOString() }).eq('id', botId);
+    } else {
+      await supabase.from('mb_chatbots').update({ llm_last_success_at: new Date().toISOString() }).eq('id', botId);
+    }
+  } catch (_e) { /* health tracking must never break the reply */ }
+
+  // 10. Validate + merge newly captured fields
+  const fieldByKey = new Map((fields || []).map((f) => [f.field_key, f]));
+  const newlyCaptured: Record<string, string> = {};
+  for (const [key, rawValue] of Object.entries(extracted.captured)) {
+    const fieldDef = fieldByKey.get(key);
+    const dataType = fieldDef?.data_type || 'string';
+    const { valid, normalized } = validateAndNormalize(dataType, rawValue);
+    if (!valid) {
+      try {
+        await supabase.from('mb_chatbot_validation_failures').insert({
+          conversation_id: conversationId,
+          chatbot_id: botId,
+          tenant_id: bot.tenant_id,
+          environment: bot.environment,
+          field_name: key,
+          attempted_value: String(rawValue ?? '').slice(0, 500),
+          reason: `Failed ${dataType} validation`,
+        });
+      } catch (_) { /* validation logging must never break the reply */ }
+      continue;
+    }
+    captured[key] = normalized;
+    newlyCaptured[key] = normalized;
+  }
+
+  // Steps 11-18: persist state. Wrapped so a DB error never hides the reply.
+  let botMsgId: string | null = null;
+  let leadStatus = 'new';
+  let newStatus = (conversation!.status as string) || 'active';
+  let ctaPayload: { id: string; cta_key: string; name: string; button_label: string; action_type: string; destination: string; tracking_params: unknown }[] = [];
+  let persistError: string | null = null;
+
+  try {
+    // 11. Persist captured_data rows (provenance)
+    for (const [key, value] of Object.entries(newlyCaptured)) {
+      const fieldDef = fieldByKey.get(key);
+      await supabase.from('mb_chatbot_captured_data').upsert(
+        {
+          conversation_id: conversationId,
+          chatbot_id: botId,
+          tenant_id: bot.tenant_id,
+          environment: bot.environment,
+          field_id: fieldDef?.id ?? null,
+          field_name: key,
+          field_value: value,
+          normalized_value: value,
+          data_type: fieldDef?.data_type || 'string',
+          confidence: 0.9,
+          source_message_id: userMsg.id,
+          mapped_status: 'pending',
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'conversation_id,field_name' },
+      );
+    }
+
+    // 12. Lead status
+    const requiredKeys = (fields || []).filter((f) => f.required).map((f) => f.field_key);
+    const allRequiredCaptured = requiredKeys.length > 0 && requiredKeys.every((k) => captured[k]);
+    const anyCaptured = Object.keys(captured).length > 0;
+    const prevLeadStatus = String(conversation!.lead_status || 'new');
+    leadStatus =
+      prevLeadStatus === 'converted' || prevLeadStatus === 'dropped'
+        ? prevLeadStatus
+        : allRequiredCaptured
+          ? 'qualified'
+          : anyCaptured
+            ? 'in_progress'
+            : 'new';
+
+    // 13. Conversation-level sentiment (smoothed)
+    const prevScore = typeof conversation!.sentiment_score === 'number' ? (conversation!.sentiment_score as number) : extracted.sentiment_score;
+    const smoothedScore = Number(((prevScore + extracted.sentiment_score) / 2).toFixed(3));
+
+    // 14. CTA evaluation
+    const state: Record<string, string> = { ...captured, lead_status: leadStatus, intent: extracted.intent, sentiment: extracted.sentiment };
+    const { data: alreadyShown } = await supabase
+      .from('mb_chatbot_cta_events')
+      .select('cta_id')
+      .eq('conversation_id', conversationId)
+      .eq('event_type', 'shown');
+    const shownSet = new Set((alreadyShown || []).map((r) => r.cta_id));
+
+    const visibleCtas = (ctas || [])
+      .filter((cta) => cta.visibility_rule === 'always' || evaluateCondition(cta.conditions as { field?: string; operator?: string; value?: string }, state))
+      .sort((a, b) => {
+        if (extracted.cta_hint) {
+          if (a.cta_key === extracted.cta_hint) return -1;
+          if (b.cta_key === extracted.cta_hint) return 1;
+        }
+        return (a.sort_order || 0) - (b.sort_order || 0);
+      });
+
+    for (const cta of visibleCtas) {
+      if (!shownSet.has(cta.id)) {
+        await supabase.from('mb_chatbot_cta_events').insert({
+          conversation_id: conversationId,
+          chatbot_id: botId,
+          tenant_id: bot.tenant_id,
+          environment: bot.environment,
+          cta_id: cta.id,
+          event_type: 'shown',
+          destination: cta.destination,
+          visitor_id: visitorId || session.visitor_id,
+        });
+      }
+    }
+
+    ctaPayload = visibleCtas.map((c) => ({
+      id: c.id,
+      cta_key: c.cta_key,
+      name: c.name,
+      button_label: c.button_label,
+      action_type: c.action_type,
+      destination: c.destination,
+      tracking_params: c.tracking_params,
+    }));
+
+    // 15. Persist bot message
+    const summary = renderSummary(bot, captured, extracted.intent, extracted.sentiment, leadStatus);
+    const { data: botMsg } = await supabase
+      .from('mb_chatbot_messages')
+      .insert({
+        conversation_id: conversationId,
+        tenant_id: bot.tenant_id,
+        environment: bot.environment,
+        sequence_number: nextSeq + 1,
+        sender_type: 'bot',
+        message_type: ctaPayload.length ? 'cta' : apiLookupResult ? 'api_lookup' : 'text',
+        message_text: extracted.reply,
+        message_json: ctaPayload.length ? { ctas: ctaPayload } : apiLookupResult ? { api_lookup: apiLookupResult } : null,
+        llm_provider: provider,
+        llm_model: providerRow?.model_name || null,
+        prompt_tokens: tokenUsage.prompt,
+        completion_tokens: tokenUsage.completion,
+        total_tokens: tokenUsage.total,
+        latency_ms: latencyMs,
+        sentiment: bot.enable_sentiment_analysis ? extracted.sentiment : null,
+        sentiment_score: bot.enable_sentiment_analysis ? extracted.sentiment_score : null,
+        intent: extracted.intent,
+        request_id: requestId,
+      })
+      .select('id')
+      .single();
+    botMsgId = botMsg?.id ?? null;
+
+    // 16. Update conversation
+    newStatus = extracted.escalate ? 'escalated' : (conversation!.status as string) === 'active' ? 'active' : (conversation!.status as string);
+    await supabase
+      .from('mb_chatbot_conversations')
+      .update({
+        last_message_at: new Date().toISOString(),
+        message_count: nextSeq + 1,
+        sentiment: bot.enable_sentiment_analysis ? extracted.sentiment : null,
+        sentiment_score: bot.enable_sentiment_analysis ? smoothedScore : null,
+        intent: extracted.intent,
+        lead_status: leadStatus,
+        captured_data: captured,
+        summary,
+        status: newStatus,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', conversationId);
+
+    // 17. Update session state
+    await supabase
+      .from('mb_chatbot_sessions')
+      .update({
+        captured_attributes: captured,
+        last_seen_at: new Date().toISOString(),
+        expires_at: new Date(Date.now() + (bot.conversation_timeout_minutes || 30) * 60_000).toISOString(),
+      })
+      .eq('id', sessionId);
+
+    // 18. Schema mapping is deferred to close_session — all captured data is
+    //     pushed as ONE record when the conversation completes, not per-message.
+    const schemaMapConditions: Json = {
+      target_schema_id: bot.target_schema_id || null,
+      newly_captured_keys: Object.keys(newlyCaptured),
+      mappings_count: mappings?.length ?? 0,
+      result: 'deferred_to_close',
+    };
+  } catch (persistErr) {
+    console.error('[chatbot-runtime] Post-LLM persistence failed', persistErr);
+    persistError = persistErr instanceof Error ? persistErr.message : String(persistErr);
+  }
+
+  // Include lifecycle config so the widget can set idle timers
+  const lifecycleCtx = (ctxObj.session_lifecycle ?? {}) as Json;
+  const sessionLifecycle = {
+    idle_followup_enabled: Boolean(lifecycleCtx.idle_followup_enabled),
+    idle_followup_seconds: Number(lifecycleCtx.idle_followup_seconds || 120),
+    idle_close_enabled: Boolean(lifecycleCtx.idle_close_enabled),
+    idle_close_seconds: Number(lifecycleCtx.idle_close_seconds || 180),
+    feedback_enabled: Boolean(lifecycleCtx.feedback_enabled),
+  };
+
+  const replyText = persistError && mode === 'test'
+    ? `${extracted.reply}\n\n⚠️ Test warning: reply generated but DB persistence failed — ${persistError}`
+    : extracted.reply;
+
+  return jsonResponse({
+    conversation_id: conversationId,
+    session_id: sessionId,
+    message_id: botMsgId,
+    reply: replyText,
+    captured: newlyCaptured,
+    intent: extracted.intent,
+    sentiment: extracted.sentiment,
+    sentiment_score: extracted.sentiment_score,
+    ctas: ctaPayload,
+    escalate: extracted.escalate,
+    lead_status: leadStatus,
+    status: newStatus,
+    message_count: nextSeq + 1,
+    request_id: requestId,
+    llm_degraded: llmFailed,
+    api_lookup_result: apiLookupResult,
+    session_lifecycle: sessionLifecycle,
+    ...(persistError ? { persist_error: persistError } : {}),
+    ...(mode === 'test' ? { _schema_mapping_conditions: {
+      target_schema_id: bot.target_schema_id || null,
+      enable_data_capture: !!bot.enable_data_capture,
+      newly_captured_count: Object.keys(newlyCaptured).length,
+      mappings_count: mappings?.length ?? 0,
+    } } : {}),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// process_queue — manually trigger processing of queued data mapping items
+// ---------------------------------------------------------------------------
+
+async function handleProcessQueue(supabase: ReturnType<typeof getServiceClient>, req: Request, body: Json, mode: Mode) {
+  const botId = body.bot_id ? String(body.bot_id) : null;
+  const conversationId = body.conversation_id ? String(body.conversation_id) : null;
+  const limit = Math.min(Number(body.limit || 50), 100);
+
+  let query = supabase
+    .from('mb_chatbot_data_processing_queue')
+    .select('*, mb_chatbots!inner(target_schema_id, enable_data_capture, insert_mode, upsert_key, tenant_id, environment, context)')
+    .eq('status', 'pending')
+    .lte('process_after', new Date().toISOString())
+    .order('process_after')
+    .limit(limit);
+
+  if (botId) query = query.eq('chatbot_id', botId);
+  if (conversationId) query = query.eq('conversation_id', conversationId);
+
+  const { data: items, error } = await query;
+  if (error) return errorResponse(`Queue query failed: ${error.message}`, 500);
+  if (!items || items.length === 0) return jsonResponse({ success: true, processed: 0, message: 'No pending items' });
+
+  let processed = 0;
+  let failed = 0;
+  for (const item of items) {
+    const bot = (item as Json).mb_chatbots as Json;
+    if (!bot?.target_schema_id || !bot?.enable_data_capture) {
+      await supabase.from('mb_chatbot_data_processing_queue').update({ status: 'failed', last_error: 'Bot not configured', updated_at: new Date().toISOString() }).eq('id', item.id);
+      failed++;
+      continue;
+    }
+
+    await supabase.from('mb_chatbot_data_processing_queue').update({ status: 'processing', attempts: (item.attempts || 0) + 1, updated_at: new Date().toISOString() }).eq('id', item.id);
+
+    try {
+      const { data: mappings } = await supabase.from('mb_chatbot_field_mappings').select('*').eq('chatbot_id', item.chatbot_id);
+      if (!mappings || mappings.length === 0) {
+        await supabase.from('mb_chatbot_data_processing_queue').update({ status: 'failed', last_error: 'No field mappings', updated_at: new Date().toISOString() }).eq('id', item.id);
+        failed++;
+        continue;
+      }
+
+      const { data: conversation } = await supabase.from('mb_chatbot_conversations').select('captured_data, sentiment, intent, lead_status, language').eq('id', item.conversation_id).maybeSingle();
+      const { data: session } = await supabase.from('mb_chatbot_sessions').select('captured_attributes').eq('conversation_id', item.conversation_id).maybeSingle();
+
+      const captured = {
+        ...(session?.captured_attributes as Record<string, string> || {}),
+        ...(conversation?.captured_data as Record<string, string> || {}),
+        sentiment: String(conversation?.sentiment || 'neutral'),
+        intent: String(conversation?.intent || 'general'),
+        lead_status: String(conversation?.lead_status || 'new'),
+      };
+
+      await executeSchemaMapping(supabase, bot, mappings, captured, item.conversation_id, mode === 'test');
+      await supabase.from('mb_chatbot_data_processing_queue').update({ status: 'completed', processed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', item.id);
+      processed++;
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      const newStatus = (item.attempts || 0) >= 2 ? 'failed' : 'pending';
+      await supabase.from('mb_chatbot_data_processing_queue').update({
+        status: newStatus,
+        last_error: errMsg,
+        process_after: newStatus === 'pending' ? new Date(Date.now() + 5 * 60_000).toISOString() : item.process_after,
+        updated_at: new Date().toISOString(),
+      }).eq('id', item.id);
+      failed++;
+    }
+  }
+
+  return jsonResponse({ success: true, processed, failed, total: items.length });
+}
+
+function fallbackTurn(bot: Json): ExtractedTurn {
+  return {
+    reply: String((bot.context as Json)?.fallback_response || "I'm having trouble responding right now — please try again shortly."),
+    captured: {},
+    intent: 'general',
+    sentiment: 'neutral',
+    sentiment_score: 0.5,
+    escalate: false,
+    cta_hint: null,
+    api_lookup: null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Schema mapping execution — writes captured leads into the target Marbee schema
+// ---------------------------------------------------------------------------
+
+type SchemaMappingResult = {
+  ok: boolean;
+  step: string;
+  detail: string;
+};
+
+async function executeSchemaMapping(
+  supabase: ReturnType<typeof getServiceClient>,
+  bot: Json,
+  mappings: Json[],
+  state: Record<string, string>,
+  conversationId: string,
+  isTest = false,
+): Promise<SchemaMappingResult> {
+  const log = (msg: string) => console.log(`[chatbot-runtime][schema-mapping] ${msg}`);
+  try {
+    const { data: schema, error: schemaErr } = await supabase
+      .from('schema_definitions')
+      .select('table_name, status')
+      .eq('id', bot.target_schema_id)
+      .maybeSingle();
+    if (schemaErr) {
+      log(`schema lookup failed: ${schemaErr.message}`);
+      return { ok: false, step: 'schema_lookup', detail: schemaErr.message };
+    }
+    if (!schema) {
+      log(`schema id=${bot.target_schema_id} not found`);
+      return { ok: false, step: 'schema_lookup', detail: `schema id=${bot.target_schema_id} not found in schema_definitions` };
+    }
+    if (schema.status === 'draft' || schema.status === 'archived') {
+      log(`schema "${schema.table_name}" status="${schema.status}" (must be active or published)`);
+      return { ok: false, step: 'schema_status', detail: `schema "${schema.table_name}" status="${schema.status}" — must be "active" or "published"` };
+    }
+    if (!schema.table_name || !/^[a-z][a-z0-9_]+$/.test(schema.table_name)) {
+      log(`schema table_name="${schema.table_name}" is invalid`);
+      return { ok: false, step: 'table_name', detail: `table_name="${schema.table_name}" is invalid` };
+    }
+
+    const payload: Json = {};
+    const debugMap: string[] = [];
+    for (const m of mappings) {
+      const srcKey = m.source_field_key as string;
+      const tgtKey = m.target_field as string;
+      const rawVal = state[srcKey];
+      const value = applyTransformation(m.transformation as string, rawVal, (m.transformation_config as Json) || {}, state);
+      debugMap.push(`${srcKey}→${tgtKey}: raw="${rawVal ?? '(undefined)'}" transformed="${value}"`);
+      if (value) payload[tgtKey] = value;
+    }
+    log(`field mapping debug: ${debugMap.join(' | ')}`);
+    if (Object.keys(payload).length === 0) {
+      const detail = `no mapped fields produced values. state keys=[${Object.keys(state).join(',')}], mapping sources=[${mappings.map((m) => m.source_field_key).join(',')}]`;
+      log(detail);
+      return { ok: false, step: 'payload_empty', detail };
+    }
+
+    const table = schema.table_name;
+    const insertMode = String(bot.insert_mode || 'upsert');
+    // Support composite upsert keys like "email,mobile"
+    const upsertKeys = String(bot.upsert_key || '').split(',').map((k: string) => k.trim()).filter(Boolean);
+    const upsertTargetFields: Array<{ src: string; tgt: string }> = [];
+    for (const key of upsertKeys) {
+      const m = mappings.find((mm) => mm.source_field_key === key || mm.target_field === key);
+      if (m) upsertTargetFields.push({ src: key, tgt: m.target_field as string });
+    }
+    log(`upsert keys: [${upsertKeys.join(',')}] → target fields: [${upsertTargetFields.map((u) => u.tgt).join(',')}]`);
+
+    // Add source tracking
+    payload.source = `chatbot:${bot.name || bot.id}`;
+
+    let existingId: string | null = null;
+    if ((insertMode === 'update' || insertMode === 'upsert') && upsertTargetFields.length > 0) {
+      let allHaveValues = true;
+      let query = supabase.from(table).select('id').eq('tenant_id', bot.tenant_id).eq('environment', bot.environment);
+      for (const { tgt } of upsertTargetFields) {
+        if (payload[tgt]) {
+          query = query.eq(tgt, payload[tgt] as string);
+        } else {
+          allHaveValues = false;
+          break;
+        }
+      }
+      if (allHaveValues) {
+        const { data: existing } = await query.maybeSingle();
+        existingId = existing?.id ?? null;
+        log(`upsert lookup: existingId=${existingId ?? 'none'}`);
+      }
+    }
+
+    let mappedOk = false;
+    let dbDetail = '';
+    if (existingId && (insertMode === 'update' || insertMode === 'upsert')) {
+      const { error } = await supabase.from(table).update(payload).eq('id', existingId);
+      if (error) { log(`update on ${table} id=${existingId} failed: ${error.message}`); dbDetail = `update failed: ${error.message}`; }
+      else dbDetail = `updated row ${existingId}`;
+      mappedOk = !error;
+    } else if (insertMode !== 'update') {
+      const insertPayload = { ...payload, tenant_id: bot.tenant_id, environment: bot.environment };
+      const { error } = await supabase.from(table).insert(insertPayload);
+      if (error) { log(`insert into ${table} failed: ${error.message} — payload keys: [${Object.keys(insertPayload).join(',')}]`); dbDetail = `insert failed: ${error.message} (keys: ${Object.keys(insertPayload).join(',')})`; }
+      else dbDetail = `inserted into ${table}`;
+      mappedOk = !error;
+    } else {
+      dbDetail = `insertMode=update but no existing row for upsert keys=[${upsertKeys.join(',')}]`;
+      log(dbDetail);
+    }
+
+    if (mappedOk) log(`${existingId ? 'updated' : 'inserted'} into ${table} — fields: [${Object.keys(payload).join(',')}]`);
+
+    await supabase
+      .from('mb_chatbot_captured_data')
+      .update({ mapped_status: mappedOk ? 'mapped' : 'failed', updated_at: new Date().toISOString() })
+      .eq('conversation_id', conversationId)
+      .in('mapped_status', ['pending', 'failed']);
+
+    return { ok: mappedOk, step: mappedOk ? 'done' : 'db_write', detail: dbDetail };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[chatbot-runtime] schema mapping failed', err);
+    return { ok: false, step: 'exception', detail: msg };
+  }
+}

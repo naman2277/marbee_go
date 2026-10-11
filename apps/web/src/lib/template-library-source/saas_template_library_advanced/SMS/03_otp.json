@@ -1,0 +1,10 @@
+{
+  "template_id": "03_otp",
+  "channel": "sms",
+  "body": "{{brand_name}} verification code: {{otp}}. Expires in {{expiry_minutes}} min. Never share this code.",
+  "controls": {
+    "unsubscribe": "STOP",
+    "short_link_recommended": true,
+    "unicode_safe": true
+  }
+}

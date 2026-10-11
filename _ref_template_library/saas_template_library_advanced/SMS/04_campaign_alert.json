@@ -1,0 +1,10 @@
+{
+  "template_id": "04_campaign_alert",
+  "channel": "sms",
+  "body": "Alert: {{campaign_name}} needs attention. {{metric_name}} changed by {{metric_change}}. Review: {{short_url}}",
+  "controls": {
+    "unsubscribe": "STOP",
+    "short_link_recommended": true,
+    "unicode_safe": true
+  }
+}

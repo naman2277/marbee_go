@@ -1,0 +1,23 @@
+{
+  "template_id": "05_order",
+  "channel": "rcs",
+  "format": "rich_card",
+  "orientation": "VERTICAL",
+  "title": "Order {{order_id}}",
+  "description": "Your order is {{status}}. Track the latest delivery details.",
+  "media": {
+    "url": "{{order_image_url}}",
+    "height": "MEDIUM"
+  },
+  "suggestions": [
+    {
+      "type": "open_url",
+      "text": "Track Order",
+      "url": "{{tracking_url}}"
+    }
+  ],
+  "fallback": {
+    "channel": "sms",
+    "text": "Order {{order_id}}: Your order is {{status}}. Track the latest delivery details. {{tracking_url}}"
+  }
+}

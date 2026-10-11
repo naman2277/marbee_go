@@ -1,0 +1,10 @@
+{
+  "template_id": "06_order_update",
+  "channel": "sms",
+  "body": "Update for order {{order_id}}: {{status}}. Track it here: {{short_url}}",
+  "controls": {
+    "unsubscribe": "STOP",
+    "short_link_recommended": true,
+    "unicode_safe": true
+  }
+}

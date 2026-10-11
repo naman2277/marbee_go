@@ -1,0 +1,17 @@
+{
+  "template_id": "01_welcome",
+  "channel": "whatsapp",
+  "category": "welcome",
+  "body": "Hi {{first_name}} 👋\n\nWelcome to *{{brand_name}}*.\nYour workspace is ready. Start with the guided setup and get your first journey live.",
+  "buttons": [
+    {
+      "type": "url",
+      "text": "Start Setup",
+      "url": "{{setup_url}}"
+    }
+  ],
+  "variable_map": [
+    "brand_name",
+    "first_name"
+  ]
+}

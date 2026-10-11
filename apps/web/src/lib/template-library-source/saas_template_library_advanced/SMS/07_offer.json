@@ -1,0 +1,10 @@
+{
+  "template_id": "07_offer",
+  "channel": "sms",
+  "body": "{{brand_name}}: {{discount}} off {{product_name}} with code {{coupon_code}}. Ends {{expiry_date}}: {{short_url}}",
+  "controls": {
+    "unsubscribe": "STOP",
+    "short_link_recommended": true,
+    "unicode_safe": true
+  }
+}

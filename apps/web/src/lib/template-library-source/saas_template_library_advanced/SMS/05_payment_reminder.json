@@ -1,0 +1,10 @@
+{
+  "template_id": "05_payment_reminder",
+  "channel": "sms",
+  "body": "Payment reminder: {{amount_due}} is due {{due_date}}. Pay securely: {{short_url}} Reply STOP to opt out.",
+  "controls": {
+    "unsubscribe": "STOP",
+    "short_link_recommended": true,
+    "unicode_safe": true
+  }
+}

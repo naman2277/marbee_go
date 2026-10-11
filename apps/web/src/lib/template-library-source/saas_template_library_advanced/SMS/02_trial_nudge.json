@@ -1,0 +1,10 @@
+{
+  "template_id": "02_trial_nudge",
+  "channel": "sms",
+  "body": "{{brand_name}}: Your trial is {{days_left}} days from ending. Finish setup and get more from your workspace: {{short_url}}",
+  "controls": {
+    "unsubscribe": "STOP",
+    "short_link_recommended": true,
+    "unicode_safe": true
+  }
+}

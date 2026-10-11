@@ -1,0 +1,18 @@
+{
+  "template_id": "01_welcome",
+  "channel": "web_push",
+  "title": "Your workspace is ready 👋",
+  "body": "Complete your setup and launch your first automated journey.",
+  "url": "{{setup_url}}",
+  "icon": "{{icon_url}}",
+  "badge": "{{badge_url}}",
+  "tag": "{{campaign_id}}",
+  "actions": [
+    {
+      "action": "open",
+      "title": "View",
+      "url": "{{setup_url}}"
+    }
+  ],
+  "personalization": []
+}

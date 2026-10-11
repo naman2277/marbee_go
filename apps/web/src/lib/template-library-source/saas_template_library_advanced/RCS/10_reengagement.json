@@ -1,0 +1,23 @@
+{
+  "template_id": "10_reengagement",
+  "channel": "rcs",
+  "format": "rich_card",
+  "orientation": "VERTICAL",
+  "title": "What’s new for you",
+  "description": "Discover new features, templates and integrations selected for your workspace.",
+  "media": {
+    "url": "{{whats_new_image_url}}",
+    "height": "MEDIUM"
+  },
+  "suggestions": [
+    {
+      "type": "open_url",
+      "text": "Explore What's New",
+      "url": "{{whats_new_url}}"
+    }
+  ],
+  "fallback": {
+    "channel": "sms",
+    "text": "What’s new for you: Discover new features, templates and integrations selected for your workspace. {{whats_new_url}}"
+  }
+}

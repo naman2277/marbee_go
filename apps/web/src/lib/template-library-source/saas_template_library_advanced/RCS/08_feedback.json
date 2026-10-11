@@ -1,0 +1,23 @@
+{
+  "template_id": "08_feedback",
+  "channel": "rcs",
+  "format": "rich_card",
+  "orientation": "VERTICAL",
+  "title": "How did we do?",
+  "description": "Tell us how your recent experience went.",
+  "media": {
+    "url": "{{feedback_image_url}}",
+    "height": "MEDIUM"
+  },
+  "suggestions": [
+    {
+      "type": "open_url",
+      "text": "Give Feedback",
+      "url": "{{feedback_url}}"
+    }
+  ],
+  "fallback": {
+    "channel": "sms",
+    "text": "How did we do?: Tell us how your recent experience went. {{feedback_url}}"
+  }
+}

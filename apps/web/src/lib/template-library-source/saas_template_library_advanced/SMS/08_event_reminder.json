@@ -1,0 +1,10 @@
+{
+  "template_id": "08_event_reminder",
+  "channel": "sms",
+  "body": "Reminder: {{event_name}} starts {{event_time}} on {{event_date}}. Join: {{short_url}}",
+  "controls": {
+    "unsubscribe": "STOP",
+    "short_link_recommended": true,
+    "unicode_safe": true
+  }
+}

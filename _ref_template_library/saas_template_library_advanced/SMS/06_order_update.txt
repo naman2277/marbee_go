@@ -1,0 +1,1 @@
+Update for order {{order_id}}: {{status}}. Track it here: {{short_url}}

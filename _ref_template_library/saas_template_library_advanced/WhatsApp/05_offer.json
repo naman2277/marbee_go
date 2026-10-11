@@ -1,0 +1,19 @@
+{
+  "template_id": "05_offer",
+  "channel": "whatsapp",
+  "category": "marketing",
+  "body": "✨ *A personalised offer for you*\n\nGet *{{discount}} off* {{product_name}} with code *{{coupon_code}}*.\n\nOffer ends {{expiry_date}}.",
+  "buttons": [
+    {
+      "type": "url",
+      "text": "Shop Now",
+      "url": "{{offer_url}}"
+    }
+  ],
+  "variable_map": [
+    "coupon_code",
+    "discount",
+    "expiry_date",
+    "product_name"
+  ]
+}

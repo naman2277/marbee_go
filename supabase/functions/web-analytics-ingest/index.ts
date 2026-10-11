@@ -1,0 +1,291 @@
+/**
+ * Marbee Web Analytics Ingest — Supabase Edge Function
+ *
+ * Endpoint: POST /functions/v1/web-analytics-ingest
+ *
+ * Accepts event batches from the Marbee SDK snippet embedded on customer websites.
+ * • Validates the write_key against web_analytics_sites table
+ * • Resolves visitor IP → real city/country via ip-api.com (free, no key needed)
+ * • Persists events to web_analytics_events table
+ * • Upserts session summary to web_analytics_sessions table
+ * • Returns 200 immediately (SDK does not wait for processing)
+ *
+ * CORS: open wildcard so any customer website can call this endpoint.
+ */
+import { serve } from 'https://deno.land/std@0.208.0/http/server.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'content-type, x-write-key',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
+
+function ok(data: unknown) {
+  return new Response(JSON.stringify(data), {
+    status: 200,
+    headers: { ...CORS, 'Content-Type': 'application/json' },
+  });
+}
+
+function err(msg: string, status = 400) {
+  return new Response(JSON.stringify({ error: msg }), {
+    status,
+    headers: { ...CORS, 'Content-Type': 'application/json' },
+  });
+}
+
+// ── IP Geolocation via ip-api.com (free, no API key, 45 req/min) ──────────
+async function geolocateIp(ip: string): Promise<{
+  countryCode: string | null;
+  countryName: string | null;
+  city: string | null;
+  region: string | null;
+  lat: number | null;
+  lon: number | null;
+}> {
+  // Skip private/local IPs
+  if (!ip || ip === '::1' || ip.startsWith('127.') || ip.startsWith('192.168.') || ip.startsWith('10.')) {
+    return { countryCode: null, countryName: null, city: null, region: null, lat: null, lon: null };
+  }
+  try {
+    const res = await fetch(`http://ip-api.com/json/${ip}?fields=status,countryCode,country,city,regionName,lat,lon`, {
+      signal: AbortSignal.timeout(2000),
+    });
+    if (!res.ok) return { countryCode: null, countryName: null, city: null, region: null, lat: null, lon: null };
+    const d = await res.json();
+    if (d.status !== 'success') return { countryCode: null, countryName: null, city: null, region: null, lat: null, lon: null };
+    return {
+      countryCode: d.countryCode || null,
+      countryName: d.country || null,
+      city: d.city || null,
+      region: d.regionName || null,
+      lat: typeof d.lat === 'number' ? d.lat : null,
+      lon: typeof d.lon === 'number' ? d.lon : null,
+    };
+  } catch {
+    return { countryCode: null, countryName: null, city: null, region: null, lat: null, lon: null };
+  }
+}
+
+// ── Parse visitor IP from request ─────────────────────────────────────────
+function getVisitorIp(req: Request): string {
+  return (
+    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+    req.headers.get('cf-connecting-ip') ||
+    req.headers.get('x-real-ip') ||
+    ''
+  );
+}
+
+// ── Detect bot from user agent ─────────────────────────────────────────────
+function isBot(ua: string): boolean {
+  return /bot|crawl|spider|slurp|curl|wget|python|java\/|go-http|http-client|scrapy|axios|node-fetch/i.test(ua);
+}
+
+serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
+  if (req.method !== 'POST') return err('Method not allowed', 405);
+
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL') ?? '',
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+  );
+
+  let body: {
+    write_key: string;
+    site_id: string;
+    session_id: string;
+    anonymous_id: string;
+    events: Array<{
+      event_id: string;
+      event_name: string;
+      url: string;
+      path: string;
+      hostname: string;
+      page_title: string;
+      referrer?: string;
+      referrer_domain?: string;
+      utm_source?: string;
+      utm_medium?: string;
+      utm_campaign?: string;
+      screen_resolution?: string;
+      viewport_size?: string;
+      language?: string;
+      timezone?: string;
+      user_agent?: string;
+      device_type?: string;
+      browser?: string;
+      os?: string;
+      client_timestamp: string;
+      properties?: Record<string, unknown>;
+    }>;
+    session_summary?: {
+      start_time: string;
+      end_time: string;
+      duration_sec: number;
+      active_time_sec: number;
+      page_count: number;
+      pages_visited: string[];
+      max_scroll_depth: number;
+      click_count: number;
+      rage_click_count: number;
+      form_submit_count: number;
+      js_error_count: number;
+      converted: boolean;
+    };
+  };
+
+  try {
+    body = await req.json();
+  } catch {
+    return err('Invalid JSON body');
+  }
+
+  const { write_key, site_id, session_id, anonymous_id, events, session_summary } = body;
+
+  if (!write_key || !site_id) return err('write_key and site_id are required');
+  if (!Array.isArray(events) || events.length === 0) return err('events array is required');
+
+  // ── Validate write_key against site ───────────────────────────────────────
+  const { data: site } = await supabase
+    .from('web_analytics_sites')
+    .select('id, site_id, tenant_id, environment, name, domain, status')
+    .eq('site_id', site_id)
+    .eq('write_key', write_key)
+    .maybeSingle();
+
+  if (!site) return err('Invalid write_key or site_id', 403);
+
+  // ── Geolocate visitor IP ───────────────────────────────────────────────────
+  const visitorIp = getVisitorIp(req);
+  const geo = await geolocateIp(visitorIp);
+
+  const now = new Date().toISOString();
+  const firstEvent = events[0];
+  const ua = firstEvent.user_agent || '';
+  const botFlag = isBot(ua);
+
+  // ── Parse device / browser from UA ────────────────────────────────────────
+  function parseBrowser(ua: string): string {
+    if (/Edg\//i.test(ua)) return 'Edge';
+    if (/Firefox\//i.test(ua)) return 'Firefox';
+    if (/Safari/i.test(ua) && !/Chrome/i.test(ua)) return 'Safari';
+    if (/Chrome\//i.test(ua)) return 'Chrome';
+    if (/OPR\/|Opera/i.test(ua)) return 'Opera';
+    return 'Other';
+  }
+  function parseOs(ua: string): string {
+    if (/Windows NT/i.test(ua)) return 'Windows';
+    if (/Mac OS X/i.test(ua)) return 'macOS';
+    if (/Android/i.test(ua)) return 'Android';
+    if (/iPhone|iPad/i.test(ua)) return 'iOS';
+    if (/Linux/i.test(ua)) return 'Linux';
+    return 'Other';
+  }
+  function parseDevice(ua: string): string {
+    if (/iPad/i.test(ua)) return 'tablet';
+    if (/Mobile|Android|iPhone/i.test(ua)) return 'mobile';
+    return 'desktop';
+  }
+
+  const browser = firstEvent.browser || parseBrowser(ua);
+  const os = firstEvent.os || parseOs(ua);
+  const deviceType = firstEvent.device_type || parseDevice(ua);
+
+  // ── Insert events ──────────────────────────────────────────────────────────
+  const eventRecords = events.map((e) => ({
+    tenant_id: site.tenant_id,
+    environment: site.environment,
+    site_id: site_id,
+    event_id: e.event_id,
+    session_id: session_id,
+    anonymous_id: anonymous_id,
+    customer_id: null,
+    event_name: e.event_name,
+    url: e.url,
+    path: e.path,
+    hostname: e.hostname,
+    referrer: e.referrer || null,
+    referrer_domain: e.referrer_domain || null,
+    utm_source: e.utm_source || null,
+    utm_medium: e.utm_medium || null,
+    utm_campaign: e.utm_campaign || null,
+    page_title: e.page_title || '',
+    screen_resolution: e.screen_resolution || firstEvent.screen_resolution || null,
+    viewport_size: e.viewport_size || firstEvent.viewport_size || null,
+    language: e.language || firstEvent.language || null,
+    timezone: e.timezone || firstEvent.timezone || null,
+    user_agent: ua,
+    device_type: deviceType,
+    browser: browser,
+    os: os,
+    country_code: geo.countryCode,
+    country_name: geo.countryName,
+    city: geo.city,
+    region: geo.region,
+    ip_hash: visitorIp ? btoa(visitorIp).slice(0, 16) : null,
+    is_bot: botFlag,
+    properties: { ...(e.properties || {}), lat: geo.lat, lon: geo.lon },
+    client_timestamp: e.client_timestamp,
+    server_timestamp: now,
+  }));
+
+  const { error: eventsError } = await supabase
+    .from('web_analytics_events')
+    .upsert(eventRecords, { onConflict: 'tenant_id,site_id,event_id', ignoreDuplicates: true });
+
+  if (eventsError) {
+    console.error('Events insert error:', eventsError.message);
+  }
+
+  // ── Upsert session record ──────────────────────────────────────────────────
+  if (session_summary) {
+    const sessionRecord = {
+      tenant_id: site.tenant_id,
+      environment: site.environment,
+      site_id: site_id,
+      session_id: session_id,
+      anonymous_id: anonymous_id,
+      start_time: session_summary.start_time,
+      end_time: session_summary.end_time,
+      duration_sec: session_summary.duration_sec,
+      active_time_sec: session_summary.active_time_sec,
+      page_count: session_summary.page_count,
+      pages_visited: session_summary.pages_visited,
+      max_scroll_depth: session_summary.max_scroll_depth,
+      click_count: session_summary.click_count,
+      rage_click_count: session_summary.rage_click_count,
+      form_submit_count: session_summary.form_submit_count,
+      js_error_count: session_summary.js_error_count,
+      converted: session_summary.converted,
+      device_type: deviceType,
+      browser: browser,
+      os: os,
+      country_code: geo.countryCode,
+      country_name: geo.countryName,
+      city: geo.city,
+      region: geo.region,
+      referrer: firstEvent.referrer || null,
+      utm_source: firstEvent.utm_source || null,
+      utm_medium: firstEvent.utm_medium || null,
+      utm_campaign: firstEvent.utm_campaign || null,
+      landing_page: events[0]?.path || '/',
+      exit_page: events[events.length - 1]?.path || '/',
+      is_bot: botFlag,
+      updated_at: now,
+    };
+
+    await supabase
+      .from('web_analytics_sessions')
+      .upsert(sessionRecord, { onConflict: 'tenant_id,site_id,session_id' });
+  }
+
+  // ── Update site last_event_at ──────────────────────────────────────────────
+  await supabase
+    .from('web_analytics_sites')
+    .update({ last_event_at: now, status: 'active' })
+    .eq('site_id', site_id);
+
+  return ok({ success: true, processed: events.length, geo_resolved: Boolean(geo.countryCode) });
+});

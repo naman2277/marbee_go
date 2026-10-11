@@ -1,0 +1,62 @@
+{
+  "template_id": "03_product_carousel",
+  "channel": "rcs",
+  "format": "carousel",
+  "title": "Picked for you",
+  "description": "Explore products selected using your recent activity.",
+  "orientation": "HORIZONTAL",
+  "carousel_cards": [
+    {
+      "id": "card-1",
+      "title": "{{product_1_name}}",
+      "description": "{{product_1_description}}",
+      "media": {
+        "url": "{{product_1_image_url}}",
+        "height": "MEDIUM"
+      },
+      "suggestions": [
+        {
+          "type": "open_url",
+          "text": "View",
+          "url": "{{product_1_url}}"
+        }
+      ]
+    },
+    {
+      "id": "card-2",
+      "title": "{{product_2_name}}",
+      "description": "{{product_2_description}}",
+      "media": {
+        "url": "{{product_2_image_url}}",
+        "height": "MEDIUM"
+      },
+      "suggestions": [
+        {
+          "type": "open_url",
+          "text": "View",
+          "url": "{{product_2_url}}"
+        }
+      ]
+    },
+    {
+      "id": "card-3",
+      "title": "{{product_3_name}}",
+      "description": "{{product_3_description}}",
+      "media": {
+        "url": "{{product_3_image_url}}",
+        "height": "MEDIUM"
+      },
+      "suggestions": [
+        {
+          "type": "open_url",
+          "text": "View",
+          "url": "{{product_3_url}}"
+        }
+      ]
+    }
+  ],
+  "fallback": {
+    "channel": "sms",
+    "text": "Picked for you: Explore products selected using your recent activity. {{category_url}}"
+  }
+}

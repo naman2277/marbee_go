@@ -1,0 +1,1 @@
+Quick question, {{first_name}}: how was your experience with {{brand_name}}? Rate it here: {{short_url}}

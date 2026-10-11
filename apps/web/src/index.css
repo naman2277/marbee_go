@@ -1,0 +1,213 @@
+@import "tailwindcss";
+@import "./styles/spectrum-canvas.css";
+@import "./styles/campaign-canvas-modern.css";
+
+@theme {
+  --color-brand-50: #eef2ff;
+  --color-brand-100: #e0e7ff;
+  --color-brand-500: #6366f1;
+  --color-brand-600: #4f46e5;
+  --color-brand-700: #4338ca;
+  --color-accent-500: #14b8a6;
+  --color-accent-600: #0d9488;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  @apply bg-slate-50 text-slate-900 antialiased;
+  font-family: var(--font-sans);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+@keyframes campaign-node-run-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.75), 0 0 18px rgba(34, 197, 94, 0.45);
+    border-color: rgb(22 163 74);
+  }
+  50% {
+    box-shadow: 0 0 0 14px rgba(34, 197, 94, 0), 0 0 32px rgba(74, 222, 128, 0.65);
+    border-color: rgb(74 222 128);
+  }
+}
+
+@keyframes campaign-node-run-ring {
+  0%, 100% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.02);
+  }
+}
+
+@keyframes campaign-node-run-dot {
+  0% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  70% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+@keyframes campaign-delivery-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.55);
+    border-color: rgb(56 189 248);
+  }
+  50% {
+    box-shadow: 0 0 0 10px rgba(56, 189, 248, 0);
+    border-color: rgb(125 211 252);
+  }
+}
+
+@keyframes campaign-delivery-ring {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(1.03);
+  }
+}
+
+@keyframes campaign-delivery-dot {
+  0% {
+    transform: scale(1);
+    opacity: 0.75;
+  }
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+
+.campaign-node-delivery-pending {
+  animation: campaign-delivery-pulse 0.85s ease-in-out infinite;
+  z-index: 12;
+}
+
+.campaign-node-delivery-ring {
+  border: 2px solid rgb(56 189 248);
+  animation: campaign-delivery-ring 0.85s ease-in-out infinite;
+}
+
+.campaign-node-delivery-dot {
+  animation: campaign-delivery-dot 1s ease-out infinite;
+}
+
+.campaign-delivery-header {
+  animation: campaign-delivery-pulse 2s ease-in-out infinite;
+}
+
+.campaign-node-running {
+  animation: campaign-node-run-pulse 0.85s ease-in-out infinite;
+  z-index: 10;
+}
+
+.campaign-node-run-ring {
+  border: 2px solid rgb(74 222 128);
+  animation: campaign-node-run-ring 0.85s ease-in-out infinite;
+}
+
+.campaign-node-run-dot {
+  animation: campaign-node-run-dot 0.9s ease-out infinite;
+  background: rgb(74 222 128);
+}
+
+.campaign-node-done {
+  border-color: rgb(22 163 74) !important;
+  box-shadow: 0 0 0 1px rgb(34 197 94), 0 0 14px rgba(34, 197, 94, 0.22);
+}
+
+.campaign-node-done-ring {
+  border: 2px solid rgb(34 197 94);
+  opacity: 0.95;
+}
+
+@keyframes campaign-node-error-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.45);
+    border-color: rgb(239 68 68);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(239, 68, 68, 0);
+  }
+}
+
+.campaign-node-running {
+  animation: campaign-node-run-pulse 0.85s ease-in-out infinite;
+}
+
+.campaign-node-error {
+  animation: campaign-node-error-pulse 1.4s ease-in-out infinite;
+  border-color: rgb(239 68 68) !important;
+}
+
+@keyframes thread-flow {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: -32;
+  }
+}
+
+.campaign-thread-flow {
+  animation: thread-flow 0.45s linear infinite;
+}
+
+@keyframes thread-done-flow {
+  to {
+    stroke-dashoffset: -16;
+  }
+}
+
+.campaign-thread-done {
+  animation: thread-done-flow 1.2s linear infinite;
+}
+
+/* Pipeline node blink animations */
+@keyframes pipe-blink-fast {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.6); }
+  50% { box-shadow: 0 0 8px 4px rgba(16, 185, 129, 0.3); }
+}
+.pipe-blink-running {
+  animation: pipe-blink-fast 0.8s ease-in-out infinite;
+}
+.pipe-blink-green {
+  animation: pipe-blink-fast 0.6s ease-in-out infinite;
+}
+@keyframes pipe-blink-red-kf {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6); }
+  50% { box-shadow: 0 0 8px 4px rgba(239, 68, 68, 0.3); }
+}
+.pipe-blink-red {
+  animation: pipe-blink-red-kf 1s ease-in-out infinite;
+}
+
+/* Scheduler alarm clock smooth glow when waiting */
+@keyframes scheduler-waiting-glow {
+  0%, 100% { filter: drop-shadow(0 0 0 rgba(16, 185, 129, 0)); }
+  50% { filter: drop-shadow(0 0 8px rgba(16, 185, 129, 0.45)); }
+}
+.scheduler-waiting {
+  animation: scheduler-waiting-glow 1.5s ease-in-out infinite;
+}
+@keyframes scheduler-stroke-pulse {
+  0%, 100% { stroke: #10b981; stroke-width: 2.5; }
+  50% { stroke: #34d399; stroke-width: 3.5; }
+}
+.scheduler-clock-pulse {
+  animation: scheduler-stroke-pulse 1.2s ease-in-out infinite;
+}

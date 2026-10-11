@@ -1,0 +1,14 @@
+{
+  "template_id": "04_abandoned_cart",
+  "channel": "whatsapp",
+  "category": "marketing",
+  "body": "Still thinking about it? 🛒\n\nThe items you selected are waiting in your cart. Complete your purchase while they’re still available.",
+  "buttons": [
+    {
+      "type": "url",
+      "text": "Complete Purchase",
+      "url": "{{cart_url}}"
+    }
+  ],
+  "variable_map": []
+}

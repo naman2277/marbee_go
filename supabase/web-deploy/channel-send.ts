@@ -1,0 +1,393 @@
+// Paste this entire file into Supabase Dashboard → Edge Functions → channel-send → Edit → Deploy
+//
+// CRITICAL: After deploy, go to function Settings and turn OFF:
+//   ☑ Enforce JWT Verification  →  MUST BE OFF
+// Otherwise you get 401 / "Failed to fetch" from the browser.
+//
+// Includes action=test_connection for real Google OAuth + FCM delivery validation.
+
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { serve } from 'https://deno.land/std@0.208.0/http/server.ts';
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-tenant-id, x-environment',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+};
+
+function json(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
+}
+
+type ConnectionCheck = { label: string; ok: boolean; detail?: string };
+type ServiceAccount = { type?: string; project_id?: string; client_email?: string; private_key?: string; token_uri?: string };
+
+function parseServiceAccount(raw: string): ServiceAccount {
+  let sa: ServiceAccount;
+  try {
+    sa = JSON.parse(raw) as ServiceAccount;
+  } catch {
+    throw new Error('Service account JSON is not valid JSON');
+  }
+  if (sa?.type !== 'service_account') {
+    throw new Error('JSON must be a Firebase service account (type: "service_account")');
+  }
+  if (!sa.project_id || !sa.client_email || !sa.private_key) {
+    throw new Error('Invalid service account — needs project_id, client_email, and private_key');
+  }
+  if (/your[-_]?gcp|your[-_]?project|placeholder|example\.com/i.test(sa.project_id)) {
+    throw new Error('Service account project_id looks like a placeholder');
+  }
+  if (/your[-_]?service|placeholder|example\.com/i.test(sa.client_email)) {
+    throw new Error('Service account client_email looks like a placeholder');
+  }
+  if (sa.private_key.includes('...') || sa.private_key.length < 400) {
+    throw new Error('Service account private_key appears truncated or fake — paste the full key from Firebase');
+  }
+  if (sa.token_uri && !sa.token_uri.includes('oauth2.googleapis.com')) {
+    throw new Error('token_uri must be https://oauth2.googleapis.com/token — use JSON downloaded from Firebase');
+  }
+  return sa;
+}
+
+function getServiceClient() {
+  return createClient(
+    Deno.env.get('SUPABASE_URL') ?? '',
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+  );
+}
+
+async function loadWebPushProvider(supabase: ReturnType<typeof getServiceClient>, tenantId: string, environment: string, providerId?: string) {
+  let query = supabase
+    .from('channel_providers')
+    .select('credentials_encrypted, config')
+    .eq('tenant_id', tenantId)
+    .eq('environment', environment)
+    .eq('channel', 'web_push');
+
+  if (providerId) {
+    query = query.eq('id', providerId);
+  } else {
+    query = query.eq('is_default', true);
+  }
+
+  const { data: provider } = await query.maybeSingle();
+  return provider;
+}
+
+async function handleTestConnection(
+  supabase: ReturnType<typeof getServiceClient>,
+  tenantId: string,
+  environment: string,
+  payload: Record<string, unknown>,
+) {
+  const start = Date.now();
+  const checks: ConnectionCheck[] = [];
+  const provider = await loadWebPushProvider(supabase, tenantId, environment, payload.provider_id as string | undefined);
+
+  if (!provider) {
+    checks.push({ label: 'Default web push provider', ok: false, detail: `No default Firebase provider for ${environment}` });
+    return json({ success: false, status: 'failed', error: 'No default web push provider configured', checks, latency_ms: Date.now() - start });
+  }
+
+  checks.push({ label: 'Default web push provider', ok: true, detail: 'Provider record found in database' });
+
+  const creds = provider.credentials_encrypted?.trim();
+  if (!creds) {
+    checks.push({ label: 'Service account JSON', ok: false, detail: 'Missing — paste Firebase service account key in Channels → Web Push' });
+    return json({ success: false, status: 'failed', error: 'Service account JSON not configured', checks, latency_ms: Date.now() - start });
+  }
+
+  let serviceAccount: ServiceAccount;
+  try {
+    serviceAccount = parseServiceAccount(creds);
+    checks.push({ label: 'Service account JSON', ok: true, detail: `Project ${serviceAccount.project_id}` });
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : 'Invalid service account';
+    checks.push({ label: 'Service account JSON', ok: false, detail });
+    return json({ success: false, status: 'failed', error: detail, checks, latency_ms: Date.now() - start });
+  }
+
+  try {
+    await getFirebaseAccessToken(serviceAccount as { client_email: string; private_key: string });
+    checks.push({ label: 'Google OAuth (FCM API)', ok: true, detail: `Authenticated as ${serviceAccount.client_email}` });
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : 'OAuth failed';
+    checks.push({ label: 'Google OAuth (FCM API)', ok: false, detail });
+    return json({ success: false, status: 'failed', error: detail, checks, latency_ms: Date.now() - start });
+  }
+
+  const fcmToken = payload.fcm_token as string | undefined;
+  if (!fcmToken) {
+    return json({
+      success: true,
+      status: 'connected',
+      message: 'Server credentials verified with Google — browser token required for end-to-end delivery test',
+      checks,
+      latency_ms: Date.now() - start,
+    });
+  }
+
+  const appOrigin = (payload.app_origin as string) ?? Deno.env.get('APP_URL') ?? 'http://localhost:5173';
+  try {
+    await sendViaFirebase(creds, fcmToken, {
+      title: (payload.title as string) ?? 'Marbee Test Push',
+      body: (payload.body as string) ?? 'Web Push via Firebase FCM HTTP v1 is working!',
+      click_action: (payload.click_action as string) ?? appOrigin,
+      tenant_id: tenantId,
+      environment,
+      track_opens: false,
+      tag: 'marbee-connection-test',
+    });
+    checks.push({ label: 'FCM message delivery', ok: true, detail: 'Google FCM accepted the message for this device token' });
+    return json({ success: true, status: 'delivered', message: 'Test notification delivered via FCM', checks, latency_ms: Date.now() - start });
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : 'FCM delivery failed';
+    checks.push({ label: 'FCM message delivery', ok: false, detail });
+    return json({ success: false, status: 'failed', error: detail, checks, latency_ms: Date.now() - start });
+  }
+}
+
+serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+
+  try {
+    const payload = await req.json();
+    const tenantId = req.headers.get('x-tenant-id') ?? payload.tenant_id;
+    const environment = req.headers.get('x-environment') ?? payload.environment ?? 'production';
+    if (!tenantId) return json({ error: 'Missing tenant_id in request body' }, 401);
+
+    const supabase = getServiceClient();
+
+    if (payload.action === 'test_connection') {
+      return await handleTestConnection(supabase, tenantId, environment, payload);
+    }
+
+    const messageId = crypto.randomUUID();
+    let fcmToken = payload.fcm_token;
+
+    const appOrigin =
+      payload.app_origin ??
+      Deno.env.get('APP_URL') ??
+      'http://localhost:5173';
+    const destinationUrl = payload.click_action ?? `${appOrigin}/`;
+    const trackOpens = payload.track_opens !== false;
+    const openUrl =
+      `${appOrigin.replace(/\/$/, '')}/push/open?mid=${encodeURIComponent(messageId)}` +
+      `&tid=${encodeURIComponent(tenantId)}&env=${encodeURIComponent(environment)}` +
+      (payload.journey_id ? `&jid=${encodeURIComponent(String(payload.journey_id))}` : '') +
+      (payload.delivery_id ? `&did=${encodeURIComponent(String(payload.delivery_id))}` : '') +
+      (payload.delivery_name ? `&dn=${encodeURIComponent(String(payload.delivery_name))}` : '');
+    const notificationLink = trackOpens ? openUrl : destinationUrl;
+
+    if (!fcmToken && payload.customer_id) {
+      const { data: sub } = await supabase
+        .from('web_push_subscribers')
+        .select('fcm_token')
+        .eq('tenant_id', tenantId)
+        .eq('environment', environment)
+        .eq('customer_id', payload.customer_id)
+        .eq('subscription_status', 'active')
+        .limit(1)
+        .maybeSingle();
+      fcmToken = sub?.fcm_token;
+    }
+
+    if (!fcmToken) return json({ error: 'No active push subscription found' }, 404);
+
+    const provider = await loadWebPushProvider(supabase, tenantId, environment, payload.provider_id as string | undefined);
+
+    let deliveryStatus = 'failed';
+    let errorCode: string | null = null;
+    const creds = provider?.credentials_encrypted?.trim();
+
+    if (!creds) {
+      errorCode = 'Firebase Service Account JSON not configured. Add credentials in Settings → Channels → Web Push.';
+    } else {
+      try {
+        parseServiceAccount(creds);
+        await sendViaFirebase(creds, fcmToken, {
+          ...payload,
+          message_id: messageId,
+          tenant_id: tenantId,
+          environment,
+          click_action: notificationLink,
+          destination_url: destinationUrl,
+          open_url: openUrl,
+          track_opens: trackOpens,
+        });
+        deliveryStatus = 'delivered';
+      } catch (err) {
+        deliveryStatus = 'failed';
+        errorCode = err instanceof Error ? err.message : 'FCM_ERROR';
+      }
+    }
+
+    await supabase.from('engagement_log').insert({
+      tenant_id: tenantId,
+      environment,
+      customer_id: payload.customer_id ?? null,
+      channel: 'web_push',
+      message_id: messageId,
+      event: deliveryStatus === 'delivered' ? 'delivered' : 'failed',
+      journey_id: payload.journey_id ?? null,
+      metadata: {
+        title: payload.title,
+        body: payload.body,
+        click_url: destinationUrl,
+        click_action: destinationUrl,
+        delivery_id: payload.delivery_id,
+        delivery_name: payload.delivery_name,
+        open_url: openUrl,
+      },
+    });
+
+    return json({
+      success: deliveryStatus === 'delivered',
+      message_id: messageId,
+      status: deliveryStatus,
+      error: errorCode,
+    });
+  } catch (err) {
+    return json({ error: err instanceof Error ? err.message : 'Unknown error' }, 500);
+  }
+});
+
+async function sendViaFirebase(serviceAccountJson: string, fcmToken: string, payload: Record<string, unknown>) {
+  const sa = parseServiceAccount(serviceAccountJson);
+  const accessToken = await getFirebaseAccessToken(sa as { client_email: string; private_key: string });
+  if (!accessToken) throw new Error('Failed to obtain Google OAuth access token — check service account JSON');
+
+  const messageId = String(payload.message_id ?? crypto.randomUUID());
+  const ttl = Number(payload.ttl_seconds ?? 86400);
+  const actions = Array.isArray(payload.actions) ? payload.actions : [];
+  const webpushNotification: Record<string, unknown> = {};
+  if (payload.icon_url) webpushNotification.icon = payload.icon_url;
+  if (payload.badge_url) webpushNotification.badge = payload.badge_url;
+  if (payload.image_url) webpushNotification.image = payload.image_url;
+  if (payload.tag) webpushNotification.tag = payload.tag;
+  if (actions.length) {
+    webpushNotification.actions = actions.slice(0, 2).map((a: { action?: string; title?: string }) => ({
+      action: a.action ?? 'open',
+      title: a.title ?? 'Open',
+    }));
+  }
+
+  const res = await fetch(`https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      message: {
+        token: fcmToken,
+        notification: { title: payload.title, body: payload.body },
+        webpush: {
+          headers: { TTL: String(ttl) },
+          fcm_options: { link: payload.click_action ?? '/' },
+          notification: Object.keys(webpushNotification).length ? webpushNotification : undefined,
+        },
+        data: {
+          message_id: messageId,
+          tenant_id: String(payload.tenant_id ?? ''),
+          environment: String(payload.environment ?? 'production'),
+          journey_id: String(payload.journey_id ?? ''),
+          title: String(payload.title ?? ''),
+          body: String(payload.body ?? ''),
+          click_url: String(payload.destination_url ?? payload.click_action ?? '/'),
+          open_url: String(payload.open_url ?? payload.click_action ?? ''),
+          delivery_id: String(payload.delivery_id ?? ''),
+          delivery_name: String(payload.delivery_name ?? ''),
+          icon_url: String(payload.icon_url ?? ''),
+          image_url: String(payload.image_url ?? ''),
+          badge_url: String(payload.badge_url ?? ''),
+          tag: String(payload.tag ?? ''),
+          actions_json: JSON.stringify(actions),
+          track_opens: payload.track_opens === false ? 'false' : 'true',
+        },
+      },
+    }),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(formatFcmError(errText));
+  }
+}
+
+function formatFcmError(raw: string): string {
+  try {
+    const parsed = JSON.parse(raw);
+    const msg = parsed.error?.message ?? raw;
+    if (msg.includes('UNAUTHENTICATED') || msg.includes('invalid authentication')) {
+      return 'Firebase auth failed. Re-download Service Account JSON from Firebase → Project Settings → Service Accounts. Also enable "Firebase Cloud Messaging API" in Google Cloud Console.';
+    }
+    if (msg.includes('NOT_FOUND') || msg.includes('registration token')) {
+      return 'FCM rejected the device token — client Firebase config may not match the service account project. Re-save provider settings and run Test connection again.';
+    }
+    return msg;
+  } catch {
+    return raw;
+  }
+}
+
+/** Base64url encode (required for JWT — standard btoa breaks Google OAuth) */
+function base64UrlEncode(data: string | Uint8Array): string {
+  const bytes = typeof data === 'string' ? new TextEncoder().encode(data) : data;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function pemToArrayBuffer(pem: string): ArrayBuffer {
+  const b64 = pem
+    .replace(/-----BEGIN PRIVATE KEY-----/g, '')
+    .replace(/-----END PRIVATE KEY-----/g, '')
+    .replace(/\\n/g, '')
+    .replace(/\s/g, '');
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+}
+
+async function getFirebaseAccessToken(sa: { client_email: string; private_key: string }): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+  const header = base64UrlEncode(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
+  const claim = base64UrlEncode(JSON.stringify({
+    iss: sa.client_email,
+    scope: 'https://www.googleapis.com/auth/firebase.messaging',
+    aud: 'https://oauth2.googleapis.com/token',
+    iat: now,
+    exp: now + 3600,
+  }));
+
+  const key = await crypto.subtle.importKey(
+    'pkcs8',
+    pemToArrayBuffer(sa.private_key),
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+
+  const signature = await crypto.subtle.sign(
+    'RSASSA-PKCS1-v1_5',
+    key,
+    new TextEncoder().encode(`${header}.${claim}`),
+  );
+
+  const jwt = `${header}.${claim}.${base64UrlEncode(new Uint8Array(signature))}`;
+
+  const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
+  });
+
+  const tokenData = await tokenRes.json();
+  if (!tokenRes.ok || !tokenData.access_token) {
+    throw new Error(`Google OAuth failed: ${JSON.stringify(tokenData)}`);
+  }
+  return tokenData.access_token;
+}

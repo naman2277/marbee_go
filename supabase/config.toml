@@ -1,0 +1,52 @@
+# Marbee Supabase local config
+# Run: supabase start | supabase db reset | supabase functions serve
+
+project_id = "marbee"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "storage"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[studio]
+enabled = true
+port = 54323
+
+[inbucket]
+enabled = true
+port = 54324
+
+[storage]
+enabled = true
+file_size_limit = "50MiB"
+
+[auth]
+enabled = true
+site_url = "http://localhost:5173"
+additional_redirect_urls = ["http://localhost:5173"]
+jwt_expiry = 3600
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+enable_confirmations = false
+
+# v2 revamp: stamp tenant_id / app_role / perms into every issued JWT so RLS can
+# resolve the tenant from the token instead of scanning tenant_users per row.
+# Function: public.custom_access_token_hook  (supabase/sql/v2/52_extensions_helpers.sql)
+[auth.hook.custom_access_token]
+enabled = true
+uri = "pg-functions://postgres/public/custom_access_token_hook"
+
+[edge_runtime]
+enabled = true
+
+[analytics]
+enabled = false

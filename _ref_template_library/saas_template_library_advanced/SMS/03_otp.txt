@@ -1,0 +1,1 @@
+{{brand_name}} verification code: {{otp}}. Expires in {{expiry_minutes}} min. Never share this code.

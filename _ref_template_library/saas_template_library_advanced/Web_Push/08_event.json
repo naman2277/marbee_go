@@ -1,0 +1,21 @@
+{
+  "template_id": "08_event",
+  "channel": "web_push",
+  "title": "Starting soon",
+  "body": "{{event_name}} begins at {{event_time}}.",
+  "url": "{{event_url}}",
+  "icon": "{{icon_url}}",
+  "badge": "{{badge_url}}",
+  "tag": "{{campaign_id}}",
+  "actions": [
+    {
+      "action": "open",
+      "title": "View",
+      "url": "{{event_url}}"
+    }
+  ],
+  "personalization": [
+    "event_name",
+    "event_time"
+  ]
+}

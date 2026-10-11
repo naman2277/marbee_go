@@ -1,0 +1,10 @@
+{
+  "template_id": "09_reengagement",
+  "channel": "sms",
+  "body": "We miss you, {{first_name}}. {{new_feature}} is now live in {{brand_name}}. Explore: {{short_url}}",
+  "controls": {
+    "unsubscribe": "STOP",
+    "short_link_recommended": true,
+    "unicode_safe": true
+  }
+}

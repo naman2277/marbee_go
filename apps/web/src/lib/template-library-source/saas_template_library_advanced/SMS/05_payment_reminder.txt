@@ -1,0 +1,1 @@
+Payment reminder: {{amount_due}} is due {{due_date}}. Pay securely: {{short_url}} Reply STOP to opt out.

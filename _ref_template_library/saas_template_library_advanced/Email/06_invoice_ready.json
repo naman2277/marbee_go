@@ -1,0 +1,15 @@
+{
+  "template_id": "06_invoice_ready",
+  "channel": "email",
+  "subject": "Invoice ready",
+  "personalization": [
+    "first_name",
+    "brand_name"
+  ],
+  "cta": {
+    "label": "View Invoice",
+    "url": "{{invoice_url}}"
+  },
+  "responsive": true,
+  "design_system": "SaaS Modern"
+}

@@ -1,0 +1,21 @@
+{
+  "template_id": "05_price_drop",
+  "channel": "web_push",
+  "title": "Price drop detected",
+  "body": "{{product_name}} is now {{new_price}}.",
+  "url": "{{product_url}}",
+  "icon": "{{icon_url}}",
+  "badge": "{{badge_url}}",
+  "tag": "{{campaign_id}}",
+  "actions": [
+    {
+      "action": "open",
+      "title": "View",
+      "url": "{{product_url}}"
+    }
+  ],
+  "personalization": [
+    "new_price",
+    "product_name"
+  ]
+}
