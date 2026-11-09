@@ -40,8 +40,10 @@ export function AuthGate({ children }: { children: ReactNode }) {
       const { admin } = await api.me();
       setStage({ kind: 'ready', admin });
     } catch (e) {
-      const msg = e instanceof ApiError && e.status === 403
-        ? 'This account is not a Marbee platform admin.'
+      // Show the server's exact reason (not admin / MFA required / origin / config).
+      const email = session.user?.email ?? 'this account';
+      const msg = e instanceof ApiError && e.message === 'Not a platform admin'
+        ? `${email} is not a Marbee platform admin.`
         : e instanceof Error ? e.message : 'Could not verify access';
       setStage({ kind: 'not_admin', message: msg });
     }
