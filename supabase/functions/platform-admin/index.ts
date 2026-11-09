@@ -21,8 +21,8 @@ type Admin = { user_id: string; email: string; role: 'owner' | 'operator' };
 type Ctx = { admin: Admin; db: SupabaseClient; ip: string | null; ua: string | null };
 type Handler = (ctx: Ctx, p: Json) => Promise<unknown>;
 
-// Exact scheme+host+port matches only; trailing slashes and case are ignored.
-const normOrigin = (s: string) => s.trim().replace(/\/+$/, '').toLowerCase();
+// Exact scheme+host+port matches only; surrounding quotes/spaces, trailing slashes and case are ignored.
+const normOrigin = (s: string) => s.trim().replace(/^["']+|["']+$/g, '').trim().replace(/\/+$/, '').toLowerCase();
 const ALLOWED_ORIGINS = (Deno.env.get('CONSOLE_ORIGIN') ?? '')
   .split(',').map(normOrigin).filter(Boolean);
 const originAllowed = (origin: string | null) => !!origin && ALLOWED_ORIGINS.includes(normOrigin(origin));
@@ -408,6 +408,9 @@ Deno.serve(async (req) => {
 
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors(origin) });
   if (req.method !== 'POST') return reply(origin, { error: 'Method not allowed' }, 405);
+  if (origin && ALLOWED_ORIGINS.length === 0) {
+    return reply(origin, { error: 'Console origin not configured (CONSOLE_ORIGIN secret missing)' }, 503);
+  }
   if (origin && !originAllowed(origin)) return reply(origin, { error: 'Origin not allowed' }, 403);
 
   try {
