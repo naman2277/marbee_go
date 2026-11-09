@@ -1,0 +1,165 @@
+# 10 — Product & Technology Decision Log
+
+Statuses: **Proposed** (awaiting founder) · **Approved** · **Superseded by D-xxx** · **Rejected**.
+Validation: Not started · In progress · Validated · Failed. Never edit a past decision's substance —
+supersede it with a new entry.
+
+---
+
+### D-001 · AI CTO operating model and living docs
+- **Date:** 2026-11-10 · **Status:** Approved (founder request) · **Validation:** In progress
+- **Problem:** Decisions lived in chat history and per-feature memory; different AI agents could contradict each other.
+- **Options:** (a) keep chat history; (b) external wiki; (c) docs in repo + `CLAUDE.md` charter.
+- **Selected:** (c). `CLAUDE.md` + `docs/cpo/01–11` + `.claude/skills/` review commands.
+- **Reason:** Versioned with code, read by every agent automatically, free.
+- **Cost:** ₹0. **Risks:** docs go stale → every decision updates docs in the same change.
+- **Authority:** Advisory mode until founder defines execution authority (to be recorded as a new decision).
+
+### D-002 · Keep Supabase + React SPA modular monolith
+- **Date:** 2026-11-10 · **Status:** Proposed · **Validation:** Not started
+- **Problem:** Should Marbee migrate (e.g. to Next.js, microservices, separate backend)?
+- **Options:** (a) keep; (b) Next.js rewrite; (c) Node/Nest backend + Postgres; (d) microservices.
+- **Selected:** (a). **Reason:** 222k lines already built on it; Supabase covers auth, RLS, storage, queues, cron at ~₹2k/month; a rewrite would cost months and fix none of the real problems (security, server execution, tests). Next.js adds nothing for an authenticated SPA; the marketing site can be separate.
+- **Migration path:** workers move to a container runtime only if edge-function limits are measured as a bottleneck.
+
+### D-003 · Security hardening (Phase 0) before any new feature
+- **Date:** 2026-11-10 · **Status:** Proposed · **Validation:** Not started
+- **Problem:** SEC-01..07 allow cross-tenant access and secret leakage.
+- **Selected:** Fix SEC-01..07 first; immediate dashboard action to disable signups.
+- **Cost:** ~1–2 weeks effort (estimate), ₹0 infra. **Risk if deferred:** data breach ends the company's credibility with its first customers.
+
+### D-004 · Freeze non-core modules behind feature flags
+- **Date:** 2026-11-10 · **Status:** Proposed · **Validation:** Not started
+- **Problem:** ~25 modules, few hardened; maintenance load grows with every module.
+- **Selected:** Freeze Social, Tasks/Projects, Chatbots, Loyalty/Coupons, Decisioning/Offers, Landing AI, voice/avatar. Hide, don't delete.
+- **Reason:** Focus effort on the core loop that sells. **Reversible:** yes, flip a flag.
+- **Condition:** unfreeze only with a `/feature-planning` spec citing customer demand.
+
+### D-005 · Server is the execution runtime
+- **Date:** 2026-11-10 · **Status:** Proposed · **Validation:** Not started
+- **Problem:** Blast campaigns and pipeline runs execute in the browser (A5).
+- **Selected:** journey-worker + existing pipeline-run-worker via pgmq + pg_cron; browser launches/monitors and previews ≤100 rows.
+- **Cost:** ₹0 extra at Stage 1 (edge-function invocations within Pro quota — estimate).
+
+### D-006 · One schema-change path with staging
+- **Date:** 2026-11-10 · **Status:** Proposed · **Validation:** Not started
+- **Problem:** Live schema in `supabase/sql/`, stale `supabase/migrations/`, manual paste, no staging.
+- **Selected:** Short term — keep numbered scripts, add a staging project and a `schema_migrations` record table, mark `migrations/` deprecated. Medium term — baseline the live schema into Supabase CLI migrations and apply via CI.
+- **Risk:** baselining is a high-risk step; requires approval and a backup.
+
+### D-007 · First ICP: Indian D2C / e-commerce brands
+- **Date:** 2026-11-10 · **Status:** Approved — India first; region expansion in D-010 · **Validation:** In progress (5 customer commitments for Dec)
+- **Reason:** Measurable ROI (recovered carts), short sales cycle, matches existing channels.
+- **Validation plan:** 10 discovery calls; ≥3 agree to a paid design-partner pilot.
+
+### D-008 · Hosting: Cloudflare Pages for the SPA
+- **Date:** 2026-11-10 · **Status:** Proposed · **Validation:** Not started
+- **Reason:** Free with commercial use allowed (Vercel Hobby is non-commercial — verify current terms).
+
+### D-009 · December go-live plan with release gates
+- **Date:** 2026-11-10 · **Status:** Proposed · **Validation:** Not started
+- **Problem:** 5 committed customers (~100k profiles each) by 31 Dec; 15 by March. Team of two. Nothing deployed.
+- **Options:** (a) keep building features and harden later; (b) gated plan, staggered onboarding; (c) delay all customers to Q1.
+- **Selected:** (b). Gates G1–G4 in `07-roadmap.md`; customers onboarded one at a time from 15 Dec; scope frozen (D-004).
+- **Reason:** (a) puts real data on an insecure system; (c) risks the commitments. (b) meets most of the date without risking a breach.
+- **Risk:** customers 4–5 may slip into early January — tell them early.
+
+### D-010 · Region expansion: one Supabase project per region
+- **Date:** 2026-11-10 · **Status:** Proposed · **Validation:** Not started
+- **Problem:** Founder's sequence is India → MENA → APAC → EMEA → NA. Data-protection laws (DPDP India, PDPL UAE/Saudi, GDPR) increasingly expect data to stay in-region.
+- **Selected:** Launch India on a Supabase project in **ap-south-1 (Mumbai)**. Each later region gets its own project in-region with the same schema; the app routes a tenant to its region's project. No cross-region data in one database.
+- **Why not one global database:** can't satisfy residency, and one outage hits every region.
+- **Cost:** each region adds roughly one Pro project (~₹2,200+/month, estimate) — only when that region's first customer signs.
+- **Design impact now (P1, cheap):** keep tenant → region mapping in config; never hard-code the Supabase URL beyond one env var; keep schema scripts reproducible (D-006) so a new region is a scripted setup.
+
+### D-011 · Email sending cost is passed through to customers
+- **Date:** 2026-11-10 · **Status:** Proposed · **Validation:** Not started
+- **Problem:** At committed volumes, managed email via SES (~₹17.5k/month in Dec, ~₹53k in Mar, estimate) exceeds the whole infra budget.
+- **Selected:** Each plan includes an email quota; above it, billed per 1,000. Offer BYOP (customer's own ESP/SMTP) as the alternative. Agree this with each customer before their first email send.
+- **Reason:** Keeps Marbee's margin positive and the infra budget intact.
+
+### D-012 · December launch scope: Wave 1 / 2 / 3 instead of "all channels, all sources"
+- **Date:** 2026-11-10 · **Status:** Proposed · **Validation:** Not started
+- **Request (founder):** all channels and all sources for the 5 customers; paid by mid-December.
+- **Verdict on the request as stated:** **REJECT.** Verified: only Web Push sends today; no connector syncs real data. All of it is ~6–8 extra weeks of build *on top of* the 4 weeks of security + reliability gates, for a team of two, inside 5 weeks — and three channels depend on approvals Marbee doesn't control (Meta, TRAI DLT, Google RBM).
+- **Selected (APPROVE WITH CONDITIONS):**
+  - **Wave 1 (15 Dec):** Web Push, Email (SES), WhatsApp (Meta Cloud API, BYOP); sources Web SDK, REST API, server-side CSV import, webhooks (incl. Shopify webhooks), forms.
+  - **Wave 2 (early Jan):** SMS (one Indian aggregator, BYOP), Shopify native connector.
+  - **Wave 3 (Q1):** RCS, mobile app push, other connectors in order of paying-customer demand.
+- **Conditions:** (1) start external approvals this week: SES production access, each customer's Meta Business verification and WhatsApp templates, DLT registration; (2) contracts list Wave 1 as day-1 scope with dated Wave 2; (3) gates G1–G3 still apply; (4) manual invoicing.
+- **Why:** Wave 1 covers the channels Indian D2C retention actually runs on (WhatsApp, email, push) and every customer can load data via API/CSV/webhook on day 1, so nobody is blocked; it fits the calendar with the gates intact.
+- **Effort (estimate):** Wave 1 channel/source work ~2.5 weeks, done in parallel with the reliability phase (24 Nov – 12 Dec).
+- **Risk:** a customer whose main channel is SMS, or who only has a non-Shopify CRM, isn't fully served until January → identify them this week.
+
+### D-013 · Build go-ahead, 10 Dec readiness target
+- **Date:** 2026-11-10 · **Status:** Approved (founder) · **Validation:** In progress
+- **Decision:** Start building the December plan now (Phase 0 security → reliability + Wave 1). Target: Wave 1 ready **10 Dec**; founder checks with customers **11–15 Dec** and go-live dates are set from that check.
+- **Authority:** AI CTO implements approved roadmap items. Running SQL, deploying functions or the app, and anything touching the live project stay with the founder after review. Supersedes the "advisory mode" note in D-001.
+- **Risk:** 10 Dec is 2 days tighter than D-009's 12 Dec go-live-readiness → the week-5 buffer is gone; slippage shows up in the weekly status, not at the deadline.
+
+### D-014 · CEO / CTO working model
+- **Date:** 2026-11-10 · **Status:** Approved (founder) · **Validation:** In progress
+- **Decision:** Founder acts as CEO (ideas, customers, money, contracts); AI acts as CTO and owns feasibility, architecture, cost, security and full development, making the technical call on each idea. The CEO's single action is needed only for: spend / vendor accounts, live-system execution (SQL, deploys, dashboard settings, customer data), merges to `main`, commercial/legal commitments, and security incidents.
+- **Delivery loop:** branch → tests → self-review (code + security) → PR with risk/rollback → CEO merges → CEO runs scripted deploy steps → CTO verifies. Security is part of "done" (`09` §4).
+- **Supersedes:** the authority notes in D-001 and D-013.
+- **Honest limit:** the CTO cannot guarantee zero vulnerabilities; it commits to defence in depth, tests, and immediate reporting.
+
+### D-015 · Monetisation model: hybrid — BYOP for telecom channels, prepaid credits for what Marbee pays for
+- **Date:** 2026-11-10 · **Status:** Approved (CTO decision on CEO's question) · **Validation:** Not started
+- **Refines:** D-011 (email pass-through becomes email credits).
+- **Problem:** Should channels and AI be BYOP, or a credit system (plan fee + monthly credits + prepaid top-ups)?
+- **Rule:** *whoever pays the vendor bill decides the model.* If Marbee would carry the vendor cost → prepaid credits. If the vendor bills the customer's own legal entity → BYOP.
+
+| Service | Model | Why |
+|---|---|---|
+| WhatsApp | **BYOP** (customer's own WhatsApp Business Account on Meta Cloud API; Meta bills the customer) | Reselling requires becoming a Meta BSP/credit-line partner; Meta's per-message pricing changes often; the WABA and templates belong to the brand anyway |
+| SMS | **BYOP** (customer's aggregator account, e.g. MSG91/Gupshup/Kaleyra) | DLT registration is in the brand's name; thin margins; telecom compliance stays with the brand |
+| RCS | **BYOP** via aggregator | Same as SMS; agent approval is per brand |
+| Email | **Managed (Marbee SES) on credits**, plus optional **BYOP** SMTP/ESP | Most D2C brands don't run SES; domain onboarding already built; cost is low and predictable |
+| Web Push | **Included**, fair-use | FCM is free |
+| AI features | **Credits** (Marbee-managed models); BYOK option for enterprise later | Marbee pays the LLM bill; credits cap abuse and cost |
+
+- **Credit mechanics:**
+  - One wallet per tenant, in **Marbee credits (1 credit = ₹1)**, with a published rate card per action (e.g. per 1,000 emails, per AI generation).
+  - The plan fee includes a **monthly allowance** that resets each month. **Top-up packs** are prepaid and valid 12 months.
+  - Spend order: allowance first, then top-ups.
+  - Every debit is an immutable ledger row, atomically checked at send time (the server-side send worker, never the browser).
+  - Alerts at 20% and 5% balance. Optional auto top-up later.
+  - **At zero balance:** marketing sends pause; **transactional sends** (OTP, order updates) continue against a small overdraft buffer so a brand's customers aren't hurt. Recovered on the next top-up.
+  - BYOP channels cost no credits per message; they count toward a plan fair-use limit of "messages orchestrated per month" to cover Marbee's infra.
+- **Why not all-BYOP:** email setup friction kills time-to-first-journey, and AI can't sensibly be BYOP for SMBs.
+- **Why not all-credits:** reselling WhatsApp/SMS adds partner contracts, telecom compliance, working capital and thin margins. It's a business we'd be forced into, and it's a bad one at our size.
+- **Legal/tax (to confirm with CA):** credits usable only for Marbee services, non-transferable, no cash-out → closed-system prepaid instrument (no RBI PPI licence, to confirm). 18% GST invoiced at top-up. Refund policy in the terms.
+- **Build plan:** Dec — wallet + ledger + rate card + send-time enforcement + admin "grant credits" (CEO invoices manually via Razorpay link/bank transfer). Feb — self-serve Razorpay top-ups and plan billing.
+- **Effort (estimate):** ledger + enforcement ~4–5 days, within Wave 1. Reuses `rtm_usage_daily` and the existing daily spend-cap logic as the starting point.
+
+### D-016 · Marbee Platform Console (internal CEO/CTO dashboard)
+- **Date:** 2026-11-10 · **Status:** Approved with conditions (CTO decision on CEO idea) · **Validation:** In progress — v1 built 2026-11-10 (SQL 84 + `platform-admin` + `apps/console`), awaiting staging deploy
+- **Problem:** To run 5 → 15 paying tenants we need one place to see every tenant, their usage and credits, manage their admins, and bill them. Nothing like this exists (verified: no platform-admin role in SQL or app).
+- **Verdict per requested item:**
+
+| Requested | Verdict | How |
+|---|---|---|
+| List of all customers (tenants) with every detail: plan, status, users, profiles, created date, region | APPROVE | Tenants table + tenant detail page |
+| Sends per channel per month, AI usage, credits balance & history | APPROVE | From the credits ledger (D-015) + daily usage rollups |
+| Assign / grant credits | APPROVE | Ledger entry with reason; two-step confirm; audited |
+| DB usage | APPROVE WITH CHANGE | Per-tenant **row counts and estimated storage** from a nightly job (Postgres has no exact per-tenant size); total DB size from Postgres |
+| Generate bill, generate & send invoices | APPROVE WITH CHANGE | Console builds the **bill summary** (plan + usage + top-ups). The GST invoice is created and sent by **Razorpay Invoices** (or Zoho Books): GST-compliant numbering, PDF, email and payment link without us building tax logic. Dec: CEO clicks through manually; Feb: via API |
+| "Customer of customers in the table" | **APPROVE WITH CHANGE — aggregates only** | Counts, growth, consent rates, channel reach. **No browsing of end-customer PII rows.** Marbee is the *data processor* under DPDP; staff reading a brand's customer list is a privacy breach risk and a sales objection. Support access to rows only via break-glass (below) |
+| "Admin credentials to login" | **REJECT** | Marbee must never know or store customer passwords. **Replacement:** "Support access": time-boxed (e.g. 60 min), read-only by default, requires the tenant admin's consent toggle, banner shown inside the tenant, every action audited. Built Feb, not Dec |
+| Reset password for admin | APPROVE WITH CHANGE | Console **sends a password-reset link** to the admin's email (and can resend invites). It never sets or sees a password |
+| Number of users | APPROVE | Part of tenant detail |
+| Suspend / reactivate tenant | ADD (CTO) | Needed for non-payment or abuse |
+
+- **Security conditions (non-negotiable):**
+  1. **Separate app** `apps/console` on its own subdomain (e.g. `console.marbee.io`). Tenant users never download its code.
+  2. **Cloudflare Access** (Zero Trust free tier, to verify) in front: only the CEO's and CTO's identities can even load the page.
+  3. **`platform_admins` table**, separate from tenant roles; MFA required. Nobody can make themselves a platform admin from the app; rows are added only by SQL run by the CEO.
+  4. All data goes through one **`platform-admin` edge function**. It verifies the platform-admin JWT, then uses the service role, and has an explicit allow-list of operations. The browser never holds the service-role key.
+  5. Every console action is written to a **platform audit log** (who, what, which tenant, before/after) that cannot be edited from the console.
+  6. Credit grants above a threshold need a typed confirmation; refunds/negative adjustments need a reason.
+- **Phasing:**
+  - **Dec (Wave 1, ~4–5 days, estimate):** tenant list + detail, usage & credits view, grant credits, suspend, reset-link/resend invite, bill summary export, audit log, security conditions 1–5.
+  - **Feb:** Razorpay invoice API, MRR/revenue dashboard, support access (break-glass), DB-usage trends, alerts (low credits, failed sends, abuse).
+- **Why build, not buy:** the data is ours and in our database; admin-panel builders (Retool etc.) would need direct database credentials outside our security boundary and add cost. Invoicing *is* bought (Razorpay/Zoho) because GST compliance isn't our product.
+- **Capacity impact:** Wave 1 grows by ~4–5 days. To protect 10 Dec, the Shopify webhook presets move to Wave 2 if the schedule slips; reported in the weekly status.
