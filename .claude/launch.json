@@ -15,6 +15,12 @@
       "port": 5199
     },
     {
+      "name": "marbee-console",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "apps/console", "--", "--port", "5174", "--strictPort"],
+      "port": 5174
+    },
+    {
       "name": "marbee-web-journeys",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--prefix", "apps/web", "--", "--port", "63158", "--strictPort"],

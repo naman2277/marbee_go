@@ -8,6 +8,12 @@
   "scripts": {
     "dev": "npm run dev --workspace=apps/web",
     "build": "npm run build --workspace=apps/web",
-    "lint": "npm run lint --workspace=apps/web"
+    "lint": "npm run lint --workspace=apps/web",
+    "dev:console": "npm run dev --workspace=apps/console",
+    "build:console": "npm run build --workspace=apps/console",
+    "test:sql": "node supabase/tests/sql/84_platform_console_credits.test.mjs supabase/sql/84_platform_console_credits.sql"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.2.17"
   }
 }
