@@ -225,6 +225,10 @@ export function AiEngineSettingsPage() {
       showToast('Saved AI Provider settings');
       refetchModels();
     },
+    onError: (err) => {
+      showToast(err instanceof Error ? err.message : 'Could not save AI Provider settings');
+      refetchModels();
+    },
   });
 
   const saveVoiceAvatarsMutation = useMutation({

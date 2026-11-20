@@ -299,7 +299,7 @@ export const AI_PAGE_EXAMPLES = [
 export type GeneratedPage = { name?: string; content: LandingContent; source: 'edge' | 'client' | 'local' };
 
 function getClientOpenAiKey(): string | undefined {
-  const key = import.meta.env.VITE_OPENAI_API_KEY as string | undefined;
+  const key = undefined as string | undefined /* SEC-06: AI keys never in the browser — edge functions / ai-gateway only */;
   return key?.trim() || undefined;
 }
 

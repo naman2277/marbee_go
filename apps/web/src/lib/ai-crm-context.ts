@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { getLanguageByCode } from './ai-languages';
+import { aiComplete, isNewKey } from './ai-gateway';
 
 /**
  * Marbee Platform Schema & Live Context Manifest
@@ -155,7 +156,11 @@ export async function getLiveCrmStats(): Promise<LiveCrmStats> {
   }
 }
 
-/** Resolve active configured API key from tenant storage or env */
+/**
+ * Which provider/model the assistant should ask the AI gateway for. Never returns a key:
+ * keys live sealed on the server (D-018). `apiKey` is kept in the return type for callers
+ * but is always empty.
+ */
 export function getSavedAiApiKey(): { apiKey: string; modelName: string; provider: string } {
   try {
     for (let i = 0; i < localStorage.length; i++) {
@@ -163,35 +168,17 @@ export function getSavedAiApiKey(): { apiKey: string; modelName: string; provide
       if (k && k.startsWith('marbee_ai_models_config_v2')) {
         const raw = localStorage.getItem(k);
         if (raw) {
-          const list = JSON.parse(raw);
+          const list = JSON.parse(raw) as Array<{ isDefault?: boolean; status?: string; modelName?: string; provider?: string }>;
           const active =
-            list.find((m: any) => m.isDefault && m.apiKey && m.apiKey.trim().length > 0) ||
-            list.find((m: any) => m.apiKey && m.apiKey.trim().length > 0);
-          if (active && active.apiKey.trim().length > 0) {
-            return {
-              apiKey: active.apiKey.trim(),
-              modelName: active.modelName || 'gemini-2.0-flash',
-              provider: active.provider || 'gemini',
-            };
-          }
+            list.find((m) => m.isDefault && m.status !== 'unconfigured') || list.find((m) => m.status === 'connected') || list.find((m) => m.isDefault);
+          if (active) return { apiKey: '', modelName: active.modelName || 'gpt-4o-mini', provider: active.provider || 'openai' };
         }
       }
     }
-  } catch {}
-
-  const envGemini = (import.meta as any).env?.VITE_GEMINI_API_KEY;
-  if (envGemini) return { apiKey: envGemini, modelName: 'gemini-2.0-flash', provider: 'gemini' };
-
-  const envOpenAI = (import.meta as any).env?.VITE_OPENAI_API_KEY;
-  if (envOpenAI) return { apiKey: envOpenAI, modelName: 'gpt-4o', provider: 'openai' };
-
-  const envClaude = (import.meta as any).env?.VITE_ANTHROPIC_API_KEY;
-  if (envClaude) return { apiKey: envClaude, modelName: 'claude-3-7-sonnet', provider: 'claude' };
-
-  const envJev = (import.meta as any).env?.VITE_JEV_API_KEY;
-  if (envJev) return { apiKey: envJev, modelName: 'jev-latest', provider: 'jev' };
-
-  return { apiKey: '', modelName: 'gemini-2.0-flash', provider: 'gemini' };
+  } catch {
+    /* storage unavailable — use defaults */
+  }
+  return { apiKey: '', modelName: '', provider: '' };
 }
 
 /**
@@ -202,16 +189,18 @@ export function getSavedAiApiKey(): { apiKey: string; modelName: string; provide
 export async function executeIntelligentReasoning(
   prompt: string,
   apiKey?: string,
-  modelName: string = 'gemini-2.0-flash',
-  provider: string = 'gemini',
+  modelName: string = '',
+  provider: string = '',
   baseUrl?: string,
   language?: string
 ): Promise<{ text: string; latencyMs: number; tokens: number; reasoningDetails?: string }> {
   const start = Date.now();
   const resolved = !apiKey ? getSavedAiApiKey() : { apiKey, modelName, provider };
   const effectiveKey = (apiKey || resolved.apiKey || '').trim();
-  const effectiveModel = modelName || resolved.modelName || 'gemini-2.0-flash';
-  const effectiveProvider = provider || resolved.provider || 'gemini';
+  // Empty = let the gateway use the workspace's default model.
+  const effectiveModel = modelName || resolved.modelName || '';
+  const effectiveProvider = provider || resolved.provider || '';
+  void baseUrl; // base URLs are stored server-side with the provider config
   const liveStats = await getLiveCrmStats();
 
   const langMeta = language ? getLanguageByCode(language) : null;
@@ -237,388 +226,29 @@ ${liveStats.activeProjectsSummary}
 ${liveStats.recentTasksSummary}
 ${languagePromptInstruction}`;
 
-  // ── 1. LIVE EXTERNAL LLM INFERENCE (If API Key is available) ──
-  if (effectiveKey) {
-    try {
-      // ── Google Gemini ──
-      if (effectiveProvider === 'gemini') {
-        // Try primary model first. Only fall back to alternates on model-not-found errors.
-        // Stop immediately on auth / key errors so we show the real problem.
-        const candidateModels = [
-          effectiveModel,
-          'gemini-1.5-flash',
-          'gemini-1.5-pro',
-          'gemini-2.0-flash-exp',
-        ].filter((v, i, a) => a.indexOf(v) === i);
-
-        let lastErrorMsg = '';
-        let hitAuthError = false;
-
-        outer:
-        for (const m of candidateModels) {
-          const cleanModel = m.replace('models/', '');
-          for (const apiVer of ['v1beta', 'v1']) {
-            try {
-              const endpoint = baseUrl
-                ? `${baseUrl.replace(/\/$/, '')}/models/${cleanModel}:generateContent?key=${effectiveKey}`
-                : `https://generativelanguage.googleapis.com/${apiVer}/models/${cleanModel}:generateContent?key=${effectiveKey}`;
-
-              const res = await fetch(endpoint, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  contents: [
-                    {
-                      role: 'user',
-                      parts: [{ text: `${liveSystemContext}\n\nUser Question: ${prompt}` }],
-                    },
-                  ],
-                  generationConfig: { temperature: 0.7, maxOutputTokens: 2048 },
-                }),
-              });
-
-              if (res.ok) {
-                const data = await res.json();
-                const generatedText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-                if (generatedText) {
-                  return {
-                    text: generatedText,
-                    latencyMs: Date.now() - start,
-                    tokens: data.usageMetadata?.totalTokenCount || Math.floor((prompt.length + generatedText.length) / 4),
-                  };
-                }
-              } else {
-                const errData = await res.json().catch(() => ({}));
-                const errMsg = errData.error?.message || `HTTP ${res.status}`;
-                const errCode = errData.error?.code || res.status;
-
-                // Auth/permission/quota errors — stop immediately, no point trying other models
-                if (
-                  errCode === 400 && !errMsg.toLowerCase().includes('not found') ||
-                  errCode === 401 ||
-                  errCode === 403 ||
-                  errCode === 429 ||
-                  errMsg.toLowerCase().includes('api key') ||
-                  errMsg.toLowerCase().includes('api_key') ||
-                  errMsg.toLowerCase().includes('permission') ||
-                  errMsg.toLowerCase().includes('quota') ||
-                  errMsg.toLowerCase().includes('billing') ||
-                  errMsg.toLowerCase().includes('disabled')
-                ) {
-                  lastErrorMsg = errMsg;
-                  hitAuthError = true;
-                  break outer;
-                }
-
-                // Model-not-found — save error but try next model
-                lastErrorMsg = errMsg;
-              }
-            } catch {}
-          }
-
-          // If we found a working model the loop exits via return. If auth error, exit via break outer.
-          // Otherwise continue to next fallback model.
-        }
-
-        if (
-          hitAuthError ||
-          lastErrorMsg.toLowerCase().includes('quota') ||
-          lastErrorMsg.toLowerCase().includes('429') ||
-          lastErrorMsg.toLowerCase().includes('rate') ||
-          lastErrorMsg.toLowerCase().includes('billing')
-        ) {
-          console.warn('Gemini quota reached. Falling back to native CRM intelligence engine.');
-          // Fall through to native CRM intelligence engine below!
-        } else {
-          return {
-            text: `⚠️ **Google Gemini Notice:** ${lastErrorMsg || 'API limit reached.'}\n\nVerify your API key at [Google AI Studio](https://aistudio.google.com/app/apikey).`,
-            latencyMs: Date.now() - start,
-            tokens: 0,
-          };
-        }
-      }
-
-      // ── OpenAI-compatible: openai, deepseek, grok, groq, openrouter, custom_llm ──
-      if (['openai', 'deepseek', 'grok', 'groq', 'openrouter', 'custom_llm'].includes(effectiveProvider)) {
-        const defaultEndpoints: Record<string, string> = {
-          deepseek: 'https://api.deepseek.com/v1/chat/completions',
-          grok: 'https://api.x.ai/v1/chat/completions',
-          groq: 'https://api.groq.com/openai/v1/chat/completions',
-          openai: 'https://api.openai.com/v1/chat/completions',
-          openrouter: 'https://openrouter.ai/api/v1/chat/completions',
-          custom_llm: 'https://api.openai.com/v1/chat/completions',
-        };
-
-        const endpoint = baseUrl
-          ? (baseUrl.includes('/chat/completions') ? baseUrl : `${baseUrl.replace(/\/$/, '')}/chat/completions`)
-          : defaultEndpoints[effectiveProvider] || defaultEndpoints.openai;
-
-        const fetchHeaders: Record<string, string> = {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${effectiveKey}`,
-        };
-        if (effectiveProvider === 'openrouter') {
-          fetchHeaders['HTTP-Referer'] = window.location.origin;
-          fetchHeaders['X-OpenRouter-Title'] = 'Marbee';
-        }
-
-        const reqBody: Record<string, unknown> = {
-          model: effectiveModel || 'openrouter/auto',
-          messages: [
-            { role: 'system', content: liveSystemContext },
-            { role: 'user', content: prompt },
-          ],
-          temperature: 0.7,
-          max_tokens: 4096,
-        };
-        if (effectiveProvider === 'openrouter' && !(effectiveModel || '').startsWith('openrouter/')) {
-          reqBody.models = [
-            effectiveModel,
-            '~anthropic/claude-sonnet-latest',
-            '~openai/gpt-sol-latest',
-            'google/gemini-2.0-flash-001',
-          ];
-        }
-
-        let res: Response;
-        try {
-          res = await fetch(endpoint, {
-            method: 'POST',
-            headers: fetchHeaders,
-            body: JSON.stringify(reqBody),
-          });
-        } catch (networkErr: any) {
-          // Likely CORS or network failure
-          const providerNames: Record<string, string> = {
-            grok: 'xAI Grok', deepseek: 'DeepSeek', groq: 'Groq', openai: 'OpenAI', openrouter: 'OpenRouter', custom_llm: 'Custom LLM',
-          };
-          const displayName = providerNames[effectiveProvider] || effectiveProvider.toUpperCase();
-          const portalUrls: Record<string, string> = {
-            grok: 'https://console.x.ai',
-            deepseek: 'https://platform.deepseek.com/api_keys',
-            groq: 'https://console.groq.com/keys',
-            openai: 'https://platform.openai.com/api-keys',
-            openrouter: 'https://openrouter.ai/keys',
-          };
-          const portalUrl = portalUrls[effectiveProvider];
-          return {
-            text: `⚠️ **${displayName} Network Error:** Unable to reach API endpoint.\n\n${
-              effectiveProvider === 'grok'
-                ? '**Note:** xAI Grok API does not allow direct browser requests (CORS policy). A server-side proxy is required for production use.'
-                : effectiveProvider === 'deepseek'
-                ? '**Note:** DeepSeek API may block direct browser requests. If this persists, a server-side proxy is needed.'
-                : `Error: ${networkErr?.message || 'Connection refused'}`
-            }${portalUrl ? `\n\nVerify your API key at: ${portalUrl}` : ''}`,
-            latencyMs: Date.now() - start,
-            tokens: 0,
-          };
-        }
-
-        if (res.ok) {
-          const data = await res.json();
-          const reply = data.choices?.[0]?.message?.content;
-          if (reply) {
-            return {
-              text: reply,
-              latencyMs: Date.now() - start,
-              tokens: data.usage?.total_tokens || Math.floor((prompt.length + reply.length) / 4),
-            };
-          }
-        } else {
-          const errData = await res.json().catch(() => ({}));
-          const errMsg = errData.error?.message || `HTTP ${res.status}`;
-          return {
-            text: `⚠️ **${effectiveProvider.toUpperCase()} API Error:** ${errMsg}`,
-            latencyMs: Date.now() - start,
-            tokens: 0,
-          };
-        }
-      }
-
-      // ── Anthropic Claude ──
-      if (effectiveProvider === 'claude') {
-        let res: Response;
-        try {
-          const endpoint = baseUrl
-            ? `${baseUrl.replace(/\/$/, '')}/messages`
-            : 'https://api.anthropic.com/v1/messages';
-
-          res = await fetch(endpoint, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-api-key': effectiveKey,
-              'anthropic-version': '2023-06-01',
-              // anthropic-dangerous-direct-browser-access required for browser CORS
-              'anthropic-dangerous-direct-browser-access': 'true',
-            },
-            body: JSON.stringify({
-              model: effectiveModel || 'claude-3-7-sonnet-20250219',
-              system: liveSystemContext,
-              messages: [{ role: 'user', content: prompt }],
-              max_tokens: 4096,
-            }),
-          });
-        } catch (networkErr: any) {
-          return {
-            text: `⚠️ **Anthropic Claude Network Error:** Unable to reach API endpoint.\n\n**Note:** Anthropic's API requires the \`anthropic-dangerous-direct-browser-access: true\` header for browser requests. If this still fails, your network or browser may be blocking cross-origin requests.\n\nVerify your API key at: [Anthropic Console](https://console.anthropic.com/settings/keys)\nError: ${networkErr?.message || 'Connection refused'}`,
-            latencyMs: Date.now() - start,
-            tokens: 0,
-          };
-        }
-
-        if (res.ok) {
-          const data = await res.json();
-          const reply = data.content?.[0]?.text;
-          if (reply) {
-            return {
-              text: reply,
-              latencyMs: Date.now() - start,
-              tokens: (data.usage?.input_tokens || 0) + (data.usage?.output_tokens || 0),
-            };
-          }
-        } else {
-          const errData = await res.json().catch(() => ({}));
-          const errMsg = errData.error?.message || `HTTP ${res.status}`;
-          return {
-            text: `⚠️ **Anthropic Claude API Error:** ${errMsg}\n\nVerify your API key at: [Anthropic Console](https://console.anthropic.com/settings/keys)`,
-            latencyMs: Date.now() - start,
-            tokens: 0,
-          };
-        }
-      }
-
-      // ── TypeSafe AI Jev (Decision Engine) ──
-      if (effectiveProvider === 'jev') {
-        let res: Response | null = null;
-
-        const jevPayload = {
-          model: effectiveModel || 'jev-latest',
-          state: `${liveSystemContext}\n\nUser Query: ${prompt}`,
-          questions: {
-            intent: {
-              type: 'choice',
-              instructions: 'What is the primary intent of this user query?',
-              criteria: {
-                campaign_help: 'creating, editing, or analyzing marketing campaigns',
-                customer_query: 'looking up customer data, segments, or cohorts',
-                journey_help: 'building or debugging automated journeys',
-                analytics: 'requesting metrics, reports, or dashboard insights',
-                task_management: 'creating, updating, or managing tasks and projects',
-                technical: 'SQL queries, integrations, API, or infrastructure questions',
-                general: 'general conversation, greetings, or broad questions',
-              },
-            },
-            urgency: {
-              type: 'score',
-              instructions: 'How urgent is this request?',
-              criteria: ['routine, no rush', 'somewhat time-sensitive', 'urgent, needs attention now', 'critical, blocking work'],
-            },
-            needs_data: {
-              type: 'noul',
-              instructions: 'Does this query require fetching live data from the CRM database to answer properly?',
-            },
-          },
-        };
-
-        // Try Supabase Edge Function first (avoids CORS issues)
-        try {
-          const { data: fnData, error: fnError } = await supabase.functions.invoke('jev-ai', {
-            body: {
-              api_key: effectiveKey,
-              base_url: baseUrl || 'https://jevtypesafeai.com/api',
-              ...jevPayload,
-            },
-          });
-          if (!fnError && fnData && fnData.answers) {
-            res = new Response(JSON.stringify(fnData), { status: 200 });
-          }
-        } catch {
-          // Edge function not deployed — fall through to direct call
-        }
-
-        // Fallback: direct API call (use Vite proxy in dev to avoid CORS)
-        if (!res) {
-          try {
-            const isDev = typeof window !== 'undefined' && window.location.hostname === 'localhost';
-            const endpoint = isDev
-              ? '/jev-api/v1/decide'
-              : baseUrl
-                ? `${baseUrl.replace(/\/$/, '')}/v1/decide`
-                : 'https://jevtypesafeai.com/api/v1/decide';
-
-            res = await fetch(endpoint, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${effectiveKey}`,
-              },
-              body: JSON.stringify(jevPayload),
-            });
-          } catch (networkErr: any) {
-            return {
-              text: `⚠️ **TypeSafe AI Jev Network Error:** Unable to reach API endpoint.\n\n**Note:** Jev's API may not allow direct browser requests (CORS policy). Deploy the \`jev-ai\` Supabase Edge Function to proxy requests server-side.\n\nError: ${networkErr?.message || 'Connection refused'}\n\nVerify your API key at: [TypeSafe AI](https://jevtypesafeai.com)`,
-              latencyMs: Date.now() - start,
-              tokens: 0,
-            };
-          }
-        }
-
-        if (res.ok) {
-          const data = await res.json();
-          const answers = data.answers || {};
-          const intentAnswer = answers.intent;
-          const urgencyAnswer = answers.urgency;
-          const needsDataAnswer = answers.needs_data;
-
-          const intentLabel = intentAnswer?.choice || 'general';
-          const intentConf = intentAnswer?.confidence != null ? `${Math.round(intentAnswer.confidence * 100)}%` : '';
-          const urgencyScore = urgencyAnswer?.score != null ? urgencyAnswer.score.toFixed(1) : 'N/A';
-          const needsData = needsDataAnswer?.noul != null ? needsDataAnswer.noul > 0.5 : false;
-
-          const probsText = intentAnswer?.probabilities
-            ? Object.entries(intentAnswer.probabilities as Record<string, number>)
-                .filter(([, v]) => v > 0.01)
-                .sort(([, a], [, b]) => b - a)
-                .map(([k, v]) => `  - **${k.replace(/_/g, ' ')}**: ${Math.round(v * 100)}%`)
-                .join('\n')
-            : '';
-
-          const urgencyLevels = ['Routine', 'Somewhat time-sensitive', 'Urgent', 'Critical'];
-          const urgencyLabel = urgencyLevels[Math.round(Number(urgencyScore))] || 'Routine';
-
-          const reply = `**Jev Decision Analysis** (${data.model || 'jev-latest'})\n\n` +
-            `**Intent:** ${intentLabel.replace(/_/g, ' ')} (${intentConf} confidence)\n` +
-            (probsText ? `**Breakdown:**\n${probsText}\n\n` : '\n') +
-            `**Urgency:** ${urgencyLabel} (${urgencyScore}/3)\n` +
-            `**Needs Live Data:** ${needsData ? 'Yes' : 'No'} (${Math.round((needsDataAnswer?.noul || 0) * 100)}%)\n\n` +
-            `_Jev is a typed decision engine — it classifies, scores, and gates rather than generating free text. ` +
-            `For best results, use Jev for lead scoring, content moderation, support triage, and routing decisions._`;
-
-          return {
-            text: reply,
-            latencyMs: Date.now() - start,
-            tokens: data.usage?.input_tokens || Math.floor(prompt.length / 4),
-          };
-        } else {
-          const errData = await res.json().catch(() => ({}));
-          const errMsg = errData.error || errData.message || `HTTP ${res.status}`;
-          return {
-            text: `⚠️ **TypeSafe AI Jev API Error:** ${errMsg}\n\nVerify your API key at: [TypeSafe AI](https://jevtypesafeai.com)`,
-            latencyMs: Date.now() - start,
-            tokens: 0,
-          };
-        }
-      }
-    } catch (e: any) {
-      console.warn('Live API inference failed:', e);
-      return {
-        text: `⚠️ **Live Inference Error:** ${e.message || 'Failed to reach AI provider API endpoint.'}`,
-        latencyMs: Date.now() - start,
-        tokens: 0,
-      };
-    }
+  // ── 1. LLM via the Marbee AI gateway (D-018) ──
+  // The browser never holds a provider key. The gateway uses the workspace's sealed key,
+  // or Marbee's platform key (metered against AI credits). A key typed in Settings but not
+  // yet saved can be tested once via candidateKey (needs "Manage settings").
+  const gateway = await aiComplete({
+    provider: effectiveProvider,
+    model: effectiveModel,
+    systemPrompt: liveSystemContext,
+    userMessage: prompt,
+    candidateKey: isNewKey(apiKey) ? apiKey : undefined,
+  });
+  if (gateway.ok) {
+    return { text: gateway.text, latencyMs: Date.now() - start, tokens: gateway.tokens };
   }
+  // 503 = no AI key configured anywhere → fall back to the built-in context engine below.
+  if (gateway.status !== 503) {
+    return {
+      text: `⚠️ **AI request failed:** ${gateway.error}`,
+      latencyMs: Date.now() - start,
+      tokens: 0,
+    };
+  }
+  void effectiveKey;
 
   // ── 2. MARBEE PLATFORM NATIVE CONTEXT ENGINE (No external API key / Fallback) ──
   const pLower = prompt.toLowerCase();

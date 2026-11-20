@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { isNewKey, maskedKey, saveAiKey } from './ai-gateway';
 import { logAudit } from './audit';
 
 export type AiProviderType = 'openai' | 'gemini' | 'claude' | 'grok' | 'deepseek' | 'groq' | 'openrouter' | 'jev' | 'custom_llm';
@@ -375,7 +376,8 @@ export async function fetchAiModelsConfig(tenantId?: string, environment?: strin
     try {
       const { data, error } = await supabase
         .from('ai_engine_providers')
-        .select('*')
+        // Never select api_key_encrypted: app users can't read it (sql/89). Show only the last 4.
+        .select('id, provider, provider_name, model_name, api_key_last4, base_url, is_default, status, latency_ms, tokens_used_this_month, temperature, max_tokens, enabled_features')
         .eq('tenant_id', tenantId)
         .eq('environment', environment || 'production');
       if (!error && data && data.length > 0) {
@@ -384,7 +386,7 @@ export async function fetchAiModelsConfig(tenantId?: string, environment?: strin
           provider: d.provider,
           providerName: d.provider_name,
           modelName: d.model_name,
-          apiKey: d.api_key_encrypted || '',
+          apiKey: maskedKey(d.api_key_last4),
           baseUrl: d.base_url || '',
           isDefault: d.is_default,
           status: d.status as any,
@@ -458,7 +460,6 @@ export async function saveAiModelsConfig(
         provider: c.provider,
         provider_name: c.providerName,
         model_name: c.modelName,
-        api_key_encrypted: c.apiKey,
         base_url: c.baseUrl || null,
         is_default: c.isDefault,
         status: c.status,
@@ -475,19 +476,32 @@ export async function saveAiModelsConfig(
       if (error) {
         console.error(`DB upsert failed for provider "${c.provider}":`, error.message, error.details);
         dbErrors.push(`${c.providerName}: ${error.message}`);
+        continue;
+      }
+      // A key the user just typed goes to the server to be sealed (D-018). It is never
+      // written to the table from the browser, nor kept in localStorage.
+      if (isNewKey(c.apiKey)) {
+        const r = await saveAiKey({ tenantId, environment, provider: c.provider, modelName: c.modelName, apiKey: c.apiKey });
+        if (!r.ok) dbErrors.push(`${c.providerName}: key not saved — ${r.error ?? 'unknown error'}`);
+        else c.apiKey = maskedKey(r.data?.data?.last4);
       }
     }
   } catch (e) {
-    console.warn('DB AI models write failed, writing to LocalStorage', e);
+    console.warn('DB AI models write failed', e);
     dbErrors.push(e instanceof Error ? e.message : 'DB write failed');
   }
   if (dbErrors.length > 0) {
     console.warn('AI Engine DB save had errors (chatbot runtime will not see these providers):', dbErrors);
   }
+  // A key that didn't get sealed must not look saved.
+  const keyErrors = dbErrors.filter((m) => m.includes('key not saved'));
+  if (keyErrors.length > 0) throw new Error(keyErrors.join(' · '));
 
   try {
-    localStorage.setItem(`${STORAGE_AI_MODELS_KEY}_${tenantId}_${environment}`, JSON.stringify(configs));
-    localStorage.setItem(STORAGE_AI_MODELS_KEY, JSON.stringify(configs));
+    // Cache model settings only — never keys (raw keys previously cached here are overwritten).
+    const keyless = configs.map((c) => ({ ...c, apiKey: '' }));
+    localStorage.setItem(`${STORAGE_AI_MODELS_KEY}_${tenantId}_${environment}`, JSON.stringify(keyless));
+    localStorage.setItem(STORAGE_AI_MODELS_KEY, JSON.stringify(keyless));
   } catch (e) {
     console.warn('AI Models storage write error:', e);
   }

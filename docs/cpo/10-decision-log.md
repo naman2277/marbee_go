@@ -172,3 +172,10 @@ supersede it with a new entry.
 - **Consequence:** the Platform Console needs **"Create tenant + invite owner"** (tenant provisioning: tenant, environments, roles/permissions, OOTB schemas) — next increment, required before client 1.
 - **Revisit:** self-serve signup + trial when inbound demand justifies it (P2).
 
+### D-018 · AI gateway: the browser never holds an AI key
+- **Date:** 2026-11-21 · **Status:** Approved (CTO decision) · **Validation:** In progress
+- **Problem:** AI provider keys were (a) readable from `VITE_*` variables that get bundled into public JS, (b) stored in plain text in `ai_engine_providers` and readable by every tenant member, (c) cached in localStorage, and (d) used by the browser to call 9 providers directly (SEC-06, SEC-07).
+- **Selected:** one edge function, `ai-gateway`, makes every app LLM call. Key order: key typed for testing (settings.manage only, never stored) → tenant's sealed key → Marbee platform key from function secrets, **metered against AI credits** (D-015; tenants without a wallet are allowed while pre-billing). Keys sealed with one server secret `MARBEE_SECRETS_KEY` (AES-256-GCM); column-level privileges stop app users reading/writing the key column.
+- **Why:** one choke point for keys, cost metering, rate limits and future model routing; removes 9 browser→provider integrations.
+- **Cost:** ₹0 infra. **Risk:** gateway down = AI features down (falls back to the built-in context engine for the assistant).
+

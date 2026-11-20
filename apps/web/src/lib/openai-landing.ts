@@ -1,6 +1,6 @@
 /**
  * Direct-from-browser OpenAI call for landing-page generation. Only used in
- * local dev when VITE_OPENAI_API_KEY is set and the `landing-ai` edge function
+ * (disabled — SEC-06: AI keys never ship to the browser) direct-call fallback for when the `landing-ai` edge function
  * is unavailable. Production uses the edge function (see lib/landing-ai.ts).
  */
 import type { LandingContent } from './landing-pages';
