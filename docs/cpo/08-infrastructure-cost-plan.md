@@ -45,6 +45,24 @@ before it's incurred. Indicative rate card (estimate, CEO to set final): email �
 ₹150–200 per 10,000 emails; AI ≈ 3–5× model cost per generation.
 The rest of the platform fits the ₹5–10k budget through December.
 
+## 1b. Tenant capacity by Supabase tier (estimate, 2026-11-20)
+
+Per tenant at our committed size (**assumptions**: 100k profiles, 10–20 events/profile/month, ~5 messages/profile/month):
+profiles ≈ 0.1–0.2 GB · events ≈ 1–2 GB/month · delivery logs ≈ 0.3 GB/month → **≈ 4–7 GB per tenant** with 90-day raw-event
+retention (v2/53 drops old partitions) and rollups kept long-term.
+
+| Supabase setup | Est. cost/month | Comfortable tenants (100k profiles each) | First limit hit |
+|---|---|---|---|
+| Free (500 MB DB, pauses when idle, no backups) | ₹0 | **0 production** (dev/demo only) | Disk — one tenant outgrows it within days |
+| Pro + Micro compute (1 GB RAM) | ~₹2,200 + disk | **1–3** | RAM: event/audience queries spill to disk |
+| Pro + Small (2 GB RAM) | ~₹3,500 + disk | **≈5** (December target) | RAM / CPU at send peaks |
+| Pro + Medium (4 GB RAM) | ~₹7,500 + disk | **≈10–15** (March target) | Write throughput at peaks; v2 partitioning + retention must be live |
+| Pro + Large (8 GB RAM) | ~₹15,000 + disk | **≈25–40** | Plan Stage-3 changes (pooling, dedicated workers) |
+
+Conditions behind these numbers: the SDK batches events (one call per event exceeds the 2M/month Pro function quota at ~1 tenant),
+blasts run through the queue in chunks, dashboards read rollups. **Not load-tested yet** — validate with
+`supabase/sql/v2/59_loadtest_seed.sql` on staging before customer 2 (gate G3).
+
 ## 2. When to spend more (triggers, not dates)
 
 | Trigger (measured) | Spend |
