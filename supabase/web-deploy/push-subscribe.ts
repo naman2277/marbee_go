@@ -80,7 +80,7 @@ type AuthedUser = {
 
 const AUTH_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function env(name: string): string {
+function requireEnv(name: string): string {
   const v = Deno.env.get(name);
   if (!v) throw new AuthError(500, `Server misconfigured: ${name} is not set`);
   return v;
@@ -92,7 +92,7 @@ async function authenticateUser(req: Request): Promise<AuthedUser> {
   const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
   if (!token) throw new AuthError(401, 'Not signed in');
 
-  const db = createClient(env('SUPABASE_URL'), env('SUPABASE_ANON_KEY'), {
+  const db = createClient(requireEnv('SUPABASE_URL'), requireEnv('SUPABASE_ANON_KEY'), {
     global: { headers: { Authorization: `Bearer ${token}` } },
     auth: { persistSession: false, autoRefreshToken: false },
   });

@@ -75,6 +75,14 @@ function bundle(name) {
     '',
   ];
   const out = [...header, ...importLines, '', ...chunks].join('\n');
+
+  // Inlining puts every module in one scope: two modules declaring the same top-level
+  // name would crash at deploy ("Identifier has already been declared"). Refuse.
+  const names = [...out.matchAll(/^(?:async\s+)?(?:function\*?\s+|const\s+|let\s+|class\s+)([A-Za-z_$][\w$]*)/gm)].map((m) => m[1]);
+  const dupes = [...new Set(names.filter((n, i) => names.indexOf(n) !== i))];
+  if (dupes.length) {
+    throw new Error(`${name}: duplicate top-level declarations after inlining: ${dupes.join(', ')} — rename in one module`);
+  }
   const target = resolve(OUT_DIR, `${name}.ts`);
   writeFileSync(target, out);
   console.log(`bundled ${name} → ${relative(ROOT, target).replace(/\\/g, '/')} (${included.size} module(s))`);
