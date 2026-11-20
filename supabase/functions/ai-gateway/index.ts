@@ -208,7 +208,36 @@ async function clearKey(user: AuthedUser, p: Json) {
   return { cleared: true };
 }
 
-const OPS: Record<string, (u: AuthedUser, p: Json) => Promise<unknown>> = { complete, save_key: saveKey, clear_key: clearKey };
+/** Seal every legacy plaintext key in the caller's workspace now (instead of on first use). */
+async function resealKeys(user: AuthedUser, p: Json) {
+  const tenantId = await resolveTenant(user, p);
+  await requireSettingsManager(user, tenantId);
+  const svc = getServiceClient();
+  const { data: rows, error } = await svc.from('ai_engine_providers')
+    .select('id, api_key_encrypted').eq('tenant_id', tenantId).not('api_key_encrypted', 'is', null);
+  if (error) throw new AuthError(500, 'Could not read provider keys');
+  let sealed = 0;
+  let alreadySealed = 0;
+  for (const r of rows ?? []) {
+    const stored = String(r.api_key_encrypted ?? '').trim();
+    if (!stored) continue;
+    if (isSealed(stored)) { alreadySealed += 1; continue; }
+    const { error: upErr } = await svc.from('ai_engine_providers')
+      .update({ api_key_encrypted: await sealSecret(stored), api_key_last4: last4(stored) }).eq('id', r.id);
+    if (upErr) throw new AuthError(500, 'Could not seal a key');
+    sealed += 1;
+  }
+  const { error: auditErr } = await svc.from('audit_logs').insert({
+    tenant_id: tenantId, environment: 'production', user_id: user.userId, action: 'update', resource_type: 'ai_engine_key',
+    metadata: { op: 'reseal_keys', sealed, already_sealed: alreadySealed },
+  });
+  if (auditErr) console.error('ai-gateway: audit insert failed', auditErr.message);
+  return { sealed, already_sealed: alreadySealed };
+}
+
+const OPS: Record<string, (u: AuthedUser, p: Json) => Promise<unknown>> = {
+  complete, save_key: saveKey, clear_key: clearKey, reseal_keys: resealKeys,
+};
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders() });

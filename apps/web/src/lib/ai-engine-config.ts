@@ -339,6 +339,25 @@ export const INITIAL_AUTONOMOUS_AGENTS: AutonomousAgentTask[] = [
   },
 ];
 
+/** Remove any raw AI keys cached in localStorage by older versions (SEC-07). */
+function scrubCachedAiKeys(): void {
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k || !k.startsWith(STORAGE_AI_MODELS_KEY)) continue;
+      const raw = localStorage.getItem(k);
+      if (!raw) continue;
+      const list = JSON.parse(raw);
+      if (!Array.isArray(list)) continue;
+      if (list.some((m: { apiKey?: string }) => m && m.apiKey)) {
+        localStorage.setItem(k, JSON.stringify(list.map((m: object) => ({ ...m, apiKey: '' }))));
+      }
+    }
+  } catch {
+    /* storage unavailable — nothing cached to scrub */
+  }
+}
+
 /** Fetch AI Models Config */
 export async function fetchAiModelsConfig(tenantId?: string, environment?: string): Promise<AiModelConfig[]> {
   // Dedupe by a stable natural key (provider + model) rather than `id`.
@@ -371,6 +390,8 @@ export async function fetchAiModelsConfig(tenantId?: string, environment?: strin
 
     return all.filter((m) => !configuredProviders.has(m.provider) || isConfigured(m));
   };
+
+  scrubCachedAiKeys();
 
   if (tenantId) {
     try {
