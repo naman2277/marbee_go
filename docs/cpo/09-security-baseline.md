@@ -24,7 +24,7 @@ Severity: **Critical** = cross-tenant data exposure or account takeover · High 
 
 | ID | Status | Where |
 |---|---|---|
-| SEC-01 | **Fixed in code, not yet deployed** (2026-11-20): `schema-records` now requires a signed-in user, checks tenant membership, and runs every query as the caller so `cs_*` RLS enforces isolation; direct `table_name` must belong to the tenant's published schemas. | `supabase/functions/schema-records`, `_shared/auth.ts` · branch `claude/phase0-security` |
+| SEC-01 | **Fixed and validated on dev** (2026-11-20): `schema-records` requires a signed-in user, checks tenant membership, and runs every query as the caller so `cs_*` RLS enforces isolation; direct `table_name` must belong to the tenant's published schemas. Dev-project tests: no auth → 401, anon key → 401, forged JWT → 401, other tenant → 403, foreign table → 404, bad environment → 400, own data → 200 (schema table had 0 rows, so row visibility itself not exercised). Not yet on staging/production. | `supabase/functions/schema-records`, `_shared/auth.ts` · branch `claude/phase0-security` |
 
 **Note (2026-11-20):** the repository `naman2277/marbee_go` is **public** by CEO decision, so this document and the
 project ref are readable by anyone. Open findings above are therefore publicly known until fixed and deployed —
