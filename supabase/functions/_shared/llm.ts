@@ -1,4 +1,4 @@
-// Provider-agnostic LLM adapter for the Chat Bot runtime.
+// Provider-agnostic LLM adapter shared by chatbot-runtime and ai-gateway.
 // Mirrors the endpoints used by apps/web/src/lib/ai-crm-context.ts, but runs
 // server-side only — the API key never leaves this Edge Function.
 

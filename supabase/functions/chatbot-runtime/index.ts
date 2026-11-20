@@ -9,7 +9,8 @@
 // resolved from Edge Function secrets — never from the browser.
 import { serve } from 'https://deno.land/std@0.208.0/http/server.ts';
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { callLlm, resolveProviderApiKey, type LlmProvider } from './llm.ts';
+import { callLlm, resolveProviderApiKey, type LlmProvider } from '../_shared/llm.ts';
+import { openSecret } from '../_shared/secret-box.ts';
 
 type Mode = 'live' | 'test';
 
@@ -737,11 +738,13 @@ async function handleCloseSession(supabase: ReturnType<typeof getServiceClient>,
     // Try to use the LLM for a natural summary
     let providerRow: Json | null = null;
     if (bot.llm_provider_id) {
-      const { data } = await supabase.from('ai_engine_providers').select('*').eq('id', bot.llm_provider_id).maybeSingle();
+      // Scoped to the bot's own tenant: a bot must never use another tenant's provider/key.
+      const { data } = await supabase.from('ai_engine_providers').select('*')
+        .eq('id', bot.llm_provider_id).eq('tenant_id', bot.tenant_id).maybeSingle();
       providerRow = data;
     }
     const provider = (providerRow?.provider as string) || 'openai';
-    const apiKey = resolveProviderApiKey(provider as 'openai' | 'anthropic' | 'google' | 'mistral', providerRow?.api_key_encrypted as string | undefined);
+    const apiKey = resolveProviderApiKey(provider, await openSecret(providerRow?.api_key_encrypted as string | undefined));
 
     if (apiKey && transcript) {
       try {
@@ -750,7 +753,7 @@ async function handleCloseSession(supabase: ReturnType<typeof getServiceClient>,
           'any information collected, and the outcome. Be factual and brief.\n\nConversation:\n' + transcript.slice(0, 3000);
 
         const result = await callLlm({
-          provider: provider as 'openai' | 'anthropic' | 'google' | 'mistral',
+          provider: provider as LlmProvider,
           model: (providerRow?.model_name as string) || 'gpt-4o-mini',
           apiKey,
           systemPrompt: `You are a conversation summarizer for ${bot.name || 'a chat bot'}. Output only the summary text, no JSON.`,
@@ -1081,11 +1084,13 @@ async function handleSendMessage(supabase: ReturnType<typeof getServiceClient>, 
   // 9. Resolve LLM provider + key
   let providerRow: Json | null = null;
   if (bot.llm_provider_id) {
-    const { data } = await supabase.from('ai_engine_providers').select('*').eq('id', bot.llm_provider_id).maybeSingle();
+    // Scoped to the bot's own tenant: a bot must never use another tenant's provider/key.
+    const { data } = await supabase.from('ai_engine_providers').select('*')
+      .eq('id', bot.llm_provider_id).eq('tenant_id', bot.tenant_id).maybeSingle();
     providerRow = data;
   }
   const provider = (providerRow?.provider as LlmProvider) || 'openai';
-  const rawKey = resolveProviderApiKey(provider, providerRow?.api_key_encrypted as string | undefined);
+  const rawKey = resolveProviderApiKey(provider, await openSecret(providerRow?.api_key_encrypted as string | undefined));
   const apiKey = rawKey && rawKey.trim() ? rawKey.trim() : null;
 
   const ctaKeys = (ctas || []).map((c) => c.cta_key as string);
