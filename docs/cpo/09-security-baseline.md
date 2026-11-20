@@ -35,7 +35,7 @@ Severity: **Critical** = cross-tenant data exposure or account takeover · High 
 | SEC-11 | **Partly fixed:** per-isolate rate limits on ingest, push-subscribe, analytics ingest. Shared/global limiter still open (TD-14). | `_shared/ingest-auth.ts` |
 | SEC-14 | **Deployed to dev and validated** (2026-11-20): made-up message with attacker click_url → 404 "Message not found"; nothing recorded, no URL echoed. | `push-engage`, `PushOpenPage.tsx` |
 | SEC-15 | **Fixed and confirmed live on dev:** `provolatile = v`, `search_path=public, extensions`. | sql/85 |
-| SEC-03 | **Fixed in code 2026-11-20 (sql/88 + login page), not yet run on dev.** New auth users get a profile only; no tenant membership (5-check test, incl. reproduction of the hole). Login page is sign-in only. CEO must also turn OFF public signups in the dashboard and review demo-tenant members (query in sql/88). | sql/88, `LoginPage.tsx` |
+| SEC-03 | **Fixed on dev 2026-11-21:** sql/88 run, public signups turned OFF in the dashboard, demo-tenant members reviewed (auto-added `pipeline-test-7722@gmail.com` Tenant Admin disabled, reversible). Code: New auth users get a profile only; no tenant membership (5-check test, incl. reproduction of the hole). Login page is sign-in only. CEO must also turn OFF public signups in the dashboard and review demo-tenant members (query in sql/88). | sql/88, `LoginPage.tsx` |
 | SEC-17 | **Fixed (sql/86 run on dev 2026-11-20).** Dev itself was not exposed (Supabase had auto-enabled RLS; tables were unusable instead). Audit tool: `node supabase/tests/sql/rls_audit.mjs`. | sql/86 |
 
 **Note (2026-11-20):** the repository `naman2277/marbee_go` is **public** by CEO decision, so this document and the
