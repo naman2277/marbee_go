@@ -42,33 +42,6 @@ export function errorResponse(message: string, status = 400) {
   return jsonResponse({ error: message }, status);
 }
 
-export async function resolveTenantContext(req: Request) {
-  const tenantId = req.headers.get('x-tenant-id');
-  const environment = req.headers.get('x-environment') ?? 'production';
-
-  if (!tenantId) {
-    return { error: 'Missing X-Tenant-Id header' };
-  }
-
-  return { tenantId, environment };
-}
-
-export async function validateApiKey(req: Request, supabase: SupabaseClient) {
-  const authHeader = req.headers.get('authorization');
-  if (!authHeader?.startsWith('Bearer ')) return null;
-
-  const key = authHeader.slice(7);
-  const prefix = key.slice(0, 8);
-
-  const { data } = await supabase
-    .from('api_keys')
-    .select('tenant_id, environment, scopes, revoked_at')
-    .eq('key_prefix', prefix)
-    .is('revoked_at', null)
-    .maybeSingle();
-
-  if (!data) return null;
-
-  // In production: bcrypt compare key_hash
-  return data;
-}
+// resolveTenantContext (trusted X-Tenant-Id) and validateApiKey (prefix-only check) were
+// removed in Phase 0 (SEC-02 / SEC-04). Use _shared/auth.ts for signed-in users, or
+// _shared/ingest-auth.ts (API keys via verify_api_key, site keys via resolve_ingest_site).

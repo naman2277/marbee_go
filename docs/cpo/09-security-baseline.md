@@ -19,12 +19,21 @@ Severity: **Critical** = cross-tenant data exposure or account takeover · High 
 | SEC-10 | Medium | Docs instruct disabling "Enforce JWT Verification" on admin functions. | `supabase/web-deploy/README.md` | Verify each such function authenticates internally (create-tenant-user appears to). |
 | SEC-11 | Medium | No rate limiting on public endpoints. | forms, ingest, chat | Per-key / per-IP limits in the auth helper. |
 | SEC-12 | Medium | Tenant admins can set another member's password directly (permission-checked); the admin then knows that user's password. | `supabase/functions/reset-tenant-user-password` | Replace with "send reset link"; keep direct set only for first provisioning, forced change on next login. |
+| SEC-13 | Medium | A website's site key (site_id + write_key) is public by design and can be copied and replayed from a script, e.g. to spam events that fire real-time triggers. | SDK ingest endpoints | Accepted risk (industry norm). Mitigations: origin check + per-site/IP rate limits (done), frequency caps at send time (Wave 1), HMAC identity verification for identified users (P1). |
+| SEC-14 | High | `push-engage` accepted made-up message details when a message wasn't found, and `/push/open` redirected to the caller-supplied `click_url` → open redirect for phishing + fake engagement stats in any tenant. | `supabase/functions/push-engage`, `apps/web/src/pages/PushOpenPage.tsx` | Only record against real sent messages; click_url only from the stored message; page follows http(s) only. |
+| SEC-15 | High (functional) | `verify_api_key()` was declared STABLE but runs an UPDATE → Postgres rejects it, so every **valid** API key errored in `tenant-api` / `rtm-ingest`. Reproduced on Postgres. | `supabase/sql/46_api_hub.sql` | Re-create VOLATILE (sql/85). |
+| SEC-16 | Low | `rtm-ingest` lets the `x-environment` header override the API key's environment (same tenant only). | `supabase/functions/rtm-ingest` | Bind environment to the key; fix with the next rtm change. |
 
 **Fix status**
 
 | ID | Status | Where |
 |---|---|---|
 | SEC-01 | **Fixed and validated on dev** (2026-11-20): `schema-records` requires a signed-in user, checks tenant membership, and runs every query as the caller so `cs_*` RLS enforces isolation; direct `table_name` must belong to the tenant's published schemas. Dev-project tests: no auth → 401, anon key → 401, forged JWT → 401, other tenant → 403, foreign table → 404, bad environment → 400, own data → 200 (schema table had 0 rows, so row visibility itself not exercised). Not yet on staging/production. | `supabase/functions/schema-records`, `_shared/auth.ts` · branch `claude/phase0-security` |
+| SEC-02 | **Fixed in code, not yet deployed** (2026-11-20): `events-ingest`, `push-subscribe` take tenant/environment only from a secret API key (`verify_api_key`, scope `events:write`) or an origin-checked site key (`resolve_ingest_site`); `X-Tenant-Id` ignored; unsubscribe tenant-scoped; body/event limits, timestamp clamp. `web-analytics-ingest` now also checks site status + origin. | `_shared/ingest-auth.ts`, sql/85 (24/24 tests) |
+| SEC-04 | **Fixed in code:** prefix-only `validateApiKey` (dead code) removed; all API-key checks go through bcrypt `verify_api_key` (now VOLATILE — SEC-15). | `_shared/supabase.ts`, sql/85 |
+| SEC-11 | **Partly fixed:** per-isolate rate limits on ingest, push-subscribe, analytics ingest. Shared/global limiter still open (TD-14). | `_shared/ingest-auth.ts` |
+| SEC-14 | **Fixed in code, not yet deployed.** | `push-engage`, `PushOpenPage.tsx` |
+| SEC-15 | **Fixed in code (sql/85), not yet run.** | sql/85 |
 
 **Note (2026-11-20):** the repository `naman2277/marbee_go` is **public** by CEO decision, so this document and the
 project ref are readable by anyone. Open findings above are therefore publicly known until fixed and deployed —

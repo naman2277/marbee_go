@@ -19,8 +19,15 @@ serve(async (req) => {
     return new Response('ok', { headers: corsHeaders() });
   }
 
+  // SEC-02 (Phase 0): an open/click can only be recorded against a message Marbee
+  // actually sent (an existing sent/delivered/failed row for that tenant + message).
+  // Title, body and click_url come ONLY from that stored message — never from the
+  // request — so /push/open can't be turned into an open redirect or fake-stats tool.
+  if (req.method !== 'POST') return errorResponse('Method not allowed', 405);
+
   try {
-    const payload = (await req.json()) as EngageRequest;
+    const payload = (await req.json().catch(() => null)) as EngageRequest | null;
+    if (!payload || typeof payload !== 'object') return errorResponse('JSON body required', 400);
     const tenantId = payload.tenant_id;
     const environment = payload.environment ?? 'production';
     const messageId = payload.message_id;
@@ -29,6 +36,11 @@ serve(async (req) => {
     if (!tenantId || !messageId || !event) {
       return errorResponse('Missing tenant_id, message_id, or event', 400);
     }
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)) {
+      return errorResponse('Invalid tenant_id', 400);
+    }
+    if (typeof messageId !== 'string' || messageId.length > 200) return errorResponse('Invalid message_id', 400);
+    if (!['production', 'staging', 'development'].includes(environment)) return errorResponse('Invalid environment', 400);
     if (event !== 'opened' && event !== 'clicked') {
       return errorResponse('event must be opened or clicked', 400);
     }
@@ -55,34 +67,16 @@ serve(async (req) => {
       .limit(1)
       .maybeSingle();
 
-    if (lookupError) return errorResponse(lookupError.message, 500);
-
-    let meta: Record<string, unknown>;
-    let customerId: string | null = null;
-    let channel = 'web_push';
-    let journeyId: string | null = null;
-
-    if (original) {
-      meta = (original.metadata ?? {}) as Record<string, unknown>;
-      customerId = original.customer_id;
-      channel = original.channel;
-      journeyId = original.journey_id;
-    } else {
-      meta = {
-        delivery_id: payload.delivery_id ?? null,
-        delivery_name: payload.delivery_name ?? null,
-        title: payload.title ?? null,
-        body: payload.body ?? null,
-        click_url: payload.click_url ?? null,
-      };
-      if (!meta.delivery_id && !meta.delivery_name) {
-        return errorResponse('Message not found', 404);
-      }
+    if (lookupError) {
+      console.error('push-engage lookup failed', lookupError.message);
+      return errorResponse('Could not record engagement', 500);
     }
+    if (!original) return errorResponse('Message not found', 404);
 
-    if (!journeyId && payload.journey_id) {
-      journeyId = payload.journey_id;
-    }
+    const meta = (original.metadata ?? {}) as Record<string, unknown>;
+    const customerId: string | null = original.customer_id;
+    const channel: string = original.channel;
+    const journeyId: string | null = original.journey_id;
 
     if (duplicate) {
       return jsonResponse({
@@ -108,7 +102,10 @@ serve(async (req) => {
       metadata: { ...meta, engagement_source: 'push_open' },
     });
 
-    if (insertError) return errorResponse(insertError.message, 500);
+    if (insertError) {
+      console.error('push-engage insert failed', insertError.message);
+      return errorResponse('Could not record engagement', 500);
+    }
 
     return jsonResponse({
       success: true,
@@ -120,6 +117,7 @@ serve(async (req) => {
       delivery_name: meta.delivery_name ?? null,
     });
   } catch (err) {
-    return errorResponse(err instanceof Error ? err.message : 'Unknown error', 500);
+    console.error('push-engage unhandled', err instanceof Error ? err.message : err);
+    return errorResponse('Internal error', 500);
   }
 });

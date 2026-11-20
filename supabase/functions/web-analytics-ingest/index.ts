@@ -28,6 +28,20 @@ function ok(data: unknown) {
   });
 }
 
+// Fixed-window limiter per isolate (kept local so this file stays paste-deployable).
+const waWindows = new Map<string, { start: number; count: number }>();
+function rateLimitedWA(key: string, max: number, windowMs = 60_000): boolean {
+  const now = Date.now();
+  const w = waWindows.get(key);
+  if (!w || now - w.start >= windowMs) {
+    waWindows.set(key, { start: now, count: 1 });
+    if (waWindows.size > 10_000) waWindows.clear();
+    return false;
+  }
+  w.count += 1;
+  return w.count > max;
+}
+
 function err(msg: string, status = 400) {
   return new Response(JSON.stringify({ error: msg }), {
     status,
@@ -146,16 +160,26 @@ serve(async (req) => {
 
   if (!write_key || !site_id) return err('write_key and site_id are required');
   if (!Array.isArray(events) || events.length === 0) return err('events array is required');
+  if (events.length > 200) return err('At most 200 events per request', 413);
 
-  // ── Validate write_key against site ───────────────────────────────────────
-  const { data: site } = await supabase
-    .from('web_analytics_sites')
-    .select('id, site_id, tenant_id, environment, name, domain, status')
-    .eq('site_id', site_id)
-    .eq('write_key', write_key)
-    .maybeSingle();
+  // ── Validate site key: write_key + site status + browser Origin (SEC-02) ──
+  // Tenant/environment come from the site row, never from the request.
+  const { data: check, error: checkErr } = await supabase.rpc('resolve_ingest_site', {
+    p_site_id: site_id, p_write_key: write_key, p_origin: req.headers.get('origin'),
+  });
+  if (checkErr) {
+    console.error('resolve_ingest_site failed', checkErr.message);
+    return err('Could not verify site key', 500);
+  }
+  if (!check?.ok) {
+    return err(check?.reason === 'origin_not_allowed' ? 'This website is not allowed to use this site key' : 'Invalid write_key or site_id', 403);
+  }
+  const site = { tenant_id: check.tenant_id as string, environment: check.environment as string };
 
-  if (!site) return err('Invalid write_key or site_id', 403);
+  // Flood backstop per site and per visitor IP (per isolate).
+  if (rateLimitedWA(`site:${site_id}`, 3000) || rateLimitedWA(`ip:${site_id}:${getVisitorIp(req)}`, 120)) {
+    return err('Rate limit exceeded', 429);
+  }
 
   // ── Geolocate visitor IP ───────────────────────────────────────────────────
   const visitorIp = getVisitorIp(req);

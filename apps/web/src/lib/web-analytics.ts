@@ -145,6 +145,19 @@ export async function fetchWebAnalyticsSites(
   return getStoredSites(tenantId, environment);
 }
 
+/** Lowercase alphanumeric token from the browser's CSPRNG (not Math.random). */
+function randomToken(length: number): string {
+  const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  const bytes = crypto.getRandomValues(new Uint8Array(length));
+  // 252 = largest multiple of 36 below 256 → no modulo bias
+  let out = '';
+  for (let i = 0; out.length < length; i += 1) {
+    const b = i < bytes.length ? bytes[i] : crypto.getRandomValues(new Uint8Array(1))[0];
+    if (b < 252) out += alphabet[b % 36];
+  }
+  return out;
+}
+
 /** Register a new site */
 export async function createWebAnalyticsSite(
   tenantId: string,
@@ -156,10 +169,10 @@ export async function createWebAnalyticsSite(
   }
 ): Promise<WebAnalyticsSite> {
   const cleanDomain = input.domain.replace(/^https?:\/\//, '').replace(/\/$/, '').toLowerCase();
-  const hexRandom = Math.random().toString(36).substring(2, 8);
-  const siteId = `site_${hexRandom}`;
-  const writeKey = `mb_live_${Math.random().toString(36).substring(2, 14)}`;
-  const verificationToken = `vtok_${Math.random().toString(36).substring(2, 10)}`;
+  // Cryptographically random ids (SEC-02). site_id is globally unique in the DB (sql/85).
+  const siteId = `site_${randomToken(12)}`;
+  const writeKey = `mb_live_${randomToken(32)}`;
+  const verificationToken = `vtok_${randomToken(16)}`;
 
   const allowedOrigins = input.allowedOrigins && input.allowedOrigins.length > 0
     ? input.allowedOrigins

@@ -24,7 +24,7 @@ export type AuthedUser = {
   db: SupabaseClient;
 };
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const AUTH_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function env(name: string): string {
   const v = Deno.env.get(name);
@@ -52,7 +52,7 @@ export async function authenticateUser(req: Request): Promise<AuthedUser> {
 
 /** Confirm the caller is an active member of the tenant (checked by the database as the caller). */
 export async function requireTenantMember(user: AuthedUser, tenantId: unknown): Promise<string> {
-  if (typeof tenantId !== 'string' || !UUID_RE.test(tenantId)) throw new AuthError(400, 'tenant_id must be a UUID');
+  if (typeof tenantId !== 'string' || !AUTH_UUID_RE.test(tenantId)) throw new AuthError(400, 'tenant_id must be a UUID');
   const { data, error } = await user.db.rpc('user_has_tenant_access', { p_tenant_id: tenantId });
   if (error) {
     console.error('tenant membership check failed', error.message);
