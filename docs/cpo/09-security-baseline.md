@@ -20,6 +20,16 @@ Severity: **Critical** = cross-tenant data exposure or account takeover · High 
 | SEC-11 | Medium | No rate limiting on public endpoints. | forms, ingest, chat | Per-key / per-IP limits in the auth helper. |
 | SEC-12 | Medium | Tenant admins can set another member's password directly (permission-checked); the admin then knows that user's password. | `supabase/functions/reset-tenant-user-password` | Replace with "send reset link"; keep direct set only for first provisioning, forced change on next login. |
 
+**Fix status**
+
+| ID | Status | Where |
+|---|---|---|
+| SEC-01 | **Fixed in code, not yet deployed** (2026-11-20): `schema-records` now requires a signed-in user, checks tenant membership, and runs every query as the caller so `cs_*` RLS enforces isolation; direct `table_name` must belong to the tenant's published schemas. | `supabase/functions/schema-records`, `_shared/auth.ts` · branch `claude/phase0-security` |
+
+**Note (2026-11-20):** the repository `naman2277/marbee_go` is **public** by CEO decision, so this document and the
+project ref are readable by anyone. Open findings above are therefore publicly known until fixed and deployed —
+another reason Phase 0 deploys come before any real customer data.
+
 **Exposure today (founder, 2026-11-10):** dummy data only and nothing publicly deployed, so none of these is
 an active breach. They are **launch blockers**: gate G1 in `07-roadmap.md` — no real customer data until fixed.
 Still recommended now (reversible): disable public signups in the Supabase dashboard.
