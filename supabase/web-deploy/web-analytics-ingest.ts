@@ -228,7 +228,7 @@ serve(async (req) => {
     tenant_id: site.tenant_id,
     environment: site.environment,
     site_id: site_id,
-    event_id: e.event_id,
+    event_id: e.event_id || crypto.randomUUID(),
     session_id: session_id,
     anonymous_id: anonymous_id,
     customer_id: null,
@@ -265,8 +265,10 @@ serve(async (req) => {
     .from('web_analytics_events')
     .upsert(eventRecords, { onConflict: 'tenant_id,site_id,event_id', ignoreDuplicates: true });
 
+  // Fail loudly: a swallowed insert error hid that analytics never stored anything (TD-19).
   if (eventsError) {
     console.error('Events insert error:', eventsError.message);
+    return err('Could not store analytics events', 500);
   }
 
   // ── Upsert session record ──────────────────────────────────────────────────
@@ -306,9 +308,13 @@ serve(async (req) => {
       updated_at: now,
     };
 
-    await supabase
+    const { error: sessionError } = await supabase
       .from('web_analytics_sessions')
       .upsert(sessionRecord, { onConflict: 'tenant_id,site_id,session_id' });
+    if (sessionError) {
+      console.error('Session upsert error:', sessionError.message);
+      return err('Events stored, but the session summary could not be saved', 500);
+    }
   }
 
   // ── Update site last_event_at ──────────────────────────────────────────────
