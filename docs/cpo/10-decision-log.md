@@ -163,3 +163,12 @@ supersede it with a new entry.
   - **Feb:** Razorpay invoice API, MRR/revenue dashboard, support access (break-glass), DB-usage trends, alerts (low credits, failed sends, abuse).
 - **Why build, not buy:** the data is ours and in our database; admin-panel builders (Retool etc.) would need direct database credentials outside our security boundary and add cost. Invoicing *is* bought (Razorpay/Zoho) because GST compliance isn't our product.
 - **Capacity impact:** Wave 1 grows by ~4–5 days. To protect 10 Dec, the Shopify webhook presets move to Wave 2 if the schedule slips; reported in the weekly status.
+
+### D-017 · Invite-only access; tenants created by platform admins
+- **Date:** 2026-11-20 · **Status:** Approved (CTO decision) · **Validation:** In progress
+- **Problem:** Public signup auto-joined every new account to the demo tenant as Tenant Admin (SEC-03). There is also no tenant-provisioning function at all — the demo tenant (script 02) is the only one ever created.
+- **Options:** (a) self-serve signup with "create your workspace"; (b) invite-only, tenants created by Marbee platform admins.
+- **Selected:** (b). First 5–15 clients are sales-led with assisted onboarding and manual invoicing — nobody needs to self-create a workspace, and every self-serve path is attack surface. Signup disabled; login page sign-in only; people join via invitation.
+- **Consequence:** the Platform Console needs **"Create tenant + invite owner"** (tenant provisioning: tenant, environments, roles/permissions, OOTB schemas) — next increment, required before client 1.
+- **Revisit:** self-serve signup + trial when inbound demand justifies it (P2).
+
