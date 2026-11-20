@@ -60,20 +60,23 @@ REVOKE ALL ON FUNCTION public.verify_api_key(TEXT) FROM PUBLIC, anon, authentica
 GRANT EXECUTE ON FUNCTION public.verify_api_key(TEXT) TO service_role;
 
 -- -----------------------------------------------------------------------------
--- 2. Globally unique public site ids
+-- 2. Globally unique public site ids  (skipped if 50_web_analytics_platform.sql
+--    hasn't been run on this database — re-run 85 after running 50)
 -- -----------------------------------------------------------------------------
 DO $$
 DECLARE v_dupes TEXT;
 BEGIN
-  SELECT string_agg(site_id, ', ') INTO v_dupes
-  FROM (SELECT site_id FROM public.web_analytics_sites GROUP BY site_id HAVING count(*) > 1) d;
+  IF to_regclass('public.web_analytics_sites') IS NULL THEN
+    RAISE NOTICE '85: public.web_analytics_sites not found (script 50 not applied) — site-key index skipped. verify_api_key fix applied.';
+    RETURN;
+  END IF;
+  EXECUTE 'SELECT string_agg(site_id, '', '') FROM (SELECT site_id FROM public.web_analytics_sites GROUP BY site_id HAVING count(*) > 1) d'
+    INTO v_dupes;
   IF v_dupes IS NOT NULL THEN
     RAISE EXCEPTION 'Duplicate web_analytics_sites.site_id values: % — rename or archive duplicates, then re-run 85.', v_dupes;
   END IF;
+  EXECUTE 'CREATE UNIQUE INDEX IF NOT EXISTS web_analytics_sites_site_id_unique ON public.web_analytics_sites (site_id)';
 END $$;
-
-CREATE UNIQUE INDEX IF NOT EXISTS web_analytics_sites_site_id_unique
-  ON public.web_analytics_sites (site_id);
 
 -- -----------------------------------------------------------------------------
 -- 3. Host normalisation + site key resolution
@@ -102,18 +105,26 @@ CREATE OR REPLACE FUNCTION public.resolve_ingest_site(
 ) RETURNS JSONB
 LANGUAGE plpgsql STABLE SET search_path = public AS $$
 DECLARE
-  s       public.web_analytics_sites%ROWTYPE;
+  s       RECORD;  -- RECORD (not %ROWTYPE) so this function can be created before script 50
   v_host  TEXT := public._ingest_host(p_origin);
   v_ok    BOOLEAN := FALSE;
   v_entry TEXT;
+  v_rows  INTEGER;
 BEGIN
   IF coalesce(length(p_site_id), 0) NOT BETWEEN 4 AND 64 OR coalesce(length(p_write_key), 0) NOT BETWEEN 8 AND 128 THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'invalid_key');
   END IF;
 
-  SELECT * INTO s FROM public.web_analytics_sites WHERE site_id = p_site_id;
+  IF to_regclass('public.web_analytics_sites') IS NULL THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'sites_not_configured');
+  END IF;
+
+  EXECUTE 'SELECT id, site_id, tenant_id, environment, domain, allowed_origins, write_key, status
+           FROM public.web_analytics_sites WHERE site_id = $1'
+    INTO s USING p_site_id;
+  GET DIAGNOSTICS v_rows = ROW_COUNT;  -- EXECUTE doesn't set FOUND
   -- Same answer for unknown site and wrong key: don't reveal which site ids exist.
-  IF NOT FOUND OR s.write_key IS DISTINCT FROM p_write_key THEN
+  IF v_rows = 0 OR s.write_key IS DISTINCT FROM p_write_key THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'invalid_key');
   END IF;
 

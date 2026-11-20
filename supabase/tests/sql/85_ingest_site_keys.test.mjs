@@ -92,5 +92,27 @@ for (const role of ['anon', 'authenticated']) {
   await db.exec('RESET ROLE');
 }
 
+// A database where script 50 (web analytics) was never applied — the dev project's real state.
+const db2 = new PGlite();
+await db2.exec(`
+  CREATE ROLE anon NOLOGIN; CREATE ROLE authenticated NOLOGIN; CREATE ROLE service_role NOLOGIN BYPASSRLS;
+  CREATE TABLE public.api_keys (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), tenant_id uuid, environment text,
+    key_prefix text, key_hash text, scopes text[], expires_at timestamptz, last_used_at timestamptz, revoked_at timestamptz);
+  CREATE FUNCTION crypt(p text, salt text) RETURNS text LANGUAGE sql IMMUTABLE AS
+    $$ SELECT CASE WHEN p = 'mk_live_right-key-0001' THEN 'HASH1' ELSE 'nope' END $$;
+  INSERT INTO api_keys (tenant_id, environment, key_prefix, key_hash, scopes)
+    VALUES ('11111111-1111-1111-1111-111111111111', 'production', 'mk_live_', 'HASH1', ARRAY['events:write']);
+`);
+try {
+  await db2.exec(script);
+  ok(true, 'no-analytics DB: script runs (site parts skipped)');
+  const k2 = (await db2.query(`SELECT * FROM verify_api_key('mk_live_right-key-0001')`)).rows[0];
+  ok(k2?.tenant_id === '11111111-1111-1111-1111-111111111111', 'no-analytics DB: API-key fix still applied');
+  const r2 = (await db2.query(`SELECT resolve_ingest_site('site_aaaa1111','mb_live_keyA_12345',null) AS r`)).rows[0].r;
+  ok(!r2.ok && r2.reason === 'sites_not_configured', 'no-analytics DB: site check refuses cleanly (sites_not_configured)');
+} catch (e) {
+  ok(false, `no-analytics DB: script failed → ${e.message}`);
+}
+
 console.log(failures === 0 ? '\nALL PASSED' : `\n${failures} FAILED`);
 process.exit(failures ? 1 : 0);
