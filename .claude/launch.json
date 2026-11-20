@@ -21,6 +21,12 @@
       "port": 5174
     },
     {
+      "name": "marbee-console-mock",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:mock", "--prefix", "apps/console"],
+      "port": 5175
+    },
+    {
       "name": "marbee-web-journeys",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--prefix", "apps/web", "--", "--port", "63158", "--strictPort"],
