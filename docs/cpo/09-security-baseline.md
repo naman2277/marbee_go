@@ -23,6 +23,7 @@ Severity: **Critical** = cross-tenant data exposure or account takeover · High 
 | SEC-14 | High | `push-engage` accepted made-up message details when a message wasn't found, and `/push/open` redirected to the caller-supplied `click_url` → open redirect for phishing + fake engagement stats in any tenant. | `supabase/functions/push-engage`, `apps/web/src/pages/PushOpenPage.tsx` | Only record against real sent messages; click_url only from the stored message; page follows http(s) only. |
 | SEC-15 | High (functional) | `verify_api_key()` was declared STABLE but runs an UPDATE → Postgres rejects it, so every **valid** API key errored in `tenant-api` / `rtm-ingest`. Reproduced on Postgres. | `supabase/sql/46_api_hub.sql` | Re-create VOLATILE (sql/85). |
 | SEC-16 | Low | `rtm-ingest` lets the `x-environment` header override the API key's environment (same tenant only). | `supabase/functions/rtm-ingest` | Bind environment to the key; fix with the next rtm change. |
+| SEC-17 | **Critical** | 7 tenant tables were created with **no row-level security**: `coupon_campaigns`, `coupon_codes`, `voice_agents`, `autonomous_agent_tasks` (49) and `web_analytics_sites/events/sessions` (50). Supabase grants table access to the public key by default, so anyone with the anon key could read/modify every tenant's rows (incl. redeemable coupon codes). Found by auditing every table the chain creates. | `supabase/sql/49`, `50` | sql/86: RLS + tenant-isolation policy, anon revoked. 16-check isolation test. |
 
 **Fix status**
 
@@ -33,7 +34,8 @@ Severity: **Critical** = cross-tenant data exposure or account takeover · High 
 | SEC-04 | **Fixed in code:** prefix-only `validateApiKey` (dead code) removed; all API-key checks go through bcrypt `verify_api_key` (now VOLATILE — SEC-15). | `_shared/supabase.ts`, sql/85 |
 | SEC-11 | **Partly fixed:** per-isolate rate limits on ingest, push-subscribe, analytics ingest. Shared/global limiter still open (TD-14). | `_shared/ingest-auth.ts` |
 | SEC-14 | **Deployed to dev and validated** (2026-11-20): made-up message with attacker click_url → 404 "Message not found"; nothing recorded, no URL echoed. | `push-engage`, `PushOpenPage.tsx` |
-| SEC-15 | **Fixed in code (sql/85), not yet run.** | sql/85 |
+| SEC-15 | **Fixed in code (sql/85); 85 run on dev.** Live confirmation of `provolatile = v` pending. | sql/85 |
+| SEC-17 | **Fixed in code (sql/86), not yet run.** Audit tool: `npm run test:sql:rls` (prints any table without RLS). | sql/86 |
 
 **Note (2026-11-20):** the repository `naman2277/marbee_go` is **public** by CEO decision, so this document and the
 project ref are readable by anyone. Open findings above are therefore publicly known until fixed and deployed —

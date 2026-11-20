@@ -682,6 +682,9 @@ export function WebAnalyticsPage() {
       void queryClient.invalidateQueries({ queryKey: ['web-analytics-sites', tenantId, environment] });
       refetchSites();
     },
+    onError: (err) => {
+      showToast(err instanceof Error ? err.message : 'Could not register the website');
+    },
   });
 
   const deleteSiteMutation = useMutation({

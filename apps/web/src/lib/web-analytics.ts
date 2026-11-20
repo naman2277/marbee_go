@@ -205,9 +205,13 @@ export async function createWebAnalyticsSite(
     updatedAt: new Date().toISOString(),
   };
 
-  try {
-    await supabase.from('web_analytics_sites').insert({
-      id: newSite.id,
+  // Save to the database FIRST and fail loudly. Previously the row was sent with a
+  // non-UUID id ("was_<timestamp>"), the insert always failed, the error was ignored,
+  // and the site lived only in localStorage — so the server never recognised its key
+  // and every analytics/event call from that website was refused. (Found 2026-11-20.)
+  const { data: saved, error: saveError } = await supabase
+    .from('web_analytics_sites')
+    .insert({
       tenant_id: tenantId,
       environment,
       site_id: newSite.siteId,
@@ -218,8 +222,15 @@ export async function createWebAnalyticsSite(
       verification_token: newSite.verificationToken,
       status: newSite.status,
       settings: newSite.settings,
-    });
-  } catch {}
+    })
+    .select('id, created_at, updated_at')
+    .single();
+  if (saveError || !saved) {
+    throw new Error(`Could not register the site: ${saveError?.message ?? 'no row returned'}`);
+  }
+  newSite.id = String(saved.id);
+  newSite.createdAt = String(saved.created_at ?? newSite.createdAt);
+  newSite.updatedAt = String(saved.updated_at ?? newSite.updatedAt);
 
   const current = getStoredSites(tenantId, environment);
   saveStoredSites(tenantId, environment, [newSite, ...current]);
