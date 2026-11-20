@@ -28,7 +28,7 @@ RETURNS TABLE (
 LANGUAGE plpgsql
 VOLATILE
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions  -- Supabase installs pgcrypto (crypt) in "extensions"
 AS $$
 DECLARE
   v_prefix TEXT;
