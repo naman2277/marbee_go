@@ -1,5 +1,5 @@
 // Dry-run the numbered SQL chain on PGlite with Supabase stand-ins (auth, storage, extensions).
-// Usage: node supabase/tests/sql/dryrun_chain.mjs [--from NN] [--stop-on-error]
+// Usage: node supabase/tests/sql/dryrun_chain.mjs [--from NN] [--stop-on-error] [--twice]
 // Reports the first error per script. Stand-ins mean a PASS here is necessary, not sufficient.
 import { PGlite } from '@electric-sql/pglite';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -9,7 +9,7 @@ const db = new PGlite();
 await db.exec(`
   CREATE ROLE anon NOLOGIN; CREATE ROLE authenticated NOLOGIN; CREATE ROLE service_role NOLOGIN BYPASSRLS;
   CREATE ROLE supabase_auth_admin NOLOGIN; CREATE ROLE postgres_stub NOLOGIN;
-  CREATE PUBLICATION supabase_realtime; CREATE SCHEMA auth; CREATE SCHEMA storage; CREATE SCHEMA extensions; CREATE SCHEMA vault; CREATE SCHEMA cron; CREATE SCHEMA net;
+  CREATE PUBLICATION supabase_realtime; CREATE SCHEMA auth; CREATE SCHEMA storage; CREATE SCHEMA extensions; CREATE SCHEMA vault; CREATE SCHEMA net;
   CREATE TABLE auth.users (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), email text, raw_user_meta_data jsonb DEFAULT '{}',
     raw_app_meta_data jsonb DEFAULT '{}', created_at timestamptz DEFAULT now(), email_confirmed_at timestamptz,
     encrypted_password text, last_sign_in_at timestamptz, banned_until timestamptz, deleted_at timestamptz);
@@ -42,18 +42,23 @@ const strip = (sql) => sql
 const files = readdirSync(DIR).filter((f) => /^\d+_.*\.sql$/.test(f) && !/^00_/.test(f)).sort();
 const from = process.argv.includes('--from') ? process.argv[process.argv.indexOf('--from') + 1] : null;
 let bad = 0;
-for (const f of files) {
-  if (from && f < from) continue;
-  // 03 links a real user by email; seed a user so it has something to link.
-  if (f.startsWith('03_')) { console.log(`skip  ${f} (links a real user by email)`); continue; }
-  try {
-    await db.exec(strip(readFileSync(`${DIR}/${f}`, 'utf8')));
-    console.log(`ok    ${f}`);
-  } catch (e) {
-    bad += 1;
-    try { await db.exec('ROLLBACK'); } catch { /* no open transaction */ }
-    console.log(`ERROR ${f} → ${String(e.message).split('\n')[0]}`);
-    if (stopOnError) break;
+const passes = process.argv.includes('--twice') ? 2 : 1;
+// --twice re-runs the whole chain on the same database: every script must be safe to re-run.
+for (let pass = 1; pass <= passes; pass += 1) {
+  if (passes > 1) console.log(`\n--- pass ${pass} ---`);
+  for (const f of files) {
+    if (from && f < from) continue;
+    // 03 links a real user by email — not meaningful in a dry-run.
+    if (f.startsWith('03_')) { console.log(`skip  ${f} (links a real user by email)`); continue; }
+    try {
+      await db.exec(strip(readFileSync(`${DIR}/${f}`, 'utf8')));
+      console.log(`ok    ${f}`);
+    } catch (e) {
+      bad += 1;
+      try { await db.exec('ROLLBACK'); } catch { /* no open transaction */ }
+      console.log(`ERROR ${f} (pass ${pass}) → ${String(e.message).split('\n')[0]}`);
+      if (stopOnError) break;
+    }
   }
 }
 console.log(bad ? `\n${bad} script(s) failed` : '\nALL SCRIPTS RAN');

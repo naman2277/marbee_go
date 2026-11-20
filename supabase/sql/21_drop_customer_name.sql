@@ -1,15 +1,24 @@
 -- Drop legacy customers.name — migrate values into first_name
 -- Run after 19_customer_name_fields.sql (safe to re-run)
 
--- Move full display name into first_name when structured name is missing
-UPDATE public.customers
-SET first_name = COALESCE(
-  NULLIF(TRIM(first_name), ''),
-  NULLIF(TRIM(name), '')
-)
-WHERE name IS NOT NULL
-  AND TRIM(name) <> ''
-  AND (first_name IS NULL OR TRIM(first_name) = '');
+-- Move full display name into first_name when structured name is missing — only on
+-- databases that still have the legacy column (fresh databases never had it; TD-15).
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema = 'public' AND table_name = 'customers' AND column_name = 'name') THEN
+    EXECUTE $q$
+      UPDATE public.customers
+      SET first_name = COALESCE(
+        NULLIF(TRIM(first_name), ''),
+        NULLIF(TRIM(name), '')
+      )
+      WHERE name IS NOT NULL
+        AND TRIM(name) <> ''
+        AND (first_name IS NULL OR TRIM(first_name) = '')
+    $q$;
+  END IF;
+END $$;
 
 -- Remove name from Customer schema metadata
 DELETE FROM public.schema_fields

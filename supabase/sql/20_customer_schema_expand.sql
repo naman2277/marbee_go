@@ -35,18 +35,27 @@ SET
 WHERE location IS NOT NULL
   AND location <> '{}'::jsonb;
 
--- Backfill channel consent from legacy consent JSON
-UPDATE public.customers
-SET
-  consent_email = (
-    (consent->>'email') IN ('true', 'granted', 'opt_in')
-    OR (consent->>'marketing_email') IN ('true', 'granted', 'opt_in')
-  ),
-  consent_sms = (consent->>'sms') IN ('true', 'granted', 'opt_in'),
-  consent_web_push = (consent->>'web_push') IN ('true', 'granted', 'opt_in'),
-  consent_whatsapp = (consent->>'whatsapp') IN ('true', 'granted', 'opt_in')
-WHERE consent IS NOT NULL
-  AND consent <> '{}'::jsonb;
+-- Backfill channel consent from legacy consent JSON — only on databases that still have
+-- the legacy column (fresh databases built from today's 01 never had it; TD-15).
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema = 'public' AND table_name = 'customers' AND column_name = 'consent') THEN
+    EXECUTE $q$
+      UPDATE public.customers
+      SET
+        consent_email = (
+          (consent->>'email') IN ('true', 'granted', 'opt_in')
+          OR (consent->>'marketing_email') IN ('true', 'granted', 'opt_in')
+        ),
+        consent_sms = (consent->>'sms') IN ('true', 'granted', 'opt_in'),
+        consent_web_push = (consent->>'web_push') IN ('true', 'granted', 'opt_in'),
+        consent_whatsapp = (consent->>'whatsapp') IN ('true', 'granted', 'opt_in')
+      WHERE consent IS NOT NULL
+        AND consent <> '{}'::jsonb
+    $q$;
+  END IF;
+END $$;
 
 -- Customer schema field definitions (schema_id = Customer OOTB)
 INSERT INTO public.schema_fields (schema_id, name, field_type, is_required, is_primary_key, is_pii, is_indexed, sort_order, description) VALUES
