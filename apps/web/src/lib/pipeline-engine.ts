@@ -410,7 +410,7 @@ const executors: Record<string, (ctx: ExecContext) => ExecResult | Promise<ExecR
       let query = ctx.supabase.from('events').select('*').eq('tenant_id', ctx.tenantId).eq('environment', ctx.environment).limit(maxBatchSize);
       if (eventName) query = query.eq('event_type', eventName);
       const { data } = await query;
-      const rows = (data ?? []) as DataRow[];
+      const rows = (data ?? []) as unknown as DataRow[];
       return { rows, summary: `${rows.length} "${eventName}" events from DB (source: ${source})` };
     }
     const sampleRow: DataRow = {
@@ -428,7 +428,7 @@ const executors: Record<string, (ctx: ExecContext) => ExecResult | Promise<ExecR
   trigger_api: async ({ ctx }) => {
     if (ctx) {
       const { data } = await ctx.supabase.from('customers').select('*').eq('tenant_id', ctx.tenantId).eq('environment', ctx.environment).limit(100);
-      const rows = (data ?? []) as DataRow[];
+      const rows = (data ?? []) as unknown as DataRow[];
       return { rows, summary: `API trigger → ${rows.length} records from DB` };
     }
     return { rows: [], summary: `API trigger — 0 data rows (awaiting API call)` };
@@ -436,7 +436,7 @@ const executors: Record<string, (ctx: ExecContext) => ExecResult | Promise<ExecR
   trigger_manual: async ({ config, ctx }) => {
     if (ctx) {
       const { data } = await ctx.supabase.from('customers').select('*').eq('tenant_id', ctx.tenantId).eq('environment', ctx.environment).limit(100);
-      const rows = (data ?? []) as DataRow[];
+      const rows = (data ?? []) as unknown as DataRow[];
       return { rows, summary: `Manual run → ${rows.length} records` };
     }
     return { rows: [], summary: `Manual trigger "${str(config, 'description') || ''}" — 0 data rows (connect a source node)` };
@@ -511,7 +511,7 @@ const executors: Record<string, (ctx: ExecContext) => ExecResult | Promise<ExecR
   source: async ({ config, inputRows, ctx }) => {
     const schemaSlug = str(config, 'schema') || 'customer';
     const selectedFields = config.selected_fields as string[] | undefined;
-    const filterGroup = config.filter_group as { logic: string; conditions: unknown[] } | undefined;
+    const filterGroup = config.filter_group as FilterGroup | undefined;
     const sortField = str(config, 'sort_field');
     const sortOrder = str(config, 'sort_order') || 'desc';
     const limit = num(config, 'limit', 10000);
@@ -561,7 +561,7 @@ const executors: Record<string, (ctx: ExecContext) => ExecResult | Promise<ExecR
         console.error('[pipeline] source query error:', { tableName, tenantId: ctx.tenantId, environment: ctx.environment, error });
         return { rows: [], summary: `Schema "${schemaSlug}" from ${tableName} (tenant: ${ctx.tenantId}, env: ${ctx.environment}): query error — ${error.message}`, errorRows: [] };
       }
-      rows = (data ?? []) as DataRow[];
+      rows = (data ?? []) as unknown as DataRow[];
 
       // Apply field selection client-side (keep only selected fields if specified)
       if (selectedFields && selectedFields.length > 0) {
@@ -628,7 +628,7 @@ const executors: Record<string, (ctx: ExecContext) => ExecResult | Promise<ExecR
         }
       }
       const { data } = await q.limit(1000);
-      const rows = (data ?? []) as DataRow[];
+      const rows = (data ?? []) as unknown as DataRow[];
       return { rows, summary: `Connector "${connectorId || 'crm'}" → ${object} → ${rows.length} rows` };
     }
     if (inputRows.length > 0) return { rows: inputRows, summary: `Connector "${connectorId || 'crm'}" → ${object} → ${inputRows.length} rows (pass-through)` };
@@ -674,7 +674,7 @@ const executors: Record<string, (ctx: ExecContext) => ExecResult | Promise<ExecR
       const limitMatch = query.match(/LIMIT\s+(\d+)/i);
       const limit = limitMatch ? Math.min(parseInt(limitMatch[1]), maxRows) : maxRows;
       const { data } = await q.limit(limit);
-      const rows = (data ?? []) as DataRow[];
+      const rows = (data ?? []) as unknown as DataRow[];
       return { rows, summary: `SQL → ${table}: ${rows.length} rows` };
     }
     if (inputRows.length > 0) return { rows: inputRows, summary: `SQL query → ${inputRows.length} rows (pass-through)` };
@@ -691,7 +691,7 @@ const executors: Record<string, (ctx: ExecContext) => ExecResult | Promise<ExecR
       const limitMatch = query.match(/LIMIT\s+(\d+)/i);
       const limit = limitMatch ? parseInt(limitMatch[1]) : 1000;
       const { data } = await q.limit(limit);
-      const rows = (data ?? []) as DataRow[];
+      const rows = (data ?? []) as unknown as DataRow[];
       return { rows, summary: `DB "${connectorId || 'db'}" → ${table}: ${rows.length} rows (timeout: ${timeout}s)` };
     }
     if (inputRows.length > 0) return { rows: inputRows, summary: `DB query (${connectorId || 'db'}) → ${inputRows.length} rows (pass-through)` };
@@ -705,7 +705,7 @@ const executors: Record<string, (ctx: ExecContext) => ExecResult | Promise<ExecR
     if (ctx) {
       const table = str(config, 'table_name') || 'customers';
       const { data } = await ctx.supabase.from(table).select('*').eq('tenant_id', ctx.tenantId).eq('environment', ctx.environment).limit(1000);
-      const rows = (data ?? []) as DataRow[];
+      const rows = (data ?? []) as unknown as DataRow[];
       return { rows, summary: `${str(config, 'provider') || 'storage'}://${str(config, 'bucket') || 'bucket'} → ${rows.length} rows` };
     }
     if (inputRows.length > 0) return { rows: inputRows, summary: `${str(config, 'provider') || 's3'}://${str(config, 'bucket') || 'bucket'} → ${inputRows.length} rows (pass-through)` };
@@ -844,7 +844,7 @@ const executors: Record<string, (ctx: ExecContext) => ExecResult | Promise<ExecR
         .from('schema_definitions').select('table_name').eq('tenant_id', ctx.tenantId).eq('name', rightSchema).maybeSingle();
       const table = schemaDef?.table_name || rightSchema;
       const { data } = await ctx.supabase.from(table).select('*').eq('tenant_id', ctx.tenantId).eq('environment', ctx.environment).limit(5000);
-      rightRows = (data ?? []) as DataRow[];
+      rightRows = (data ?? []) as unknown as DataRow[];
     }
 
     if (leftRows.length === 0 && rightRows.length === 0) {
@@ -1007,7 +1007,7 @@ const executors: Record<string, (ctx: ExecContext) => ExecResult | Promise<ExecR
       const table = schemaDef?.table_name || lookupSchema;
       const selectCols = fieldsToAdd.length ? [lookupKey, ...fieldsToAdd].join(',') : '*';
       const { data } = await ctx.supabase.from(table).select(selectCols).eq('tenant_id', ctx.tenantId).eq('environment', ctx.environment).limit(5000);
-      lookupRows = (data ?? []) as DataRow[];
+      lookupRows = (data ?? []) as unknown as DataRow[];
     } else if (!lookupSchema) {
       return { rows: inputRows, summary: `Enrich — no lookup schema configured` };
     } else {
@@ -1046,7 +1046,7 @@ const executors: Record<string, (ctx: ExecContext) => ExecResult | Promise<ExecR
       const table = schemaDef?.table_name || lookupTable;
       const cols = [lookupKeyField || 'id', returnField].join(',');
       const { data } = await ctx.supabase.from(table).select(cols).eq('tenant_id', ctx.tenantId).eq('environment', ctx.environment).limit(5000);
-      (data ?? []).forEach((r: DataRow) => {
+      ((data ?? []) as unknown as DataRow[]).forEach((r) => {
         const k = String(val(r, lookupKeyField || 'id') ?? '');
         const v = String(val(r, returnField) ?? '');
         if (k) lookupMap.set(k, v);
@@ -1629,7 +1629,7 @@ const executors: Record<string, (ctx: ExecContext) => ExecResult | Promise<ExecR
         .from('schema_definitions').select('table_name').eq('tenant_id', ctx.tenantId).eq('name', itemCatalog).maybeSingle();
       const table = schemaDef?.table_name || itemCatalog;
       const { data } = await ctx.supabase.from(table).select('*').eq('tenant_id', ctx.tenantId).eq('environment', ctx.environment).limit(500);
-      products = (data ?? []) as DataRow[];
+      products = (data ?? []) as unknown as DataRow[];
     } else if (!itemCatalog) {
       return { rows: inputRows.map((r) => ({ ...r, [outputField]: [], _rec_model: model })), summary: `Recommendation — no item catalog configured` };
     } else {

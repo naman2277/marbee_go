@@ -374,7 +374,7 @@ async function persistExecutionRunAndPurgeLogs(
   status: 'succeeded' | 'failed' | 'partial',
   logs: { nodeId: string; title: string; status: string; ms: number; output: unknown }[],
   triggeredBy: string = 'Naman',
-  triggerSource: 'manual' | 'schedule' | 'webhook' = 'manual'
+  triggerSource: 'manual' | 'schedule' | 'webhook' | 'event' = 'manual'
 ) {
   try {
     await purge7DayLogs(jobId);
@@ -1334,7 +1334,8 @@ export function DataJobDetailPage() {
       runStatus,
       accumulatedLogs,
       userTriggeredBy,
-      schedFiringRef.current ? 'schedule' : triggerPayloadRef.current ? 'trigger' : 'manual'
+      // TD-11: was 'trigger', which data_job_runs' CHECK rejects (sql/72) — the run was never saved.
+      schedFiringRef.current ? 'schedule' : triggerPayloadRef.current ? 'event' : 'manual'
     );
   };
 
@@ -2202,7 +2203,7 @@ export function DataJobDetailPage() {
                           </div>
                           {triggerIsWaiting && (
                             <button
-                              onClick={(e) => { e.stopPropagation(); executeTrigger(node.id); }}
+                              onClick={(e) => { e.stopPropagation(); executeTrigger({ triggered_node_id: node.id }); }}
                               className="flex-shrink-0 text-[8px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-bold hover:bg-emerald-200 transition-colors"
                               title="Simulate trigger event">
                               Fire
@@ -2763,7 +2764,7 @@ export function DataJobDetailPage() {
                           <TriggerFileUploader
                             node={selectedNodeData}
                             jobId={id!}
-                            onTrigger={(nodeId) => executeTrigger(nodeId)}
+                            onTrigger={(nodeId) => executeTrigger({ triggered_node_id: nodeId })}
                             onUpdateConfig={(key, value) => setNodes((prev) => prev.map((n) => n.id === selectedNodeData.id ? { ...n, config: { ...n.config, [key]: value } } : n))}
                           />
                         )}
@@ -2878,7 +2879,7 @@ export function DataJobDetailPage() {
                               <p className="text-xl font-bold text-rose-800 mt-0.5">{String(out.rows_error)}</p>
                             </div>
                           )}
-                          {out.summary && (
+                          {Boolean(out.summary) && (
                             <div className="bg-white rounded-xl p-3.5 border border-slate-200/80 shadow-xs">
                               <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Summary</p>
                               <p className="text-xs text-slate-700 leading-relaxed">{String(out.summary ?? '')}</p>
@@ -2890,7 +2891,7 @@ export function DataJobDetailPage() {
                               <span>Executed in {selectedNodeData.lastExecutionTimeMs}ms</span>
                             </div>
                           )}
-                          {out.error && (
+                          {Boolean(out.error) && (
                             <div className="bg-rose-50/90 rounded-xl p-3.5 border border-rose-200/80 shadow-xs">
                               <p className="text-[10px] text-rose-700 font-bold uppercase tracking-wider mb-1">Execution Error</p>
                               <p className="text-xs text-rose-800 font-mono break-all">{String(out.error)}</p>
@@ -3029,12 +3030,12 @@ export function DataJobDetailPage() {
                           </span>
                         </td>
                         <td className="px-4 py-1.5 text-gray-500 font-mono text-[11px]">{log.ms}ms</td>
-                        <td className="px-4 py-1.5 text-gray-500 font-mono text-[11px]">{(log.output as Record<string, unknown>)?.rows_in ?? '—'}</td>
-                        <td className="px-4 py-1.5 text-gray-500 font-mono text-[11px]">{(log.output as Record<string, unknown>)?.rows_out ?? '—'}</td>
+                        <td className="px-4 py-1.5 text-gray-500 font-mono text-[11px]">{String((log.output as Record<string, unknown>)?.rows_in ?? '—')}</td>
+                        <td className="px-4 py-1.5 text-gray-500 font-mono text-[11px]">{String((log.output as Record<string, unknown>)?.rows_out ?? '—')}</td>
                         <td className="px-4 py-1.5 font-mono text-[11px]">{((log.output as Record<string, unknown>)?.rows_error as number) > 0 ? <span className="text-red-600 font-semibold">{String((log.output as Record<string, unknown>).rows_error)}</span> : <span className="text-gray-400">0</span>}</td>
                         <td className="px-4 py-1.5 text-gray-600 truncate max-w-[300px]">
                           {String((log.output as Record<string, unknown>)?.summary ?? '')}
-                          {(log.output as Record<string, unknown>)?.error_category && (
+                          {Boolean((log.output as Record<string, unknown>)?.error_category) && (
                             <span className={cn('ml-1.5 text-[9px] px-1 py-0.5 rounded font-medium',
                               (log.output as Record<string, unknown>).error_category === 'transient' ? 'bg-amber-50 text-amber-600' :
                               (log.output as Record<string, unknown>).error_category === 'configuration' ? 'bg-blue-50 text-blue-600' :
