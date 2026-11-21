@@ -252,7 +252,7 @@ function RelationshipCanvas({
     [metaBySlug, viewMode, relatedSlugs, selectedSlug, focusSlug, compactCards],
   );
 
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node<ErdTableNodeData>>([]);
+  const [nodes, setNodes, onNodesChange] = useNodesState<ErdTableNodeData>([]);
 
   useEffect(() => {
     savedPositionsRef.current = {};
@@ -360,7 +360,6 @@ function RelationshipCanvas({
         onNodeDragStop={onNodeDragStop}
         nodeTypes={erdNodeTypes}
         edgeTypes={erdEdgeTypes}
-        nodeDragHandle=".erd-node-drag-handle"
         onNodeClick={(_, node) => onSelectSlug(node.id)}
         onNodeDoubleClick={(_, node) => onOpenSlug(node.id)}
         onPaneClick={() => setPinnedEdgeId(null)}

@@ -18,6 +18,7 @@ import {
 } from '@/lib/cohorts/ir';
 import { buildCatalog, EMPTY_CATALOG, type SemanticCatalog } from '@/lib/cohorts/catalog';
 import { explainCohort } from '@/lib/cohorts/compile';
+import { validateCohortIR } from '@/lib/cohorts/validate';
 import {
   createAudience,
   evaluateAudienceMembers,
@@ -189,7 +190,8 @@ export function AudienceAiPanel({ tenantId, environment, onSaved }: Props) {
         unresolved: [],
         suggestedName: d.name,
         source: 'local',
-        validation: { errors: [], warnings: [], valid: true },
+        // TD-11: was a hard-coded "valid" result; run the real validator instead.
+        validation: validateCohortIR(d.ir, catalog),
       };
       setPlan(fakePlan);
       setMessages((prev) => [...prev, agentMessage('agent', d.understood, fakePlan)]);
@@ -251,7 +253,7 @@ export function AudienceAiPanel({ tenantId, environment, onSaved }: Props) {
                 <h3 className="text-base font-bold">AI Cohort Agent</h3>
                 <p className="text-xs text-indigo-200">
                   {plan
-                    ? `${countConditions(plan.ir)} rule${countConditions(plan.ir) !== 1 ? 's' : ''} · ${plan.source === 'edge' ? 'Edge AI' : plan.source === 'openai' ? 'OpenAI' : 'Grounded NLP'}`
+                    ? `${countConditions(plan.ir.root)} rule${countConditions(plan.ir.root) !== 1 ? 's' : ''} · ${plan.source === 'edge' ? 'Edge AI' : plan.source === 'openai' ? 'OpenAI' : 'Grounded NLP'}`
                     : 'Describe your audience in plain English'}
                 </p>
               </div>
@@ -528,7 +530,7 @@ export function AudienceAiPanel({ tenantId, environment, onSaved }: Props) {
                         <p className="font-medium text-slate-800 truncate">
                           {String(row.first_name ?? row.email ?? row.id)}
                         </p>
-                        {row.email && row.first_name && (
+                        {Boolean(row.email && row.first_name) && (
                           <p className="text-[10px] text-slate-400 truncate">{String(row.email)}</p>
                         )}
                       </div>

@@ -12,6 +12,7 @@ import {
   Link2,
   Send,
   Share2,
+  Tag,
   Users,
   Zap,
   type LucideIcon,
@@ -42,6 +43,7 @@ const SCHEMA_ICONS: Record<ReturnType<typeof getSchemaIconKey>, LucideIcon> = {
   triggers: Zap,
   loyalty: Award,
   social: Share2,
+  offers: Tag,
   default: Database,
 };
 

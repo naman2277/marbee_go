@@ -434,7 +434,7 @@ export async function fetchServiceSubscriptions(
         updated_at: s.lastSeen,
         browser: s.browser,
         os: s.os,
-        device: s.device,
+        device: s.device === 'mobile' || s.device === 'tablet' || s.device === 'desktop' ? s.device : undefined,
         websiteDomain: s.websiteDomain,
         optinPage: s.optinPage,
         optinStatus: s.optinStatus,

@@ -1723,7 +1723,7 @@ async function buildSessionsFromEvents(
         eventName: e.eventName,
         path: e.path,
         url: e.url,
-        pageTitle: e.pageTitle,
+        pageTitle: e.pageTitle ?? undefined,
         timestamp: e.clientTimestamp || e.serverTimestamp,
         properties: e.properties,
       })),
