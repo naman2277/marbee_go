@@ -96,8 +96,9 @@ export function TestTab({ draft, dirty, onSaveFirst }: TabProps & { dirty: boole
       if (!sid || !cid) return;
       try {
         const result = await runtimeIdleFollowup({ botId: bot.id, sessionId: sid, conversationId: cid, mode: 'test' });
-        if (result.success && result.message) {
-          setMessages((prev) => [...prev, { id: `followup-${Date.now()}`, role: 'bot', text: result.message }]);
+        const followupText = result.message;
+        if (result.success && followupText) {
+          setMessages((prev) => [...prev, { id: `followup-${Date.now()}`, role: 'bot', text: followupText }]);
         }
       } catch {
         setMessages((prev) => [...prev, { id: `followup-${Date.now()}`, role: 'bot', text: followupMsg }]);

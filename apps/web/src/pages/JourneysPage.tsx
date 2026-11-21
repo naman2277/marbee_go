@@ -773,14 +773,9 @@ export function JourneysPage({ pageMode = 'journeys' }: { pageMode?: 'journeys' 
       if (statusFilter === 'all') return true;
       const status = resolveJourneyDisplayStatus(j);
       if (statusFilter === 'started')
-        return (
-          status === 'started' ||
-          status === 'running' ||
-          status === 'active' ||
-          status === 'published'
-        );
+        return status === 'started' || status === 'published';
       if (statusFilter === 'draft') return status === 'draft';
-      if (statusFilter === 'finished') return status === 'finished' || status === 'completed';
+      if (statusFilter === 'finished') return status === 'finished';
       if (statusFilter === 'paused') return status === 'paused';
       return true;
     });
@@ -788,12 +783,11 @@ export function JourneysPage({ pageMode = 'journeys' }: { pageMode?: 'journeys' 
 
   const startedCount = inFolderItems.filter((j) => {
     const s = resolveJourneyDisplayStatus(j);
-    return s === 'started' || s === 'running' || s === 'active' || s === 'published';
+    return s === 'started' || s === 'published';
   }).length;
   const draftCount = inFolderItems.filter((j) => resolveJourneyDisplayStatus(j) === 'draft').length;
   const finishedCount = inFolderItems.filter((j) => {
-    const s = resolveJourneyDisplayStatus(j);
-    return s === 'finished' || s === 'completed';
+    return resolveJourneyDisplayStatus(j) === 'finished';
   }).length;
   const pausedCount = inFolderItems.filter((j) => resolveJourneyDisplayStatus(j) === 'paused').length;
 

@@ -671,8 +671,6 @@ export function DataJobsPage() {
                         className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all duration-150 ${
                           pipelineStatus !== 'started'
                             ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                            : pipelineStatus === 'paused'
-                            ? 'bg-amber-100 text-amber-600'
                             : 'bg-amber-500 hover:bg-amber-400 text-white shadow-sm active:scale-95'
                         }`}
                         title="Pause pipeline"

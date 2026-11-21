@@ -480,7 +480,8 @@ export function CustomersPage() {
                   customer={c}
                   eventCount={eventCounts?.get(c.id) ?? 0}
                   lastActivity={lastActivityMap?.get(c.id)}
-                  activeJourneys={journeyMap?.get(c.id)}
+                  activeJourneyCount={journeyMap?.get(c.id)?.count ?? 0}
+                  journeyNames={journeyMap?.get(c.id)?.names ?? []}
                 />
               ))}
             </div>
@@ -540,18 +541,18 @@ export function CustomersPage() {
                           <td className="px-4 py-4 space-y-1">
                             <div className="flex items-center gap-1.5 text-slate-700 font-mono text-[11px]">
                               <Mail className="h-3 w-3 text-slate-400 shrink-0" />
-                              <span className="truncate">{c.primary_email ?? c.email ?? 'No email'}</span>
+                              <span className="truncate">{c.email ?? 'No email'}</span>
                             </div>
-                            {(c.primary_phone || c.mobile) && (
+                            {c.mobile && (
                               <div className="flex items-center gap-1.5 font-mono text-[10px]">
                                 <Phone className="h-3 w-3 text-slate-400 shrink-0" />
-                                {String(c.primary_phone ?? c.mobile).includes('@') ? (
+                                {String(c.mobile).includes('@') ? (
                                   <span className="inline-flex items-center gap-1 rounded bg-rose-50 text-rose-700 px-1.5 py-0.5 border border-rose-200" title="Data Anomaly: Email string stored in phone number column">
-                                    <span>{c.primary_phone ?? c.mobile}</span>
+                                    <span>{c.mobile}</span>
                                     <span className="text-[8px] font-black uppercase text-rose-800">(Email in phone)</span>
                                   </span>
                                 ) : (
-                                  <span className="text-slate-500">{c.primary_phone ?? c.mobile}</span>
+                                  <span className="text-slate-500">{c.mobile}</span>
                                 )}
                               </div>
                             )}

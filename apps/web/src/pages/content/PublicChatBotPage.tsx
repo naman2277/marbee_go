@@ -115,8 +115,9 @@ export function PublicChatBotPage({ embed = false }: { embed?: boolean }) {
       if (!b || !sid || !cid) return;
       try {
         const result = await runtimeIdleFollowup({ botId: String(b.id), sessionId: sid, conversationId: cid, mode: 'live' });
-        if (result.success && result.message) {
-          setMessages((prev) => [...prev, { id: `followup-${Date.now()}`, role: 'bot', text: result.message }]);
+        const followupText = result.message;
+        if (result.success && followupText) {
+          setMessages((prev) => [...prev, { id: `followup-${Date.now()}`, role: 'bot', text: followupText }]);
           setFollowupSent(true);
         }
       } catch {

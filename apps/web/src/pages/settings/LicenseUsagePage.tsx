@@ -388,7 +388,7 @@ export function LicenseUsagePage() {
   }));
 
   // Telemetry Quotas Matrix mapped to live query data
-  const metrics = [
+  const metrics: Array<{ label: string; current: number; limit: number; unit: string; icon: typeof Database; color: string; isBytes?: boolean }> = [
     { label: 'Monthly Active Users (MAUs)', current: telemetryData.maus, limit: 10000, unit: 'Users', icon: TrendingUp, color: 'bg-indigo-600' },
     { label: 'Email Dispatches', current: telemetryData.emails, limit: 100000, unit: 'emails', icon: Mail, color: 'bg-emerald-600' },
     { label: 'SMS Dispatches', current: telemetryData.sms, limit: 25000, unit: 'messages', icon: MessageSquare, color: 'bg-blue-600' },

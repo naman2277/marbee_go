@@ -80,9 +80,10 @@ export function StatCard({ label, value, change }: { label: string; value: strin
   );
 }
 
-export function EmptyState({ title, description, action }: { title: string; description: string; action?: React.ReactNode }) {
+export function EmptyState({ title, description, action, icon: Icon }: { title: string; description: string; action?: React.ReactNode; icon?: React.ComponentType<{ className?: string }> }) {
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
+      {Icon && <Icon className="mb-3 h-10 w-10 text-slate-300" />}
       <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
       <p className="mt-2 max-w-sm text-sm text-slate-500">{description}</p>
       {action && <div className="mt-6">{action}</div>}
