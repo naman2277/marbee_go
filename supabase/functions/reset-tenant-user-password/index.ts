@@ -1,3 +1,15 @@
+// reset-tenant-user-password — help a workspace member regain access.
+//
+// SEC-12 (Phase 0): admins used to TYPE a new password for a teammate, so the admin then
+// knew that person's password (and had to share it somehow). Now the member is emailed a
+// one-time recovery link by Supabase Auth; only they can use it, and the admin never sees
+// or sets the password. Permission unchanged: `access.manage`.
+// Also fixes TD-13: the email lookup embedded profiles(email) from tenant_users, but there
+// is no foreign key between them, so the embed failed.
+//
+// POST { tenant_id, user_id }   (any `password` field is rejected)
+// Secrets: APP_URL (or SITE_URL) for the redirect to /setup-password.
+
 import { serve } from 'https://deno.land/std@0.208.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
@@ -10,29 +22,11 @@ const corsHeaders = {
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 }
-
 function err(message: string, status = 400) {
   return json({ error: message }, status);
 }
-
 function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
-}
-
-function validatePassword(password: string, email?: string): string | null {
-  if (!password || password.length < 12) return 'Password must be at least 12 characters';
-  if (password.length > 128) return 'Password must be 128 characters or fewer';
-  if (!/[A-Z]/.test(password)) return 'Include at least one uppercase letter';
-  if (!/[a-z]/.test(password)) return 'Include at least one lowercase letter';
-  if (!/[0-9]/.test(password)) return 'Include at least one number';
-  if (!/[^A-Za-z0-9]/.test(password)) return 'Include at least one special character';
-  if (email) {
-    const e = email.toLowerCase();
-    const local = e.split('@')[0] ?? '';
-    if (password.toLowerCase() === e) return 'Password must not be your email address';
-    if (local.length >= 3 && password.toLowerCase().includes(local)) return 'Password must not contain your email';
-  }
-  return null;
 }
 
 serve(async (req) => {
@@ -43,89 +37,60 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
     const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+    const appUrl = (Deno.env.get('APP_URL') ?? Deno.env.get('SITE_URL') ?? '').replace(/\/$/, '');
+    if (!appUrl) return err('Server misconfigured: APP_URL is not set', 500);
 
     const authHeader = req.headers.get('authorization');
     if (!authHeader?.startsWith('Bearer ')) return err('Missing authorization', 401);
-
     const jwt = authHeader.slice(7);
     const userClient = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: `Bearer ${jwt}` } },
+      auth: { persistSession: false, autoRefreshToken: false },
     });
-
     const { data: actor, error: actorErr } = await userClient.auth.getUser(jwt);
     if (actorErr || !actor.user) return err('Invalid session', 401);
 
-    const body = await req.json() as {
-      tenant_id?: string;
-      user_id?: string;
-      password?: string;
-    };
-
-    const tenantId = body.tenant_id?.trim();
-    const userId = body.user_id?.trim();
-    const password = body.password ?? '';
-
-    if (!tenantId || !userId || !password) {
-      return err('tenant_id, user_id, and password are required');
+    const body = (await req.json().catch(() => ({}))) as { tenant_id?: string; user_id?: string; password?: unknown };
+    if (body.password !== undefined) {
+      return err('Admins can no longer set passwords. A reset link is emailed to the member instead.', 400);
     }
+    const tenantId = body.tenant_id?.trim() ?? '';
+    const userId = body.user_id?.trim() ?? '';
+    if (!isUuid(tenantId) || !isUuid(userId)) return err('tenant_id and user_id must be valid UUIDs');
+    if (userId === actor.user.id) return err('Use "Forgot password" or your profile settings for your own account');
 
-    if (!isUuid(tenantId) || !isUuid(userId)) {
-      return err('tenant_id and user_id must be valid UUIDs');
-    }
-
-    if (userId === actor.user.id) {
-      return err('Use your profile settings to change your own password');
-    }
-
-    const service = createClient(supabaseUrl, serviceKey);
+    const service = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
 
     const { data: allowed } = await service.rpc('user_has_permission_as', {
       p_user_id: actor.user.id,
       p_tenant_id: tenantId,
       p_permission: 'access.manage',
     });
-
     if (!allowed) return err('Permission denied — access.manage required', 403);
 
-    const { data: member } = await service
-      .from('tenant_users')
-      .select('status, role_id, profiles(email)')
-      .eq('tenant_id', tenantId)
-      .eq('user_id', userId)
-      .maybeSingle();
+    // tenant_users and profiles both reference auth.users (no FK between them): two lookups.
+    const { data: member } = await service.from('tenant_users')
+      .select('status').eq('tenant_id', tenantId).eq('user_id', userId).maybeSingle();
+    if (!member || member.status === 'disabled') return err('Member not found in this workspace', 404);
+    const { data: profile } = await service.from('profiles').select('email').eq('id', userId).maybeSingle();
+    const email = profile?.email as string | undefined;
+    if (!email) return err('This member has no email address on file', 409);
 
-    if (!member || member.status === 'disabled') {
-      return err('Member not found in this workspace');
+    const { error: sendErr } = await service.auth.resetPasswordForEmail(email, { redirectTo: `${appUrl}/setup-password` });
+    if (sendErr) {
+      console.error('reset-tenant-user-password: send failed', sendErr.message);
+      return err('Could not send the reset email — try again shortly', 502);
     }
 
-    const profile = member.profiles as { email?: string } | { email?: string }[] | null;
-    const memberEmail = Array.isArray(profile) ? profile[0]?.email : profile?.email;
-
-    const pwError = validatePassword(password, memberEmail ?? undefined);
-    if (pwError) return err(pwError);
-
-    const { error: updateErr } = await service.auth.admin.updateUserById(userId, {
-      password,
+    const { error: auditErr } = await service.from('audit_logs').insert({
+      tenant_id: tenantId, user_id: actor.user.id, action: 'update', resource_type: 'tenant_member',
+      resource_id: userId, metadata: { op: 'send_password_reset_link' },
     });
+    if (auditErr) console.error('reset-tenant-user-password: audit failed', auditErr.message);
 
-    if (updateErr) return err(updateErr.message, 500);
-
-    if (member.status === 'invited' && member.role_id && memberEmail) {
-      await service.rpc('link_active_tenant_user', {
-        p_tenant_id: tenantId,
-        p_auth_user_id: userId,
-        p_email: memberEmail,
-        p_full_name: '',
-        p_role_id: member.role_id,
-        p_created_by: actor.user.id,
-      });
-    }
-
-    return json({
-      success: true,
-      message: 'Password updated. Share the new password securely with the user — it cannot be viewed again.',
-    });
+    return json({ success: true, message: `A password reset link was emailed to ${email}. Only they can use it.` });
   } catch (e) {
-    return err(e instanceof Error ? e.message : 'Unknown error', 500);
+    console.error('reset-tenant-user-password unhandled', e instanceof Error ? e.message : e);
+    return err('Internal error', 500);
   }
 });
