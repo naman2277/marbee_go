@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { LoginPage } from '@/pages/LoginPage';
+import { WorkspaceUnavailablePage } from '@/pages/WorkspaceUnavailablePage';
 import { LandingPage } from '@/pages/LandingPage';
 import { ProjectsPage } from '@/pages/ProjectsPage';
 import { CommandCenterPage } from '@/pages/CommandCenterPage';
@@ -85,6 +86,7 @@ import { DevPipelinesPage } from '@/pages/dev/DevPipelinesPage';
 import { DevDecisionStudioPage } from '@/pages/dev/DevDecisionStudioPage';
 import { DevEmailDomainsPage } from '@/pages/dev/DevEmailDomainsPage';
 import { DevCampaignDashboardPage } from '@/pages/dev/DevCampaignDashboardPage';
+import { DevWorkspaceUnavailablePage } from '@/pages/dev/DevWorkspaceUnavailablePage';
 import AutomationsPage from '@/pages/data/AutomationsPage';
 import AutomationEditorPage from '@/pages/data/AutomationEditorPage';
 
@@ -93,9 +95,9 @@ const queryClient = new QueryClient({
 });
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { session, loading } = useAuth();
+  const { session, loading, workspaceStatus } = useAuth();
 
-  if (loading) {
+  if (loading || (session && workspaceStatus === 'loading')) {
     return (
       <div className="flex h-screen items-center justify-center">
         <p className="text-slate-500">Loading...</p>
@@ -104,6 +106,8 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (!session) return <Navigate to="/login" replace />;
+  // TD-20: no active workspace → explain, never show an empty app for a fallback workspace.
+  if (workspaceStatus === 'none' || workspaceStatus === 'suspended') return <WorkspaceUnavailablePage />;
   return <AppLayout>{children}</AppLayout>;
 }
 
@@ -121,6 +125,9 @@ function AppRoutes() {
       <Route path="/push/open" element={<PushOpenPage />} />
       {import.meta.env.DEV && (
         <Route path="/dev/campaign-dashboard" element={<DevCampaignDashboardPage />} />
+      )}
+      {import.meta.env.DEV && (
+        <Route path="/dev/workspace-unavailable" element={<DevWorkspaceUnavailablePage />} />
       )}
       {import.meta.env.DEV && (
         <Route path="/dev/email-studio" element={<DevEmailStudioPage />} />

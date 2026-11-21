@@ -11,9 +11,11 @@ import {
   validatePassword,
 } from '@/lib/password-policy';
 import { activateProvisionedMembership } from '@/lib/access-management';
+import { useAuth } from '@/contexts/AuthContext';
 
 export function SetupPasswordPage() {
   const navigate = useNavigate();
+  const { refreshWorkspace } = useAuth();
   const [searchParams] = useSearchParams();
   const tenantId = searchParams.get('tenant');
 
@@ -74,6 +76,7 @@ export function SetupPasswordPage() {
       // Non-fatal for alternate invite flows
     }
 
+    await refreshWorkspace(); // pick up the workspace just activated
     setDone(true);
     setSaving(false);
     setTimeout(() => navigate('/dashboard'), 1500);
