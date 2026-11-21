@@ -1,21 +1,13 @@
 import { useState } from 'react';
 import {
   ArrowRight,
-  Check,
   GitMerge,
-  Layers,
   Link2,
   Mail,
   Merge,
-  Phone,
-  Search,
-  Shield,
   Smartphone,
-  Sparkles,
   Tag,
   User,
-  Users,
-  X,
 } from 'lucide-react';
 import { Button } from '@/components/ui';
 import type { TableHealthProfile } from '@/lib/data-health-engine';

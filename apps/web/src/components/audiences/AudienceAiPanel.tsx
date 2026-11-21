@@ -2,14 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import {
   Sparkles, Send, Bot, User, Save, Users, Loader2,
-  AlertTriangle, CheckCircle2, Lightbulb, ChevronRight,
+  AlertTriangle, CheckCircle2, Lightbulb, 
   Zap, PlusCircle, Info,
 } from 'lucide-react';
 import { Button } from '@/components/ui';
 import {
   agentMessage, buildCohortFromPrompt, editCohortConversationally,
-  discoverCohorts, suggestAdditionalConditions, recommendedActions,
-  type AgentMessage, type AgentPlan, type Clarification,
+  discoverCohorts, suggestAdditionalConditions, 
+  type AgentMessage, type AgentPlan, 
   type DiscoverySuggestion,
 } from '@/lib/cohorts/ai';
 import {
@@ -26,7 +26,6 @@ import {
 } from '@/lib/audiences';
 import type { SimpleAudienceRule } from '@/lib/audiences';
 import { fetchSchemasWithFields } from '@/lib/fetch-schemas';
-import { SCHEMA_TABLE_CONFIG, listAvailableDataFields } from '@/lib/schema-data';
 import { fetchSchemaRows } from '@/lib/schema-records';
 import { cn } from '@/lib/utils';
 

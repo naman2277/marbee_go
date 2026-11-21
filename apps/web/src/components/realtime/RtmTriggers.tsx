@@ -1,15 +1,15 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
-  AlertTriangle, ArrowRight, Calendar, CheckCircle2, ChevronDown,
-  ChevronRight, Clock, Copy, Edit2, Eye, Filter, Folder, Layers,
-  Pause, Play, Plus, Search, Settings, Shield, Target, Timer, Trash2,
+  CheckCircle2, 
+  Edit2, 
+  Pause, Play, Plus, Search, Target, Trash2,
   X, Zap,
 } from 'lucide-react';
 import { Badge, Button, EmptyState } from '@/components/ui';
 import {
   type Channel, type TriggerCategory, type TriggerStatus,
   type TriggerCondition, type TemporalCondition, type TriggerAction,
-  type TriggerRule, type FrequencyCap, type QuietHours,
+  type TriggerRule, 
   CHANNELS,
 } from '@/lib/rtm';
 
@@ -113,7 +113,7 @@ export function RtmTriggers() {
   const [statusFilter, setStatusFilter] = useState('');
   const [selectedTrigger, setSelectedTrigger] = useState<TriggerRule | null>(null);
   const [showPresets, setShowPresets] = useState(false);
-  const [presetCategory, setPresetCategory] = useState<TriggerCategory | ''>('');
+  const [presetCategory] = useState<TriggerCategory | ''>('');
   const [showSimulator, setShowSimulator] = useState(false);
 
   const filtered = useMemo(() => {

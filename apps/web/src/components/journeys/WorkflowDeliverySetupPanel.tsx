@@ -1,23 +1,15 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import {
-  Bell,
-  CheckCircle2,
-  ExternalLink,
   Mail,
   Maximize2,
   MessageSquare,
-  Radio,
-  Send,
   Sparkles,
-  Tag,
-  Zap,
 } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { ProviderLogo } from '@/components/channels/ProviderLogo';
 import { DeliveryConfigModal } from '@/components/journeys/DeliveryConfigModal';
 import {
   channelLabel,
-  getDeliveryContentFromConfig,
   type ContentChannel,
   type MarbeeContentTemplate,
 } from '@/lib/content-templates';
@@ -57,11 +49,9 @@ export function WorkflowDeliverySetupPanel({
   templates,
   providers,
   onChange,
-  variant = 'light',
   populationFields,
   populationSample,
 }: Props) {
-  const dark = variant === 'dark';
   const [modalOpen, setModalOpen] = useState(false);
 
   const deliveryName = String(config.delivery_name || `${channelLabel(channel)} Step`);

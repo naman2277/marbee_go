@@ -36,7 +36,6 @@ import { AccessManagementPage } from '@/pages/settings/AccessManagementPage';
 import { MyAccountPage } from '@/pages/settings/MyAccountPage';
 import { MemberAccountPage } from '@/pages/settings/MemberAccountPage';
 import { ApiSettingsPage } from '@/pages/settings/ApiSettingsPage';
-import { SocialMediaSettingsPage } from '@/pages/settings/SocialMediaSettingsPage';
 import { SocialStudioPage } from '@/pages/content/SocialStudioPage';
 import { AcceptInvitePage } from '@/pages/AcceptInvitePage';
 import { SetupPasswordPage } from '@/pages/SetupPasswordPage';

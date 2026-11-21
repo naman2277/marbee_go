@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { MessageSquare, Clock, User, Star, Search, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
 import { Card, Badge, Button } from '@/components/ui';
 import type { TabProps } from '../types';
-import { fetchConversations, type ChatBotConversation, type ChatBotSentiment, type ChatBotConversationStatus, type ChatBotLeadStatus } from '@/lib/chatbots';
+import { fetchConversations, type ChatBotSentiment, type ChatBotConversationStatus, type ChatBotLeadStatus } from '@/lib/chatbots';
 import { ConversationDetailDrawer } from './ConversationDetailDrawer';
 import { supabase } from '@/lib/supabase';
 

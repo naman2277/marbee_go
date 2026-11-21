@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { X, Play, RefreshCw, Database, Sparkles, CheckCircle2, UserCheck } from 'lucide-react';
+import { X, RefreshCw, Database, Sparkles, CheckCircle2, UserCheck } from 'lucide-react';
 import { Button, Badge } from '@/components/ui';
 import type { FormField, FormFieldMapping } from '@/lib/forms';
 import { generateSampleFieldValue, resolveIdentityValues, type CustomerMatchKey, type FormSchemaMapping } from '@/lib/form-mapping';

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
   AlertCircle,
@@ -10,26 +10,17 @@ import {
   Check,
   CheckCircle2,
   Clock,
-  Database,
-  FileSpreadsheet,
-  Filter,
   Layers,
   Link2,
-  MapPin,
   Play,
-  PlugZap,
   Plus,
-  RefreshCw,
   RotateCw,
   Search,
   SlidersHorizontal,
   Sparkles,
   Trash2,
-  Webhook,
-  X,
-  Zap,
 } from 'lucide-react';
-import { PageHeader, Card, Badge, Button } from '@/components/ui';
+import { Card, Button } from '@/components/ui';
 import { ConnectorTypePicker } from '@/components/connectors/ConnectorTypePicker';
 import { ConnectorLinkWizard } from '@/components/connectors/ConnectorLinkWizard';
 import { ConnectorLinksPanel } from '@/components/connectors/ConnectorLinksPanel';
@@ -39,11 +30,9 @@ import { logAudit } from '@/lib/audit';
 import { useAuth } from '@/contexts/AuthContext';
 import { fetchSchemasWithFields } from '@/lib/fetch-schemas';
 import {
-  CONNECTOR_FEATURES,
   CONNECTOR_TYPE_META,
   connectorMeta,
   mappingPreview,
-  mappingSummary,
   syncHealth,
 } from '@/lib/connector-meta';
 import type { ConnectorMappingRow } from '@/lib/connector-mapping';
@@ -118,7 +107,6 @@ function playTrashSound() {
 
 export function ConnectorsPage() {
   const { tenantId, environment } = useAuth();
-  const queryClient = useQueryClient();
 
   const [view, setView] = useState<PageView>('connectors');
   const [showCreate, setShowCreate] = useState(false);

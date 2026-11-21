@@ -1,28 +1,16 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Video,
-  VideoOff,
   Mic,
   MicOff,
   Monitor,
   PhoneOff,
-  Sparkles,
-  Volume2,
   Terminal,
-  Layers,
-  ArrowRight,
-  ShieldCheck,
-  CheckCircle2,
-  AlertTriangle,
-  Play,
-  RotateCcw,
   Copy,
   Code2,
-  ExternalLink,
   ChevronDown,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useNavigate } from 'react-router-dom';
 import { SUPPORTED_LANGUAGES, getLanguageByCode } from '@/lib/ai-languages';
 import { playBuddySpeech, stopBuddySpeech } from '@/lib/ai-voice-engine';
 
@@ -76,7 +64,6 @@ type ToolExecutionEvent = {
 };
 
 export function AiRunwayVideoCall() {
-  const navigate = useNavigate();
   const [selectedAvatar, setSelectedAvatar] = useState<RunwayAvatarProfile>(RUNWAY_AVATARS[0]);
   const [isCallActive, setIsCallActive] = useState(false);
   const [isMicMuted, setIsMicMuted] = useState(false);
@@ -84,12 +71,11 @@ export function AiRunwayVideoCall() {
   const [isAvatarSpeaking, setIsAvatarSpeaking] = useState(false);
   const [currentSpeechText, setCurrentSpeechText] = useState('');
   const [toolEvents, setToolEvents] = useState<ToolExecutionEvent[]>([]);
-  const [transcript, setTranscript] = useState<{ sender: 'user' | 'avatar'; text: string; time: string }[]>([]);
+  const [, setTranscript] = useState<{ sender: 'user' | 'avatar'; text: string; time: string }[]>([]);
   const [voiceVolume, setVoiceVolume] = useState<number[]>([20, 45, 75, 30, 85, 40, 60, 25, 90, 35]);
   const [activeTab, setActiveTab] = useState<'video' | 'tools' | 'embed'>('video');
   const [copiedCode, setCopiedCode] = useState(false);
 
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [callLanguage, setCallLanguage] = useState<string>('en-US');
   const [isLangDropdownOpen, setIsLangDropdownOpen] = useState(false);
   const langDropdownRef = useRef<HTMLDivElement | null>(null);

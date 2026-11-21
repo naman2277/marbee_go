@@ -578,9 +578,6 @@ export function JourneysPage({ pageMode = 'journeys' }: { pageMode?: 'journeys' 
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<'all' | 'campaign' | 'flow'>(
-    pageMode === 'campaigns' ? 'campaign' : pageMode === 'journeys' ? 'flow' : 'all',
-  );
   const [currentFolder, setCurrentFolder] = useState('/');
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');

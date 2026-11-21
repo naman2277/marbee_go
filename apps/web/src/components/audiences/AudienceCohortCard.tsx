@@ -1,11 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Calendar,
-  Clock,
-  ExternalLink,
-  Layers,
-  MoreVertical,
   Pencil,
   RefreshCw,
   SlidersHorizontal,
@@ -15,7 +10,6 @@ import {
   Users,
   Zap,
 } from 'lucide-react';
-import { Badge, Button } from '@/components/ui';
 import { DeleteConfirmModal } from '@/components/journeys/DeleteConfirmModal';
 import { cronLabel, formatRelativeTime, type Audience } from '@/lib/audiences';
 

@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BUDDY_AGENTS, type BuddyAgent } from '@/components/ai/AiAgentSidebar';
-import { fetchBuddyAgentsConfig, type BuddyCustomAgentConfig } from '@/lib/ai-engine-config';
+import { fetchBuddyAgentsConfig } from '@/lib/ai-engine-config';
 import { useAuth } from '@/contexts/AuthContext';
 import { AiProfessionalAgent } from '@/components/ai/AiProfessionalAgent';
 import { AiAgentChatsTab } from '@/components/ai/AiAgentChatsTab';
@@ -19,14 +19,9 @@ import {
   ArrowRight,
   ArrowRightLeft,
   RefreshCw,
-  Zap,
   Database,
-  Layers,
   CheckSquare,
-  Mail,
-  Users,
   Radio,
-  Clock,
   ShieldCheck,
   ChevronRight,
   ChevronLeft,

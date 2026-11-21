@@ -1,14 +1,10 @@
 import { useState } from 'react';
 import {
-  Calendar,
   Check,
   Copy,
   Download,
-  ExternalLink,
   FileText,
-  Film,
   Globe,
-  Lock,
   X,
 } from 'lucide-react';
 import { Button, Badge } from '@/components/ui';

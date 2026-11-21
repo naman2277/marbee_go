@@ -4,7 +4,6 @@ import {
   FileText,
   Laptop,
   Smartphone,
-  Sparkles,
   Tablet,
   Zap,
 } from 'lucide-react';

@@ -36,33 +36,6 @@ export type IngestionScheduleConfig = {
   errorHandling: 'skip_and_continue' | 'halt';
 };
 
-const VALID_CUSTOMER_COLUMNS = new Set([
-  'id',
-  'tenant_id',
-  'environment',
-  'email',
-  'mobile',
-  'title',
-  'first_name',
-  'middle_name',
-  'last_name',
-  'dob',
-  'gender',
-  'city',
-  'state',
-  'country',
-  'pincode',
-  'status',
-  'created_at',
-  'updated_at',
-  'deleted_at',
-  'location',
-  'consent',
-  'loyalty_member',
-  'loyalty_program_name',
-  'loyalty_tier_name',
-  'loyalty_points_balance',
-]);
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 

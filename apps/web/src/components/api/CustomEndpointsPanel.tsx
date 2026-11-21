@@ -9,7 +9,6 @@ import {
   PIPELINE_TEMPLATES,
   formatPipelineJson,
   validatePipeline,
-  type ApiPipelineStep,
 } from '@/lib/api-pipeline';
 import {
   customApiInvokeUrl,

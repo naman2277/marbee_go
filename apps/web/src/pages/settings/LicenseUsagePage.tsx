@@ -9,13 +9,9 @@ import {
   Plus,
   Trash2,
   Download,
-  Send,
   CheckCircle2,
-  FileText,
   AlertCircle,
   TrendingUp,
-  ArrowRight,
-  Printer,
   Database,
   Globe,
   Radio,
@@ -23,22 +19,16 @@ import {
   AlertTriangle,
   Receipt,
   CreditCard,
-  Check,
   Clock,
   ShieldCheck,
-  ExternalLink,
-  DollarSign,
   Building2,
-  User,
   ChevronRight,
   Sparkles,
   Lock,
   Wallet,
-  Calendar,
-  Layers,
   CheckCircle
 } from 'lucide-react';
-import { Button, Card, PageHeader, Badge } from '@/components/ui';
+import { Card, Badge } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';

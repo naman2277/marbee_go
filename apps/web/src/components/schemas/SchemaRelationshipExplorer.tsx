@@ -22,7 +22,6 @@ import {
   GitBranch,
   Info,
   LayoutGrid,
-  Link2,
   Maximize2,
   Minimize2,
   Move,

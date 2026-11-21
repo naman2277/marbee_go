@@ -1,9 +1,9 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
-  Plus, Trash2, ChevronDown, ChevronRight, Eye,
-  GripVertical, Search, X, Table2, Filter as FilterIcon,
+  Plus, ChevronDown, ChevronRight, Eye,
+  Search, X, Table2, Filter as FilterIcon,
   ArrowUpDown, Settings2, Database, Layers,
-  ChevronsRight, ChevronsLeft, ChevronLeft,
+  ChevronsRight, ChevronsLeft,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -332,7 +332,6 @@ export function ReadSchemaInspector({ node, onChange }: Props) {
   const schema = SCHEMAS[cfg.schema];
   const fields = schema?.fields ?? [];
 
-  const [fieldSearch, setFieldSearch] = useState('');
   const [sectionsOpen, setSectionsOpen] = useState<Record<string, boolean>>({
     source: true, fields: true, filter: true, options: false, advanced: false,
   });
@@ -342,14 +341,8 @@ export function ReadSchemaInspector({ node, onChange }: Props) {
 
   const toggleSection = (key: string) => setSectionsOpen((p) => ({ ...p, [key]: !p[key] }));
 
-  const filteredFields = useMemo(() => {
-    if (!fieldSearch) return fields;
-    const q = fieldSearch.toLowerCase();
-    return fields.filter((f) => f.name.toLowerCase().includes(q) || f.type.toLowerCase().includes(q));
-  }, [fields, fieldSearch]);
 
   const selectedFields = cfg.selected_fields.length > 0 ? cfg.selected_fields : fields.map((f) => f.name);
-  const allSelected = selectedFields.length === fields.length;
 
   // ─── Condition group helpers ──────────────────────────────────
 

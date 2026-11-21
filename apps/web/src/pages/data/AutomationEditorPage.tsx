@@ -8,7 +8,7 @@ import {
   MessageSquare, MessageCircle, Database, Send, Sheet, Reply,
   CheckCircle2, XCircle, Loader2,
   Maximize2, Minimize2, Search,
-  ToggleLeft, ToggleRight, Rocket, FlaskConical,
+  Rocket, FlaskConical,
   Sliders, Terminal,
 } from 'lucide-react';
 import type { AutomationNode, AutomationEdge, AutomationWorkflow } from '../../lib/automations';
@@ -18,7 +18,6 @@ import {
   executeSingleNode,
 } from '../../lib/automations';
 import { SendEmailActivityConfigurator } from '../../components/channels/SendEmailActivityConfigurator';
-import { useTenantScope } from '@/contexts/AuthContext';
 
 const ICON_MAP: Record<string, React.FC<{ className?: string }>> = {
   Globe, Clock, FileInput, Zap, CreditCard, Mail, GitBranch, Repeat,
@@ -60,8 +59,7 @@ export default function AutomationEditorPage() {
   const navigate = useNavigate();
   const canvasRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
-  const { tenantId, environment } = useTenantScope?.() ?? { tenantId: undefined, environment: 'production' };
-  const [isEmailStudioOpen, setIsEmailStudioOpen] = useState(false);
+  const [isEmailStudioOpen] = useState(false);
 
   const [workflow, setWorkflow] = useState<AutomationWorkflow | null>(null);
   const [nodes, setNodes] = useState<AutomationNode[]>([]);

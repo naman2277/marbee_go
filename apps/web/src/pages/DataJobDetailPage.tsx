@@ -5,10 +5,10 @@ import {
   ArrowLeft, ArrowRight, Play, Pause, Square, Save, Plus, Trash2, X, Zap,
   CheckCircle2, XCircle, Loader2,
   Maximize2, Minimize2, Search,
-  ToggleLeft, ToggleRight, Rocket, FlaskConical,
-  ChevronDown, Calendar, History, GitBranch, UploadCloud,
+  Rocket, FlaskConical,
+  ChevronDown, History, GitBranch, UploadCloud,
   AlertTriangle, RotateCcw, Clock, Table2, Filter as FilterIcon,
-  Circle, StopCircle, Activity, Copy, FileSpreadsheet, Pause as PauseIcon,
+  Circle, Activity, Copy, FileSpreadsheet, Pause as PauseIcon,
   Sliders, Terminal, Info, Folder, FolderOpen, ChevronRight,
 } from 'lucide-react';
 import type { Node, Edge } from 'reactflow';
@@ -18,7 +18,7 @@ import {
   NODE_PALETTE, NODE_ICONS, NODE_CATEGORIES, NODE_CONFIG_FIELDS,
   defaultConfigForType, configSummary, paletteItem, categoryAccent, validateNodeConfig,
 } from '@/lib/data-job-nodes';
-import type { NodePaletteItem, NodeCategory, ConfigFieldExt } from '@/lib/data-job-nodes';
+import type { NodePaletteItem, NodeCategory } from '@/lib/data-job-nodes';
 import {
   parseWorkflowGraph, serializeWorkflowGraph, JOB_TYPES,
 } from '@/lib/data-jobs';
@@ -34,7 +34,7 @@ import type { PipelineIssue } from '@/lib/pipeline-validation';
 import { cronNext } from '@/lib/cron';
 import { CronEditor } from '@/components/data/CronEditor';
 import { cn } from '@/lib/utils';
-import { Badge, Button, Card } from '@/components/ui';
+import { Badge, Button } from '@/components/ui';
 import { executeNode, resetSeed } from '@/lib/pipeline-engine';
 import type { DataRow, PipelineContext } from '@/lib/pipeline-engine';
 import { ReadSchemaInspector } from '@/components/data/ReadSchemaInspector';
@@ -135,33 +135,6 @@ function buildBezierPath(from: { x: number; y: number }, to: { x: number; y: num
   return `M ${from.x} ${from.y} C ${from.x + dx} ${from.y}, ${to.x - dx} ${to.y}, ${to.x} ${to.y}`;
 }
 
-function autoLayoutNodes(nodes: CanvasNode[], edges: CanvasEdge[]): CanvasNode[] {
-  if (nodes.length === 0) return nodes;
-  const byId = new Map(nodes.map((n) => [n.id, n]));
-  const incoming = new Map<string, number>();
-  nodes.forEach((n) => incoming.set(n.id, 0));
-  edges.forEach((e) => incoming.set(e.toId, (incoming.get(e.toId) ?? 0) + 1));
-  const queue = nodes.filter((n) => (incoming.get(n.id) ?? 0) === 0);
-  const ordered: CanvasNode[] = [];
-  while (queue.length) {
-    const node = queue.shift()!;
-    ordered.push(node);
-    edges.filter((e) => e.fromId === node.id).forEach((e) => {
-      const next = (incoming.get(e.toId) ?? 1) - 1;
-      incoming.set(e.toId, next);
-      if (next === 0) {
-        const t = byId.get(e.toId);
-        if (t) queue.push(t);
-      }
-    });
-  }
-  const seen = new Set(ordered.map((n) => n.id));
-  nodes.filter((n) => !seen.has(n.id)).forEach((n) => ordered.push(n));
-  return nodes.map((n) => {
-    const idx = ordered.findIndex((o) => o.id === n.id);
-    return { ...n, x: 60 + idx * 320, y: 200 + (idx % 3) * 120 };
-  });
-}
 
 // ─── Blink CSS (shared with automations) ──────────────────────────────────
 
@@ -187,15 +160,7 @@ function ensureBlinkStyles() {
 
 // ─── Color helpers ────────────────────────────────────────────────────────
 
-function catBg(cat: NodeCategory): string {
-  const map: Record<string, string> = { Triggers: 'bg-fuchsia-500/10', Sources: 'bg-emerald-500/10', Transform: 'bg-violet-500/10', Decisioning: 'bg-amber-500/10', 'AI & Personalization': 'bg-pink-500/10', Actions: 'bg-blue-500/10', 'Control Flow': 'bg-cyan-500/10', Monitoring: 'bg-orange-500/10' };
-  return map[cat] || 'bg-slate-100';
-}
 
-function catBorder(cat: NodeCategory): string {
-  const map: Record<string, string> = { Triggers: 'border-fuchsia-300', Sources: 'border-emerald-300', Transform: 'border-violet-300', Decisioning: 'border-amber-300', 'AI & Personalization': 'border-pink-300', Actions: 'border-blue-300', 'Control Flow': 'border-cyan-300', Monitoring: 'border-orange-300' };
-  return map[cat] || 'border-slate-200';
-}
 
 function catFill(cat: NodeCategory): string {
   return categoryAccent(cat);
@@ -484,7 +449,7 @@ export function DataJobDetailPage() {
   // Pan/zoom
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
-  const [isPanning, setIsPanning] = useState(false);
+  const [, setIsPanning] = useState(false);
   const isPanningRef = useRef(false);
   const panStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
 
@@ -562,7 +527,7 @@ export function DataJobDetailPage() {
     });
   }, [id]);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
+  const [, setLastSavedAt] = useState<string | null>(null);
   const [scheduleTriggered, setScheduleTriggered] = useState(false);
 
   // Canvas is read-only while pipeline is running or paused
@@ -588,7 +553,6 @@ export function DataJobDetailPage() {
   // Save / run messages
   const [saveMsg, setSaveMsg] = useState('');
   const [runMsg, setRunMsg] = useState('');
-  const [runMenuOpen, setRunMenuOpen] = useState(false);
 
   // Schedule
   const [scheduleCron, setScheduleCron] = useState('');
@@ -829,16 +793,6 @@ export function DataJobDetailPage() {
     },
   });
 
-  const publishJob = useMutation({
-    mutationFn: async () => {
-      await saveWorkflow.mutateAsync();
-      return publishVersion.mutateAsync(undefined);
-    },
-    onSuccess: (version) => {
-      setSaveMsg(`Published v${version}`);
-      setTimeout(() => setSaveMsg(''), 3000);
-    },
-  });
 
   // ─── Canvas pan ─────────────────────────────────────────────────────
 
@@ -1510,7 +1464,6 @@ export function DataJobDetailPage() {
 
   // ─── Layout helpers ─────────────────────────────────────────────────
 
-  const autoLayout = () => setNodes((prev) => autoLayoutNodes(prev, edges));
 
   const fitView = () => {
     if (nodes.length === 0) return;
@@ -3240,7 +3193,6 @@ function TriggerFileUploader({ node, jobId, onTrigger, onUpdateConfig }: {
 
   const config = node.config as Record<string, string>;
   const expectedFormat = config.format || 'csv';
-  const watchFolder = config.watch_folder || '';
   const fileNamePattern = config.file_name_pattern || '';
 
   const fileIcon = (name: string) => {
@@ -3478,7 +3430,7 @@ function TriggerFileUploader({ node, jobId, onTrigger, onUpdateConfig }: {
   );
 }
 
-function TriggerFormPicker({ node, tenantId, environment, jobId, onChange }: {
+function TriggerFormPicker({ node, tenantId, environment, onChange }: {
   node: CanvasNode; tenantId: string; environment: string; jobId: string;
   onChange: (n: CanvasNode) => void;
 }) {

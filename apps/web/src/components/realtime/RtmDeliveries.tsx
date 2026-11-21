@@ -1,14 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import {
-  ArrowDown, ArrowUp, BarChart3, ChevronDown, ChevronRight, ChevronUp,
-  ExternalLink, Eye, Filter, Globe, Link2, Mail, MousePointerClick,
-  Radio, Search, Send, Shield, TrendingUp, X, XCircle,
+  ChevronDown, ChevronRight, 
+  Globe, Link2, Mail, MousePointerClick,
+  Radio, Search, Send, X, XCircle,
 } from 'lucide-react';
-import { Badge, Button, EmptyState } from '@/components/ui';
+import { Badge, Button } from '@/components/ui';
 import {
   CHANNELS, type Channel, type DeliveryStatus, DELIVERY_STATUSES,
-  SUPPRESSION_REASONS, maskPii, listDefinitions, getLiveEventsStore, subscribeRealTimeEvents,
+  maskPii, getLiveEventsStore, subscribeRealTimeEvents,
 } from '@/lib/rtm';
 
 // ─── Demo data ──────────────────────────────────────────────────────────────
@@ -90,7 +89,7 @@ function genEngagements(deliveries: DeliveryRecord[]): EngagementRecord[] {
 
 type SubTab = 'log' | 'engagement' | 'reporting';
 
-export function RtmDeliveries({ tenantId, environment }: { tenantId: string; environment: string }) {
+export function RtmDeliveries({  }: { tenantId: string; environment: string }) {
   const [subTab, setSubTab] = useState<SubTab>('log');
   const [deliveries, setDeliveries] = useState<DeliveryRecord[]>(() => getDeliveriesFromStore());
 
@@ -535,7 +534,7 @@ function Reporting({ deliveries, engagements }: { deliveries: DeliveryRecord[]; 
             <p className="py-4 text-center text-sm text-slate-400">No click data yet.</p>
           ) : (
             <div className="space-y-2">
-              {hotClicks.map((c, i) => {
+              {hotClicks.map((c, _i) => {
                 const maxC = hotClicks[0].count;
                 return (
                   <div key={c.link}>

@@ -451,7 +451,7 @@ nodeRegistry.register({
   inputSchema: { type: 'object', properties: {} },
   outputSchema: { type: 'object', properties: {} },
   configSchema: { type: 'object', properties: {} },
-  execute: async (input) => ({ status: 'succeeded', output: { dispatched: true } }),
+  execute: async (_input) => ({ status: 'succeeded', output: { dispatched: true } }),
 });
 
 // 10. Approval

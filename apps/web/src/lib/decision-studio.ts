@@ -760,7 +760,7 @@ export function evaluateDecision(
         const results = group.conditions.map(c => checkCondition(c, request.context));
         const pass = group.logic === 'and' ? results.every(Boolean) : results.some(Boolean);
         if (!pass) {
-          const failedCond = group.conditions.find((c, i) => !results[i]);
+          const failedCond = group.conditions.find((_c, i) => !results[i]);
           eligibleFiltered.push({
             item_name: item.name,
             reason: failedCond ? `${failedCond.field} ${failedCond.operator} ${JSON.stringify(failedCond.value)}` : 'Eligibility rule failed',

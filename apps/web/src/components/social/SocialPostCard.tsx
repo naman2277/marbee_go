@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import {
-  Calendar,
   Send,
   Trash2,
   Edit2,
@@ -8,12 +7,9 @@ import {
   Clock,
   CheckCircle2,
   AlertTriangle,
-  Image as ImageIcon,
-  Share2,
-  Sparkles,
 } from 'lucide-react';
 import { Card, Badge, Button } from '@/components/ui';
-import { SOCIAL_PLATFORMS, type SocialPost, type SocialPlatform } from '@/lib/social-providers';
+import { SOCIAL_PLATFORMS, type SocialPost } from '@/lib/social-providers';
 import { AnimatedSocialIcon } from './AnimatedSocialIcon';
 
 type Props = {

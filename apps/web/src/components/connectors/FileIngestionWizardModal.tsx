@@ -8,29 +8,14 @@ import {
   Check,
   CheckCircle2,
   Clock,
-  Database,
   Download,
-  Eye,
-  FileCode2,
   FileSpreadsheet,
-  FileText,
-  Filter,
-  Flame,
-  Globe,
   KeyRound,
-  Layers,
   Play,
-  Plus,
   RefreshCw,
-  Search,
-  Settings2,
-  ShieldAlert,
-  ShieldCheck,
-  SlidersHorizontal,
   Sparkles,
   Table,
   UploadCloud,
-  Wand2,
   X,
   Zap,
 } from 'lucide-react';
@@ -42,7 +27,6 @@ import {
   downloadSampleCsvTemplate,
   downloadSampleExcelTemplate,
   executeFileIngestionBatch,
-  getSampleValueForField,
   parseUploadedFile,
   saveConnectorConnection,
   transformRow,
@@ -128,7 +112,6 @@ export function FileIngestionWizardModal({
   open,
   onClose,
   schemas,
-  onComplete,
   editConnector,
   initialStep = 1,
 }: Props) {
@@ -181,7 +164,7 @@ export function FileIngestionWizardModal({
     rowCount: number;
     fileSizeFormatted: string;
   } | null>(null);
-  const [isParsing, setIsParsing] = useState(false);
+  const [, setIsParsing] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
 
   // Step 3: Column Mapping State

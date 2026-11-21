@@ -2,19 +2,15 @@ import { useMemo, useState } from 'react';
 import {
   ChevronDown,
   ChevronRight,
-  Filter,
   Flame,
-  Layers,
   Search,
   Sparkles,
   X,
-  Zap,
 } from 'lucide-react';
 import {
   CAMPAIGN_CATEGORIES,
   CAMPAIGN_ICONS,
   categoryAccent,
-  isCampaignWorkflowMode,
   paletteForMode,
   type CampaignModeInput,
   type CampaignNodeCategory,
@@ -29,21 +25,9 @@ type Props = {
   onDragStart: (event: React.DragEvent, type: string) => void;
 };
 
-const CATEGORY_ICONS: Record<CampaignNodeCategory, typeof Layers> = {
-  Targeting: Filter,
-  Entry: Zap,
-  Timing: Zap,
-  Channels: Zap,
-  Decisions: Layers,
-  Audience: Layers,
-  Flow: Layers,
-  Exit: Layers,
-};
 
 export function CampaignPalette({
   mode = 'flow',
-  light = true,
-  modern = true,
   onAddNode,
   onDragStart,
 }: Props) {

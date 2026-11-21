@@ -2,29 +2,20 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertCircle,
-  ArrowRight,
   Check,
   CheckCircle2,
   Copy,
   ExternalLink,
-  HelpCircle,
-  Key,
-  Layers,
   Link2,
   Loader2,
-  Radio,
-  RefreshCw,
   Send,
-  Share2,
   ShieldCheck,
   Sparkles,
-  Trash2,
   Unlink,
   User,
   X,
-  Zap,
 } from 'lucide-react';
-import { Card, Button, Badge } from '@/components/ui';
+import { Button, Badge } from '@/components/ui';
 import {
   fetchSocialAccounts,
   connectSocialAccount,
@@ -33,7 +24,6 @@ import {
 } from '@/lib/social-media';
 import {
   SOCIAL_PLATFORMS,
-  getOAuthUrl,
   type SocialPlatform,
   type SocialAccount,
 } from '@/lib/social-providers';
@@ -69,7 +59,7 @@ export function SocialConnectionsManager({ tenantId, environment }: Props) {
     x: { clientId: '', accountName: '', accessToken: '', accountId: '' },
   });
 
-  const { data: accounts, isLoading } = useQuery({
+  const { data: accounts } = useQuery({
     queryKey: ['social-accounts', tenantId, environment],
     queryFn: () => fetchSocialAccounts(tenantId, environment),
     enabled: Boolean(tenantId),

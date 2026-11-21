@@ -15,7 +15,7 @@ import type {
 
 export function generateAIBrainAnalysis(
   _siteId: string,
-  metrics?: Partial<WebAnalyticsMetrics>,
+  _metrics?: Partial<WebAnalyticsMetrics>,
   sessions: BehavioralSession[] = []
 ): AIBrainAnalysis {
   if (!sessions || sessions.length === 0) {
@@ -58,7 +58,6 @@ export function generateAIBrainAnalysis(
   const conversionRate = Math.round((convertedSessions.length / sessions.length) * 100);
   const frictionSessions = sessions.filter((s) => s.frictionSignals.length > 0);
   const highIntentUnconverted = sessions.filter((s) => s.intentScore >= 70 && !s.converted);
-  const totalRevenue = sessions.reduce((acc, s) => acc + (s.revenue || 0), 0);
 
   // Device & Source breakdown
   const deviceCounts: Record<string, number> = {};

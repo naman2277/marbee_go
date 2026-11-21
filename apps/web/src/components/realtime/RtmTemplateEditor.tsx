@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Bell, Bold, Braces, ChevronDown, Code, Eye, FileCode, Globe, Heading, Image, Italic, Link2, List, Mail, Maximize2, MessageSquare,
+  Bell, Bold, Braces, Code, Eye, FileCode, Globe, Heading, Italic, Link2, List, Mail, Maximize2, MessageSquare,
   Mic, Minimize2, Monitor, Phone, Plus, Smartphone, Sparkles, Table, Trash2, Type, User, X,
 } from 'lucide-react';
 import {
   CHANNEL_REGISTRY,
   renderPreview, sampleFromSchema,
-  type Channel, type ChannelDef, type MissingVarPolicy, type RtmTemplate, type SchemaField,
+  type Channel, type MissingVarPolicy, type RtmTemplate, type SchemaField,
 } from '@/lib/rtm';
 
 type Props = {
@@ -1079,7 +1079,6 @@ function ChannelPreview({ channel, content, previewCtx }: {
 // ═══════════════════════════════════════════════════════════════════════════
 
 export function RtmTemplateEditor({ channel, template, schema, onChange }: Props) {
-  const [personalizationOpen, setPersonalizationOpen] = useState(false);
   const content = template.content as Record<string, any>;
 
   const set = useCallback((key: string, val: unknown) => {
@@ -1093,14 +1092,6 @@ export function RtmTemplateEditor({ channel, template, schema, onChange }: Props
   }), [schema]);
 
   // Insert personalization token into the body (or subject for email) field
-  const handleInsertToken = useCallback((token: string) => {
-    if (channel === 'email') {
-      set('body', `${content.body ?? ''}${token}`);
-    } else {
-      set('body', `${content.body ?? ''}${token}`);
-    }
-    setPersonalizationOpen(false);
-  }, [channel, content.body, set]);
 
   const chDef = CHANNEL_REGISTRY.find((c) => c.id === channel);
   const chIcon = CHANNEL_ICONS[channel] ?? <Bell className="h-4 w-4" />;

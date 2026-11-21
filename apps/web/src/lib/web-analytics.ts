@@ -464,8 +464,8 @@ export async function verifySiteConnection(
 
 /** Fetch Aggregated Metrics for the Dashboard */
 export async function fetchWebAnalyticsMetrics(
-  tenantId: string,
-  environment: string,
+  _tenantId: string,
+  _environment: string,
   siteId: string,
   dateRange?: { from: Date; to: Date }
 ): Promise<WebAnalyticsMetrics> {

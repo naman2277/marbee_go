@@ -2,17 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Check,
   CheckCircle2,
-  Database,
   Filter,
   Layers,
   Sparkles,
-  Tag,
-  Users,
   X,
-  Zap,
 } from 'lucide-react';
 import { Button } from '@/components/ui';
-import { IconField } from '@/components/ui/IconField';
 import { SchemaFilterEditor } from '@/components/schemas/SchemaFilterEditor';
 import { buildQuerySummary } from '@/lib/query-activity';
 import {

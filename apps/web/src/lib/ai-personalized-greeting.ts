@@ -104,7 +104,7 @@ const AFTERNOON_TAGLINES = [
 
 const AFTERNOON_SUBTITLES = [
   (day: string, temp: number) => `Enjoy the warmth of this ${day} afternoon (${temp}°C). Everything in your workspace is running in harmony so you can create with peace of mind.`,
-  (day: string, temp: number) => `The afternoon breeze is calm (${temp}°C). Take your time, trust your journey, and celebrate how much you've accomplished today.`,
+  (_day: string, temp: number) => `The afternoon breeze is calm (${temp}°C). Take your time, trust your journey, and celebrate how much you've accomplished today.`,
   (day: string, temp: number) => `A pleasant ${day} afternoon (${temp}°C). Your AI assistants are quietly handling the background work so your day stays effortless.`,
   (day: string, temp: number) => `Sending warm positive vibes your way this ${day} (${temp}°C). Remember to celebrate small steps toward your big dreams!`,
 ];
@@ -216,8 +216,8 @@ function buildFeelGoodGreeting(
  * Generates a hyper-personalized welcome greeting using AI with structured cute, feel-good vibes.
  */
 export async function getHyperPersonalizedGreeting(
-  tenantId?: string,
-  environment?: string,
+  _tenantId?: string,
+  _environment?: string,
   displayName: string = 'Naman',
   forceRefresh: boolean = false
 ): Promise<PersonalizedGreeting> {

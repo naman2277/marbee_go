@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  AlertTriangle, ArrowDown, ArrowUp, CheckCircle2, ChevronDown, ChevronUp,
-  Clipboard, Copy, Download, Eye, Filter, Globe, Mail, MessageSquare,
-  Phone, Play, RefreshCw, Search, Settings, Smartphone, X, Zap,
+  AlertTriangle, CheckCircle2, ChevronDown, ChevronUp,
+  Copy, Eye, Globe, Mail, MessageSquare,
+  Phone, Play, Search, Settings, Smartphone, X, Zap,
 } from 'lucide-react';
 import { Badge, Button } from '@/components/ui';
 import {
-  type Channel, type DecisionStatus, type DeliveryStatus, type EventSourceType,
-  type EventType, type ProcessingStatus, type RtmEvent, type RtmEventIdentity,
-  CHANNELS, DECISION_STATUSES, DELIVERY_STATUSES, EVENT_SOURCES, EVENT_TYPES,
-  PROCESSING_STATUSES, SUPPRESSION_REASONS, maskPii, getLiveEventsStore, subscribeRealTimeEvents,
+  type DecisionStatus, 
+  type RtmEvent, type RtmEventIdentity,
+  CHANNELS, DECISION_STATUSES, EVENT_SOURCES, 
+  SUPPRESSION_REASONS, maskPii, getLiveEventsStore, subscribeRealTimeEvents,
 } from '@/lib/rtm';
 
 // ─── Sortable hook ──────────────────────────────────────────────────────────
@@ -84,13 +84,6 @@ function decisionBadge(d: DecisionStatus) {
   return <Badge variant={m.v}>{m.l}</Badge>;
 }
 
-function deliveryBadge(d: DeliveryStatus) {
-  const map: Record<string, 'success' | 'warning' | 'error' | 'default'> = {
-    delivered: 'success', sent: 'success', queued: 'default', processing: 'default',
-    failed: 'error', bounced: 'error', rejected: 'warning', not_applicable: 'default',
-  };
-  return <Badge variant={map[d] ?? 'default'}>{d === 'not_applicable' ? '—' : d}</Badge>;
-}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // RtmEvents — main component
@@ -108,7 +101,6 @@ export function RtmEvents() {
   const [selectedEvent, setSelectedEvent] = useState<RtmEvent | null>(null);
   const [showColumnPicker, setShowColumnPicker] = useState(false);
   const [visibleCols, setVisibleCols] = useState<Set<ColumnKey>>(loadColumnPrefs);
-  const [showAdvancedFilter, setShowAdvancedFilter] = useState(false);
   const { sort, toggle: toggleSort } = useSortable('timestamp', 'desc');
 
   useEffect(() => {

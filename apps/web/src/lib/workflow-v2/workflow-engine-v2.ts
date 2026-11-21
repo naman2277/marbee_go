@@ -1,13 +1,11 @@
 import { supabase } from '../supabase';
 import { WorkflowError } from './workflow-error';
 import { nodeRegistry } from './universal-node-registry';
-import { CircuitBreaker } from './circuit-breaker';
-import { calculateRetryDelay, shouldRetry, generateIdempotencyKey } from './retry-engine';
+import { calculateRetryDelay } from './retry-engine';
 import { enqueueToDLQ } from './dead-letter-queue';
-import { checkTenantConcurrency, providerRateLimiters, getDefaultLimits } from './flow-control';
+import { checkTenantConcurrency } from './flow-control';
 import { resolveTemplate, evaluateCondition } from './sandboxed-expression-engine';
-import { startSubWorkflow, checkSubWorkflowCompletion, cancelChildWorkflows } from './sub-workflow-engine';
-import { FanOutEngine, persistFanOutProgress } from './fan-out-engine';
+import { cancelChildWorkflows } from './sub-workflow-engine';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Types
@@ -295,7 +293,7 @@ async function executeNode(params: {
   workerToken: string;
   traceId: string;
 }): Promise<void> {
-  const { tenantId, workflowRunId, nodeExecution, workerId, workerToken, traceId } = params;
+  const { tenantId, workflowRunId, nodeExecution, workerId, traceId } = params;
 
   await emitExecutionEvent(tenantId, workflowRunId, 'NODE_STARTED', { nodeId: nodeExecution.node_id }, nodeExecution.id, traceId);
 
@@ -400,7 +398,7 @@ async function activateDownstreamNodes(params: {
   edges: Array<{ sourceNodeId: string; targetNodeId: string; condition?: string }>;
   nodeOutputs: Record<string, unknown>;
 }): Promise<void> {
-  const { tenantId, workflowRunId, completedNodeId, edges, nodeOutputs } = params;
+  const { workflowRunId, completedNodeId, edges, nodeOutputs } = params;
   
   const outgoing = edges.filter(e => e.sourceNodeId === completedNodeId);
   const contextForEval = { outputs: { [completedNodeId]: nodeOutputs } };

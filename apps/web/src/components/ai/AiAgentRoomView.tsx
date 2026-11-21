@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Sparkles, Headphones, Sun, Moon, Bell, Coffee, Eye, Lightbulb, Check } from 'lucide-react';
+import { useState } from 'react';
+import { Sparkles, Headphones, Sun, Moon, Eye } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { CharacterState } from './AiOfficeRoom';
 
@@ -14,18 +14,14 @@ export function AiAgentRoomView({
   onQuickPromptClick,
   isAiTyping = false,
   characterState = 'IDLE_WORKING',
-  onCharacterStateChange,
 }: AiAgentRoomViewProps) {
   const [neonGlow, setNeonGlow] = useState(true);
   const [roomTime, setRoomTime] = useState<'day' | 'night'>('day');
   const [glassesOn, setGlassesOn] = useState(true);
-  const [deskLampGlow, setDeskLampGlow] = useState(true);
 
   // States
   const isSleeping = characterState === 'IDLE_SLEEPING';
-  const isDrinking = characterState === 'IDLE_DRINKING';
   const isThinking = characterState === 'THINK' || isAiTyping;
-  const isTyping = characterState === 'IDLE_TYPING' || characterState === 'IDLE_WORKING';
   const isExplaining = characterState === 'EXPLAIN';
   const isSuccess = characterState === 'SUCCESS' || characterState === 'EXCITED';
 

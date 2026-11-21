@@ -5,11 +5,9 @@ import {
   Copy,
   Loader2,
   Play,
-  Settings,
   Sparkles,
   Trash2,
   Users,
-  Zap,
 } from 'lucide-react';
 import { useCampaignCanvas } from '@/components/journeys/CampaignCanvasContext';
 import {
@@ -17,14 +15,13 @@ import {
   categoryAccent,
   configSummary,
   paletteItem,
-  type CampaignNodeCategory,
 } from '@/lib/campaign-nodes';
 import type { CampaignNodeData } from '@/lib/campaign-graph';
 import { useCampaignRuntime } from '@/lib/campaign-runtime-store';
 import { spectrumCategoryAccent } from '@/lib/spectrum-canvas-tokens';
 
 export function CampaignStepNode({ id, data, selected }: NodeProps<CampaignNodeData>) {
-  const { spectrumTheme, onSelectNode, onDuplicateNode, onDeleteNode, onRunNode } = useCampaignCanvas() as any;
+  const { spectrumTheme, onDuplicateNode, onDeleteNode, onRunNode } = useCampaignCanvas() as any;
   const runtime = useCampaignRuntime();
   const meta = paletteItem(data.stepType);
   const Icon = CAMPAIGN_ICONS[meta?.icon ?? 'mail'] ?? Sparkles;

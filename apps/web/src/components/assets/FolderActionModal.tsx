@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { AlertTriangle, Folder, FolderEdit, Loader2, Lock, Trash2, X } from 'lucide-react';
+import { AlertTriangle, FolderEdit, Loader2, Lock, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { isSystemFolder } from '@/lib/asset-folders';
 

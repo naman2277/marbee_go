@@ -8,20 +8,12 @@ import {
   Check,
   LayoutGrid,
   List,
-  Sparkles,
   Users,
-  Eye,
   FileInput,
   ArrowRight,
-  Code2,
-  ExternalLink,
-  QrCode,
-  Layers,
   Database,
   Search,
   CheckCircle2,
-  Clock,
-  Send,
 } from 'lucide-react';
 import { PageHeader, Card, Badge, Button } from '@/components/ui';
 import { BulkActionBar } from '@/components/bulk/BulkActionBar';
@@ -48,7 +40,7 @@ export function FormsPage() {
   const [singleDeleting, setSingleDeleting] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const { data: forms, isLoading, refetch } = useQuery({
+  const { data: forms, refetch } = useQuery({
     queryKey: ['forms', tenantId, environment],
     queryFn: () => fetchForms(tenantId, environment),
   });

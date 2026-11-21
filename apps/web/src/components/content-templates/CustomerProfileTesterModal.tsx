@@ -1,19 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Check,
-  CheckCircle2,
-  Filter,
-  Mail,
-  Phone,
-  Plus,
   Search,
   Send,
   Sparkles,
-  User,
   UserCheck,
-  Users,
   X,
-  Zap,
 } from 'lucide-react';
 import { Button, Badge } from '@/components/ui';
 import type { ContentChannel, TemplateContent } from '@/lib/content-templates';

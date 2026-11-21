@@ -28,7 +28,7 @@ export function TemplateDetailPage() {
 
   const [draftContent, setDraftContent] = useState<TemplateContent | null>(null);
   const [draftSettings, setDraftSettings] = useState<ContentTemplateSettings>({});
-  const [dirty, setDirty] = useState(false);
+  const [, setDirty] = useState(false);
 
   const { data: template, isLoading, error } = useQuery({
     queryKey: ['content-template', id],

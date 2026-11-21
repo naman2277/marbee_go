@@ -492,10 +492,10 @@ export const NEURAL_VOICE_PROFILES: VoiceOption[] = [
  * Returns available voices categorized by provider (Gemini, ElevenLabs, Web Speech)
  */
 export function getAvailableBuddyVoices(
-  voiceAvatarAdapters: VoiceAvatarAiAdapter[] = [],
-  voiceAgents: VoiceAgentConfig[] = [],
+  _voiceAvatarAdapters: VoiceAvatarAiAdapter[] = [],
+  _voiceAgents: VoiceAgentConfig[] = [],
   customVoices: CustomVoiceConfig[] = [],
-  onlyConfigured: boolean = false
+  _onlyConfigured: boolean = false
 ): VoiceOption[] {
   const result: VoiceOption[] = [];
 
@@ -1137,7 +1137,7 @@ export async function previewVoiceById(
   onEnd?: () => void,
   voiceAvatarAdapters: VoiceAvatarAiAdapter[] = [],
   customText?: string,
-  customApiKey?: string
+  _customApiKey?: string
 ): Promise<void> {
   const isHindi = label.toLowerCase().includes('hindi') || label.toLowerCase().includes('swara') || label.toLowerCase().includes('madhur');
   const sampleText =

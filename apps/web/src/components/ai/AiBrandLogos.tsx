@@ -1,4 +1,3 @@
-import React from 'react';
 
 /** Authentic OpenAI Vector Logo */
 export function OpenAiLogo({ className = 'h-5 w-5' }: { className?: string }) {

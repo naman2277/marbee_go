@@ -157,8 +157,6 @@ type Props = {
 
 export function FormBuilderWorkspace({
   form,
-  tenantId,
-  environment,
   schemas,
   workspaceMode,
   previewDevice = 'desktop',

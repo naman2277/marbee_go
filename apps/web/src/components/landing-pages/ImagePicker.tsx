@@ -1,6 +1,5 @@
 import { useState, useRef } from 'react';
 import { UploadCloud, Link as LinkIcon, Loader2, CheckCircle2 } from 'lucide-react';
-import { Button } from '@/components/ui';
 import { uploadLandingPageAsset } from '@/lib/assets';
 import { useTenantScope } from '@/contexts/AuthContext';
 

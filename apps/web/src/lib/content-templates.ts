@@ -5,8 +5,6 @@ import { toSchemaSlug } from './schema-slug';
 import { logAudit } from './audit';
 import type { EmailBlock, EmailGlobalTheme } from './email-builder-types';
 import { DEFAULT_EMAIL_THEME } from './email-builder-types';
-import { renderBlocksToHtml, renderBlocksToPlainText } from './email-renderer';
-import { PREBUILT_EMAIL_TEMPLATES } from './email-templates-library';
 import {
   CONTENT_TEMPLATE_LIBRARY,
   CONTENT_TEMPLATE_LIBRARY_CATEGORIES,

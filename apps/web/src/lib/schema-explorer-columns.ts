@@ -3,7 +3,6 @@ import { getColumnCellValue } from '@/lib/schema-data';
 import {
   evaluateExpr,
   fieldExpr,
-  formatExprCode,
   inferExprType,
   type ExprNode,
 } from '@/lib/schema-expressions';

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { Bot, Send, User, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
@@ -17,7 +17,7 @@ export function PublicChatPage() {
   const [sending, setSending] = useState(false);
   const [triggered, setTriggered] = useState(false);
   const [botName, setBotName] = useState('Workflow Bot');
-  const [welcome, setWelcome] = useState('Hi! Send a message to start the workflow.');
+  const [, setWelcome] = useState('Hi! Send a message to start the workflow.');
   const [loaded, setLoaded] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);

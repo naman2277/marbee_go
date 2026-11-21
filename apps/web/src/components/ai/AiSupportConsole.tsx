@@ -7,15 +7,11 @@ import {
   Copy,
   Check,
   AlertTriangle,
-  CheckCircle2,
-  HelpCircle,
-  ExternalLink,
   ChevronRight,
   RefreshCw,
   ThumbsUp,
   ThumbsDown,
   Terminal,
-  Code2,
   GitBranch,
   Ticket,
   Mic,
@@ -24,11 +20,10 @@ import {
   FileText,
   Layers,
   ArrowRight,
-  ShieldAlert,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { executeIntelligentReasoning } from '@/lib/ai-crm-context';
-import { analyzeUserQuery, type DiagnosticResult, type KnownError, type KnowledgeArticle } from './knowledgeBase';
+import { type KnownError } from './knowledgeBase';
 import type { CharacterState } from './AiOfficeRoom';
 
 export type ChatMessage = {

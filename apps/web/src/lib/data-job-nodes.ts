@@ -1,7 +1,6 @@
 import type { LucideIcon } from 'lucide-react';
 import {
   Activity,
-  AlarmClock,
   ArrowLeftRight,
   BarChart3,
   Bell,

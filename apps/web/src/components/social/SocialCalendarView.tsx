@@ -3,10 +3,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Plus,
-  Clock,
-  CheckCircle2,
 } from 'lucide-react';
-import { Card, Button, Badge } from '@/components/ui';
+import { Card, Button } from '@/components/ui';
 import { SOCIAL_PLATFORMS, type SocialPost } from '@/lib/social-providers';
 
 type Props = {
@@ -136,7 +134,6 @@ export function SocialCalendarView({ posts, onSelectPost, onNewPostDate }: Props
                 <div className="space-y-1">
                   {dayPosts.slice(0, 3).map((p) => {
                     const firstPlat = SOCIAL_PLATFORMS.find((x) => x.id === p.platforms[0]);
-                    const isPub = p.status === 'published';
 
                     return (
                       <button

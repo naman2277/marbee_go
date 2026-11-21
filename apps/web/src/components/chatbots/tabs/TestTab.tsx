@@ -5,7 +5,7 @@ import type { TabProps } from '../types';
 import {
   runtimeStartSession, runtimeSendMessage, runtimeIdleFollowup, runtimeCloseSession, runtimeSubmitFeedback,
   DEFAULT_SESSION_LIFECYCLE,
-  type RuntimeCtaPayload, type ChatBotSentiment, type SessionLifecycle,
+  type RuntimeCtaPayload, type ChatBotSentiment,
 } from '@/lib/chatbots';
 import { supabase } from '@/lib/supabase';
 

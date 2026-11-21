@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Code, Eye, Sparkles, Type, Wand2 } from 'lucide-react';
+import { Eye, Sparkles, Type } from 'lucide-react';
 import { TemplateBuilderSection } from '@/components/content-templates/TemplateBuilderSection';
 import { PersonalizedInput, PersonalizedTextarea } from '@/components/content-templates/PersonalizedField';
 import type { EmailContent } from '@/lib/content-templates';

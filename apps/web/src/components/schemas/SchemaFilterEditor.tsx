@@ -2,12 +2,11 @@ import { useState, type ReactNode } from 'react';
 import { Layers, Plus, Search, SlidersHorizontal, X } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { FilterSideInput } from '@/components/schemas/FilterSideInput';
-import { fieldKeyFromExpr, formatExprCode } from '@/lib/schema-expressions';
+import { fieldKeyFromExpr } from '@/lib/schema-expressions';
 import {
   operatorsForType,
   operatorLabel,
   formatFilterRoot,
-  previewFilterExpression,
   createFilterCondition,
   createFilterGroup,
   createFilterRoot,
@@ -411,8 +410,6 @@ function JoinToggle({
 function FilterRow({
   condition,
   fields,
-  sampleRow,
-  layout = 'default',
   onChange,
   onRemove,
 }: {
@@ -423,7 +420,6 @@ function FilterRow({
   onChange: (c: FilterCondition) => void;
   onRemove: () => void;
 }) {
-  const sidebar = layout === 'sidebar';
   const leftType = inferExprType(condition.left, fields);
   const ops = operatorsForType(leftType);
   const needsValue = !['is_empty', 'is_not_empty'].includes(condition.operator);

@@ -5,17 +5,11 @@ import {
   CheckCircle2,
   Copy,
   Database,
-  Filter,
-  Flame,
   Hash,
-  Layers,
   List,
   Loader2,
-  Mail,
   Play,
   Server,
-  Settings2,
-  Sliders,
   Sparkles,
   Trash2,
   Type,
@@ -33,7 +27,6 @@ import {
   CAMPAIGN_CONFIG_FIELDS,
   CAMPAIGN_ICONS,
   categoryAccent,
-  configSummary,
   isCampaignWorkflowMode,
   normalizeStepType,
   paletteItem,
@@ -216,7 +209,6 @@ export function CampaignNodeConfigPanel({
   const Icon = CAMPAIGN_ICONS[meta?.icon ?? 'mail'] ?? Sparkles;
   const fields = CAMPAIGN_CONFIG_FIELDS[stepType] ?? [];
   const accent = meta ? categoryAccent(meta.category) : '#64748b';
-  const summary = configSummary(stepType, node.data.config ?? {});
   const deliveryChannel = deliveryChannelForStep(stepType);
   const isQueryStep = stepType === 'query' || stepType === 'incremental_query';
 

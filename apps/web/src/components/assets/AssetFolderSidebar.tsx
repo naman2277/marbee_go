@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, Folder, FolderLock, FolderOpen, Home, Lock } from 'lucide-react';
+import { ChevronDown, ChevronRight, Folder, FolderLock, FolderOpen, Home } from 'lucide-react';
 import { ASSET_DRAG_MIME, FOLDER_DRAG_MIME, type FolderTreeNode } from '@/lib/asset-folders';
 
 type Props = {

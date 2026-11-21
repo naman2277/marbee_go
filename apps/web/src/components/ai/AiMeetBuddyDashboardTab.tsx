@@ -1,19 +1,10 @@
-import React from 'react';
-import { BUDDY_AGENTS, type BuddyAgent } from './AiAgentSidebar';
+import { type BuddyAgent } from './AiAgentSidebar';
 import {
-  Sparkles,
-  Bot,
   Zap,
-  Activity,
   MessageSquare,
   Video,
   Database,
-  ShieldCheck,
-  CheckCircle2,
-  ArrowRight,
-  TrendingUp,
   Cpu,
-  Clock,
   Layers,
   Users,
 } from 'lucide-react';

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ArrowRight, CheckCircle2, AlertCircle, Circle, Sparkles, SlidersHorizontal, Wand2 } from 'lucide-react';
+import { ArrowRight, CheckCircle2, AlertCircle, Circle, Wand2 } from 'lucide-react';
 import { Badge, Button } from '@/components/ui';
 import type { FormField, FormFieldMapping, FormFieldTransform, FormFieldTypeCast } from '@/lib/forms';
 import {
@@ -43,8 +43,6 @@ export function FormMappingVisualFlow({
 
   const safeFields = fields ?? [];
   const safeMappings = mappings ?? [];
-  const safeColumns = columnOptions ?? [];
-  const safeSchemas = schemas ?? [];
 
   const getMapping = (fieldName: string) => safeMappings.find((m) => m && m.form_field === fieldName);
 
@@ -199,10 +197,6 @@ function VisualMappingCard({
     schemaTypeFamily(schemaMeta?.field_type),
   );
 
-  const isDirty =
-    targetCol !== (mapping?.schema_field ?? '') ||
-    transform !== (mapping?.transform ?? 'none') ||
-    typeCast !== (mapping?.type_cast ?? 'none');
 
   const handleSave = () => {
     if (targetCol) {

@@ -4,14 +4,10 @@ import {
   CheckCircle2,
   Clock,
   Key,
-  Layers,
   Loader2,
   Mail,
   Save,
   Send,
-  ShieldCheck,
-  Sparkles,
-  User,
   X,
   Zap,
 } from 'lucide-react';
@@ -65,10 +61,10 @@ export function TestChannelModal({
   const [secretKey, setSecretKey] = useState(draft.secretKey ?? values.secret_key ?? '');
   const [fromEmail, setFromEmail] = useState(draft.fromEmail ?? values.from_email ?? '');
   const [fromName, setFromName] = useState(draft.fromName ?? values.from_name ?? 'Marbee Team');
-  const [replyTo, setReplyTo] = useState(draft.replyTo ?? values.reply_to ?? '');
+  const [replyTo] = useState(draft.replyTo ?? values.reply_to ?? '');
   const [sandboxMode, setSandboxMode] = useState(draft.sandboxMode ?? values.sandbox_mode ?? 'false');
   const [useBatch, setUseBatch] = useState(draft.useBatch ?? true);
-  const [customCampaign, setCustomCampaign] = useState(draft.customCampaign ?? values.custom_campaign ?? values.tags ?? 'Marbee-Bulk');
+  const [customCampaign] = useState(draft.customCampaign ?? values.custom_campaign ?? values.tags ?? 'Marbee-Bulk');
   const [recipient, setRecipient] = useState(draft.recipient ?? user?.email ?? '');
 
   const [testing, setTesting] = useState(false);

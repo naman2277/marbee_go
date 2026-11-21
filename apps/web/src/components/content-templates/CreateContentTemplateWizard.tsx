@@ -9,17 +9,12 @@ import {
   Bell,
   Smartphone,
   X,
-  Sparkles,
-  ArrowRight,
 } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { ContentTemplateGallery } from '@/components/content-templates/ContentTemplateGallery';
-import { ChannelTemplatePreview } from '@/components/content-templates/ChannelTemplatePreview';
 import {
   createContentTemplate,
   createFromLibraryItem,
-  emptyContentForChannel,
-  LIBRARY_TEMPLATE_COUNT,
   type ContentChannel,
   type ContentTemplateLibraryItem,
 } from '@/lib/content-templates';

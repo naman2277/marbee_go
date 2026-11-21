@@ -112,15 +112,6 @@ export function resetSeed(seed = 42) { rng = new SeededRng(seed); }
 // Sample data generators (for sources/triggers that produce data)
 // ═══════════════════════════════════════════════════════════════════════════
 
-const FIRST_NAMES = ['Emma', 'Liam', 'Sophia', 'Noah', 'Ava', 'James', 'Mia', 'Oliver', 'Priya', 'Raj', 'Chen', 'Yuki', 'Maria', 'Carlos', 'Fatima', 'Ahmed', 'Anika', 'Lucas', 'Isabella', 'Ethan'];
-const LAST_NAMES = ['Smith', 'Johnson', 'Patel', 'Kim', 'Chen', 'Garcia', 'Müller', 'Tanaka', 'Singh', 'Ali', 'Lee', 'Wilson', 'Brown', 'Davis', 'Kumar', 'Hernandez', 'Liu', 'Nakamura', 'Sharma', 'Martinez'];
-const CITIES = ['New York', 'London', 'Mumbai', 'Tokyo', 'Berlin', 'São Paulo', 'Sydney', 'Toronto', 'Dubai', 'Singapore', 'Paris', 'Seoul', 'Bangalore', 'Chicago', 'Amsterdam'];
-const COUNTRIES = ['US', 'UK', 'IN', 'JP', 'DE', 'BR', 'AU', 'CA', 'AE', 'SG', 'FR', 'KR', 'US', 'US', 'NL'];
-const STATUSES = ['active', 'inactive', 'pending', 'churned'];
-const TIERS = ['Bronze', 'Silver', 'Gold', 'Platinum'];
-const CATEGORIES = ['Electronics', 'Clothing', 'Food', 'Books', 'Home', 'Sports', 'Beauty', 'Toys'];
-const CHANNELS = ['email', 'sms', 'push', 'whatsapp', 'web'];
-const EVENT_NAMES = ['page_view', 'add_to_cart', 'purchase', 'sign_up', 'login', 'search', 'product_view', 'checkout_start'];
 
 function randomFrom<T>(arr: T[]): T { return rng.from(arr); }
 function randomInt(min: number, max: number) { return rng.int(min, max); }
@@ -130,65 +121,8 @@ function randomDate(daysBack: number) {
   return d.toISOString().split('T')[0];
 }
 
-function generateCustomerRows(count: number): DataRow[] {
-  const GENDERS = ['Male', 'Female', 'Non-binary', 'Prefer not to say'];
-  return Array.from({ length: count }, (_, i) => {
-    const fn = randomFrom(FIRST_NAMES), ln = randomFrom(LAST_NAMES);
-    const ci = randomInt(0, CITIES.length - 1);
-    return {
-      id: i + 1,
-      customer_id: `cust_${String(1000 + i)}`,
-      email: `${fn.toLowerCase()}.${ln.toLowerCase()}${i}@example.com`,
-      first_name: fn,
-      last_name: ln,
-      phone: `+1${String(randomInt(2000000000, 9999999999))}`,
-      mobile: `+1${String(randomInt(2000000000, 9999999999))}`,
-      city: CITIES[ci],
-      country: COUNTRIES[ci],
-      gender: randomFrom(GENDERS),
-      date_of_birth: randomDate(365 * 50),
-      status: randomFrom(STATUSES),
-      loyalty_tier: randomFrom(TIERS),
-      age: randomInt(18, 72),
-      lifetime_value: Math.round(rng.next() * 5000 * 100) / 100,
-      last_purchase_date: randomDate(120),
-      last_purchase_category: randomFrom(CATEGORIES),
-      signup_date: randomDate(730),
-      email_opt_in: rng.next() > 0.15,
-      sms_opt_in: rng.next() > 0.4,
-      push_token: rng.next() > 0.5 ? `tok_${randomInt(100000, 999999)}` : null,
-      preferred_channel: randomFrom(CHANNELS),
-      campaign_count: randomInt(0, 50),
-      engagement_score: Math.round(rng.next() * 100),
-      created_at: randomDate(730),
-      updated_at: randomDate(30),
-    };
-  });
-}
 
-function generateEventRows(count: number): DataRow[] {
-  return Array.from({ length: count }, (_, i) => ({
-    event_id: `evt_${String(10000 + i)}`,
-    customer_id: `cust_${String(1000 + randomInt(0, 200))}`,
-    event_name: randomFrom(EVENT_NAMES),
-    timestamp: new Date(Date.now() - randomInt(0, 86400000 * 30)).toISOString(),
-    properties: { page: `/page-${randomInt(1, 50)}`, source: randomFrom(['web', 'mobile', 'api']), value: Math.round(rng.next() * 200 * 100) / 100 },
-    channel: randomFrom(CHANNELS),
-    session_id: `sess_${randomInt(10000, 99999)}`,
-  }));
-}
 
-function generateProductRows(count: number): DataRow[] {
-  return Array.from({ length: count }, (_, i) => ({
-    product_id: `prod_${String(100 + i)}`,
-    name: `Product ${String.fromCharCode(65 + (i % 26))}${i}`,
-    category: randomFrom(CATEGORIES),
-    price: Math.round((5 + rng.next() * 495) * 100) / 100,
-    stock: randomInt(0, 1000),
-    rating: Math.round((3 + rng.next() * 2) * 10) / 10,
-    created_at: randomDate(365),
-  }));
-}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Operator evaluation
@@ -1203,7 +1137,7 @@ const executors: Record<string, (ctx: ExecContext) => ExecResult | Promise<ExecR
     return { rows, summary: `Union of ${streamSizes.length} streams (${streamSizes.join('+')}): ${combined.length} total → ${rows.length} unique, ${dupes} duplicates removed` };
   },
 
-  set_intersection: ({ config, inputRows, allInputs }) => {
+  set_intersection: ({ config, allInputs }) => {
     const keyFields = str(config, 'key_fields').split(',').map((k) => k.trim()).filter(Boolean);
     const streams: DataRow[][] = [];
     if (allInputs && Object.keys(allInputs).length >= 2) {

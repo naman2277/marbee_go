@@ -1,4 +1,3 @@
-import React from 'react';
 import { GitBranch, Activity, CheckCircle2 } from 'lucide-react';
 
 export function AiAgentUpdatesTab() {

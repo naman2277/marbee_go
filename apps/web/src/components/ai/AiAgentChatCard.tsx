@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   Send,
   MoreVertical,
@@ -8,17 +8,12 @@ import {
   FileText,
   Check,
   CheckCheck,
-  Sparkles,
-  AlertCircle,
-  ExternalLink,
-  ShieldCheck,
   RefreshCw,
   Copy,
   Terminal,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { executeIntelligentReasoning } from '@/lib/ai-crm-context';
-import { analyzeUserQuery } from './knowledgeBase';
 
 import type { CharacterState } from './AiOfficeRoom';
 

@@ -12,31 +12,24 @@ import {
   Plus,
   Sparkles,
   Workflow,
-  Zap,
   Trash2,
   Copy,
   Search,
-  Filter,
   CheckCircle2,
   AlertTriangle,
   X,
   ExternalLink,
   MoreVertical,
-  Calendar,
   Activity,
-  Loader2,
   Globe,
   Route,
 } from 'lucide-react';
-import { PageHeader, Card, Badge, Button } from '@/components/ui';
+import { Card, Button } from '@/components/ui';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import {
-  countWorkflowNodes,
   JOB_TYPES,
   NODE_PALETTE,
-  parseWorkflowGraph,
-  paletteItem,
   getWorkflowGraph,
   getRunHistoryForJob,
 } from '@/lib/data-jobs';
@@ -800,27 +793,5 @@ export function DataJobsPage() {
 }
 
 // Category Pill Colors for Light Theme
-function getCategoryPillStyle(category?: string) {
-  switch (category) {
-    case 'Triggers':
-      return { bg: 'bg-fuchsia-50', text: 'text-fuchsia-700', border: 'border-fuchsia-200' };
-    case 'Sources':
-      return { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' };
-    case 'Transform':
-      return { bg: 'bg-violet-50', text: 'text-violet-700', border: 'border-violet-200' };
-    case 'Decisioning':
-      return { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200' };
-    case 'AI & Personalization':
-      return { bg: 'bg-pink-50', text: 'text-pink-700', border: 'border-pink-200' };
-    case 'Actions':
-      return { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' };
-    case 'Control Flow':
-      return { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-200' };
-    case 'Monitoring':
-      return { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200' };
-    default:
-      return { bg: 'bg-slate-100', text: 'text-slate-700', border: 'border-slate-200' };
-  }
-}
 
 

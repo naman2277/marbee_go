@@ -17,11 +17,7 @@ import {
   Wand2,
   X,
   AlertCircle,
-  Users,
   AlertTriangle,
-  RotateCcw,
-  Sliders,
-  Zap,
 } from 'lucide-react';
 import { Button, Card } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';

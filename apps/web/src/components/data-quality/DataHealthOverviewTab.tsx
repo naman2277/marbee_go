@@ -4,21 +4,11 @@ import {
   AlertCircle,
   AlertTriangle,
   ArrowUpRight,
-  CheckCircle2,
-  Database,
   Flame,
-  Globe2,
-  Mail,
-  MessageSquare,
-  Phone,
-  Radio,
   RefreshCw,
-  Search,
   ShieldCheck,
   Sparkles,
   TrendingUp,
-  Users,
-  Zap,
 } from 'lucide-react';
 import { Button } from '@/components/ui';
 import type { TableHealthProfile } from '@/lib/data-health-engine';

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Video,
   PhoneOff,
@@ -6,25 +6,14 @@ import {
   MicOff,
   Monitor,
   Sparkles,
-  Volume2,
   Terminal,
   TrendingUp,
-  DollarSign,
   Ticket,
   Settings,
-  CheckCircle2,
-  Clock,
   ArrowUpRight,
   ArrowDownRight,
   Sun,
   Moon,
-  Filter,
-  Check,
-  RotateCcw,
-  Code2,
-  Copy,
-  ExternalLink,
-  HelpCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -32,7 +21,6 @@ import {
   INITIAL_TICKETS,
   REVENUE_METRICS,
   type CrmTicket,
-  type RunwayAvatarConfig,
 } from '@/lib/runway-avatar';
 import { stopBuddySpeech } from '@/lib/ai-voice-engine';
 
@@ -51,9 +39,7 @@ export function AiRunwayLiveAgent() {
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [highlightTarget, setHighlightTarget] = useState<string | null>(null);
   const [toolLogs, setToolLogs] = useState<{ id: string; name: string; type: 'client' | 'server'; args: string; result: string; time: string }[]>([]);
-  const [audioWave, setAudioWave] = useState<number[]>([20, 50, 80, 30, 90, 40, 70, 25, 85, 35]);
-  const [customAvatarModal, setCustomAvatarModal] = useState(false);
-  const [copiedSdk, setCopiedSdk] = useState(false);
+  const [, setAudioWave] = useState<number[]>([20, 50, 80, 30, 90, 40, 70, 25, 85, 35]);
 
   // Audio wave animation
   useEffect(() => {

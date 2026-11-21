@@ -13,7 +13,6 @@ import {
   Pencil,
   Trash2,
   X,
-  Sparkles,
 } from 'lucide-react';
 import { Badge, Button } from '@/components/ui';
 import {
@@ -21,9 +20,7 @@ import {
   getAssetDisplayUrl,
   getAssetValidity,
   getPublicCopyUrl,
-  needsRepublish,
   setAssetPublished,
-  validityLabel,
   updateAsset,
   deleteAsset,
   type MarbeeAsset,
@@ -68,7 +65,6 @@ export function AssetCard({
 
   const validity = getAssetValidity(asset.metadata);
   const isExpired = validity === 'expired';
-  const isScheduled = validity === 'scheduled';
   const publicUrl = getPublicCopyUrl(asset);
 
   const fileExt = asset.name.split('.').pop()?.toUpperCase() || 'FILE';

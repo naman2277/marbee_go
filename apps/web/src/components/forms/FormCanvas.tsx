@@ -4,10 +4,8 @@ import {
   ChevronUp,
   Copy,
   GripVertical,
-  Settings2,
   Split,
   Star,
-  Trash2,
   X,
   ShieldCheck,
 } from 'lucide-react';
@@ -148,7 +146,6 @@ function CanvasField({
   onRemove,
   onMove,
   onDuplicate,
-  onOpenMapping,
   onDragStart,
   onDragOver,
   onDragEnd,

@@ -3,10 +3,8 @@ import { useQuery } from '@tanstack/react-query';
 import {
   Check,
   FolderOpen,
-  Image as ImageIcon,
   Loader2,
   Lock,
-  Sparkles,
   Upload,
   X,
 } from 'lucide-react';
@@ -17,7 +15,6 @@ import {
   getPublicCopyUrl,
   uploadPublishedSystemAsset,
   type SystemAssetTarget,
-  type MarbeeAsset,
 } from '@/lib/assets';
 import { useTenantScope } from '@/contexts/AuthContext';
 
