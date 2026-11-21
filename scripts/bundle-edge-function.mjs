@@ -45,7 +45,11 @@ function bundle(name) {
   function visit(file, isEntry) {
     if (included.has(file)) return;
     included.add(file);
-    const lines = readFileSync(file, 'utf8').replace(/\r\n/g, '\n').split('\n');
+    // Collapse multi-line `import { a,\n b } from '…';` statements onto one line first.
+    const source = readFileSync(file, 'utf8').replace(/\r\n/g, '\n')
+      .replace(/^import\s+(type\s+)?\{([^}]*)\}\s*from\s*(['"][^'"]+['"]);?/gm,
+        (_m, typeKw, specs, from) => `import ${typeKw ?? ''}{ ${specs.replace(/\s+/g, ' ').trim()} } from ${from};`);
+    const lines = source.split('\n');
     const body = [];
     for (const line of lines) {
       const m = line.match(IMPORT_RE);

@@ -15,7 +15,7 @@
 
 import { serve } from 'https://deno.land/std@0.208.0/http/server.ts';
 import { getServiceClient, corsHeaders, jsonResponse, errorResponse } from '../_shared/supabase.ts';
-import { AuthError, authenticateUser, requireTenantMember, type AuthedUser } from '../_shared/auth.ts';
+import { AuthError, authenticateUser, requireTenantMember, resolveTenant, type AuthedUser } from '../_shared/auth.ts';
 import { rateLimited } from '../_shared/ingest-auth.ts';
 import { callLlm, resolveProviderApiKey, type LlmProvider } from '../_shared/llm.ts';
 import { isSealed, last4, openSecret, sealSecret } from '../_shared/secret-box.ts';
@@ -53,20 +53,10 @@ async function requireSettingsManager(user: AuthedUser, tenantId: string) {
   if (data !== true) throw new AuthError(403, 'You need the "Manage settings" permission to change AI keys');
 }
 
-/** Tenant named by the caller (membership verified), or the caller's own active membership. */
-async function resolveTenant(user: AuthedUser, p: Json): Promise<string> {
-  if (p.tenant_id !== undefined && p.tenant_id !== null && p.tenant_id !== '') return requireTenantMember(user, p.tenant_id);
-  const { data, error } = await user.db.from('tenant_users').select('tenant_id')
-    .eq('user_id', user.userId).eq('status', 'active').order('created_at').limit(1);
-  if (error) throw new AuthError(500, 'Could not resolve your workspace');
-  const t = data?.[0]?.tenant_id as string | undefined;
-  if (!t) throw new AuthError(403, 'You are not a member of any workspace');
-  return t;
-}
 
 // --------------------------------------------------------------------------------------
 async function complete(user: AuthedUser, p: Json) {
-  const tenantId = await resolveTenant(user, p);
+  const tenantId = await resolveTenant(user, p.tenant_id);
   const environment = env(p);
   const wantProvider = provider(p, false);
   const systemPrompt = str(p.system_prompt, MAX_PROMPT_CHARS) ?? 'You are a helpful assistant for the Marbee platform.';
@@ -210,7 +200,7 @@ async function clearKey(user: AuthedUser, p: Json) {
 
 /** Seal every legacy plaintext key in the caller's workspace now (instead of on first use). */
 async function resealKeys(user: AuthedUser, p: Json) {
-  const tenantId = await resolveTenant(user, p);
+  const tenantId = await resolveTenant(user, p.tenant_id);
   await requireSettingsManager(user, tenantId);
   const svc = getServiceClient();
   const { data: rows, error } = await svc.from('ai_engine_providers')

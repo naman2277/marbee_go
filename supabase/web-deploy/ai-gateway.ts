@@ -116,6 +116,24 @@ async function requireTenantMember(user: AuthedUser, tenantId: unknown): Promise
   return tenantId.toLowerCase();
 }
 
+/** Tenant named by the caller (membership verified), or the caller's own active membership. */
+async function resolveTenant(user: AuthedUser, tenantId: unknown): Promise<string> {
+  if (tenantId !== undefined && tenantId !== null && tenantId !== '') return requireTenantMember(user, tenantId);
+  const { data, error } = await user.db.from('tenant_users').select('tenant_id')
+    .eq('user_id', user.userId).eq('status', 'active').order('created_at').limit(1);
+  if (error) throw new AuthError(500, 'Could not resolve your workspace');
+  const t = data?.[0]?.tenant_id as string | undefined;
+  if (!t) throw new AuthError(403, 'You are not a member of any workspace');
+  return t;
+}
+
+/** Throws 403 unless the caller holds `permission` in the tenant (tenant admins hold all). */
+async function requirePermission(user: AuthedUser, tenantId: string, permission: string, label?: string): Promise<void> {
+  const { data, error } = await user.db.rpc('user_has_permission', { p_tenant_id: tenantId, p_permission: permission });
+  if (error) throw new AuthError(500, 'Could not verify permissions');
+  if (data !== true) throw new AuthError(403, `You need the "${label ?? permission}" permission for this`);
+}
+
 // ---- _shared/ingest-auth.ts ------------------------------------------------------------------
 // Authentication for PUBLIC ingest endpoints (Phase 0, SEC-02).
 //
@@ -586,20 +604,10 @@ async function requireSettingsManager(user: AuthedUser, tenantId: string) {
   if (data !== true) throw new AuthError(403, 'You need the "Manage settings" permission to change AI keys');
 }
 
-/** Tenant named by the caller (membership verified), or the caller's own active membership. */
-async function resolveTenant(user: AuthedUser, p: Json): Promise<string> {
-  if (p.tenant_id !== undefined && p.tenant_id !== null && p.tenant_id !== '') return requireTenantMember(user, p.tenant_id);
-  const { data, error } = await user.db.from('tenant_users').select('tenant_id')
-    .eq('user_id', user.userId).eq('status', 'active').order('created_at').limit(1);
-  if (error) throw new AuthError(500, 'Could not resolve your workspace');
-  const t = data?.[0]?.tenant_id as string | undefined;
-  if (!t) throw new AuthError(403, 'You are not a member of any workspace');
-  return t;
-}
 
 // --------------------------------------------------------------------------------------
 async function complete(user: AuthedUser, p: Json) {
-  const tenantId = await resolveTenant(user, p);
+  const tenantId = await resolveTenant(user, p.tenant_id);
   const environment = env(p);
   const wantProvider = provider(p, false);
   const systemPrompt = str(p.system_prompt, MAX_PROMPT_CHARS) ?? 'You are a helpful assistant for the Marbee platform.';
@@ -743,7 +751,7 @@ async function clearKey(user: AuthedUser, p: Json) {
 
 /** Seal every legacy plaintext key in the caller's workspace now (instead of on first use). */
 async function resealKeys(user: AuthedUser, p: Json) {
-  const tenantId = await resolveTenant(user, p);
+  const tenantId = await resolveTenant(user, p.tenant_id);
   await requireSettingsManager(user, tenantId);
   const svc = getServiceClient();
   const { data: rows, error } = await svc.from('ai_engine_providers')

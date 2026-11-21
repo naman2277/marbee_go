@@ -20,12 +20,12 @@ const dec = new TextDecoder();
 let cachedKey: CryptoKey | null = null;
 let cachedFrom: string | null = null;
 
-function b64(bytes: Uint8Array): string {
+export function b64(bytes: Uint8Array): string {
   let s = '';
   for (let i = 0; i < bytes.length; i += 1) s += String.fromCharCode(bytes[i]);
   return btoa(s);
 }
-function unb64(s: string): Uint8Array<ArrayBuffer> {
+export function unb64(s: string): Uint8Array<ArrayBuffer> {
   const bin = atob(s);
   const out = new Uint8Array(new ArrayBuffer(bin.length));
   for (let i = 0; i < bin.length; i += 1) out[i] = bin.charCodeAt(i);
