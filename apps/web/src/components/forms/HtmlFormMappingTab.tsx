@@ -395,7 +395,7 @@ export function HtmlFormMappingTab({ form, html = '', schemas = [], isHtmlMode =
         <div className="flex gap-2">
           <Button
             variant="secondary"
-            onClick={() => saveMutation.mutate()}
+            onClick={() => saveMutation.mutate(undefined)}
             disabled={saveMutation.isPending || fields.length === 0}
           >
             {saveMutation.isPending ? 'Saving…' : 'Save mapping'}

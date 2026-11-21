@@ -24,6 +24,15 @@ const FORM_TYPE_FAMILY: Record<FormFieldType, MappingTypeFamily> = {
   select: 'string',
   checkbox: 'boolean',
   date: 'date',
+  // Field types added by the Form Studio revamp (were missing → undefined family).
+  url: 'string',
+  radio: 'string',
+  multiselect: 'string',
+  consent: 'boolean',
+  rating: 'number',
+  hidden: 'string',
+  heading: 'string',
+  divider: 'string',
 };
 
 /** Normalize schema field_type strings to mapping families */
@@ -58,10 +67,7 @@ export function typesCompatible(source: MappingTypeFamily, target: MappingTypeFa
   if (source === 'string' && target === 'number') return false;
   if (source === 'string' && target === 'boolean') return false;
   if (source === 'string' && target === 'date') return false;
-  if (source === 'number' && target === 'string') return true;
-  if (source === 'boolean' && target === 'string') return true;
-  if (source === 'date' && target === 'string') return true;
-  return false;
+  return false; // (anything → string already returned true above)
 }
 
 /** Allowed type casts from source family to target family (excludes 'none'). */

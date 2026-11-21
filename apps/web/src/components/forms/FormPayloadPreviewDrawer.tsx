@@ -2,7 +2,8 @@ import { useState, useMemo } from 'react';
 import { X, RefreshCw, Database, Sparkles, CheckCircle2, UserCheck } from 'lucide-react';
 import { Button, Badge } from '@/components/ui';
 import type { FormField, FormFieldMapping } from '@/lib/forms';
-import { generateSampleFieldValue, resolveIdentityValues, type CustomerMatchKey, type FormSchemaMapping } from '@/lib/form-mapping';
+import { generateSampleFieldValue, resolveIdentityValues } from '@/lib/form-mapping';
+import type { CustomerMatchKey, FormSchemaMapping } from '@/lib/forms';
 
 type Props = {
   open: boolean;
@@ -58,27 +59,29 @@ export function FormPayloadPreviewDrawer({
 
       let val: unknown = rawVal;
 
-      // Applied Transforms
+      // Mirrors form-submit (supabase/functions/form-submit) exactly, so the preview
+      // shows what will really be stored (TD-11: it used to differ).
       if (typeof val === 'string') {
         if (m.transform === 'trim') val = val.trim();
-        else if (m.transform === 'lowercase') val = val.trim().toLowerCase();
-        else if (m.transform === 'uppercase') val = val.trim().toUpperCase();
-        else if (m.transform === 'titlecase') {
-          val = val.trim().replace(/\w\S*/g, (txt) => txt.charAt(0).toUpperCase() + txt.substring(1).toLowerCase());
-        }
+        else if (m.transform === 'lowercase') val = val.toLowerCase();
+        else if (m.transform === 'uppercase') val = val.toUpperCase();
       }
-
-      // Applied Type Casts
-      if (m.type_cast === 'integer') {
-        const parsed = parseInt(String(val), 10);
-        val = isNaN(parsed) ? null : parsed;
-      } else if (m.type_cast === 'number') {
-        const parsed = parseFloat(String(val));
-        val = isNaN(parsed) ? null : parsed;
-      } else if (m.type_cast === 'boolean') {
-        val = String(val).toLowerCase() === 'true' || String(val) === '1';
-      } else if (m.type_cast === 'string') {
-        val = String(val);
+      const cast = m.type_cast ?? 'none';
+      if (cast !== 'none' && val !== null && val !== undefined && val !== '') {
+        if (cast === 'string') val = String(val);
+        else if (cast === 'number') {
+          const n = Number(val);
+          if (!Number.isNaN(n)) val = n;
+        } else if (cast === 'boolean') {
+          if (typeof val !== 'boolean') {
+            if (val === 'true' || val === '1' || val === 'on') val = true;
+            else if (val === 'false' || val === '0' || val === 'off') val = false;
+            else val = Boolean(val);
+          }
+        } else if (cast === 'date') {
+          const d = new Date(String(val));
+          if (!Number.isNaN(d.getTime())) val = d.toISOString().slice(0, 10);
+        }
       }
 
       output[m.schema_field] = val;
