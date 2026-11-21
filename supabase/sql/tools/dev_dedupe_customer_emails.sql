@@ -1,11 +1,13 @@
 -- =============================================================================
--- DEV ONLY — resolve duplicate customer emails so script 46's unique index can be created.
+-- DEV ONLY — resolve duplicate customer emails so script 46's unique index (and script 92's
+-- case-insensitive emails, TD-17) can be applied. Duplicates are matched IGNORING case and
+-- surrounding spaces ("A@x.com" = "a@x.com ").
 --
 -- NEVER run on production. Production data must be merged deliberately (identity
 -- resolution), not by this tool.
 --
 -- What it does (reversible — nothing is deleted):
---   • For each (tenant, environment, email) with more than one customer, KEEP the
+--   • For each (tenant, environment, lower(trim(email))) with more than one customer, KEEP the
 --     oldest profile (earliest created_at, then lowest id).
 --   • On every other copy, back up the email into public._dev_dedupe_backup_20261120,
 --     then set that copy's email to NULL.
@@ -15,9 +17,9 @@
 -- =============================================================================
 
 -- ── Step 1 · Preview (read-only) ─────────────────────────────────────────────
-SELECT tenant_id, environment, email, count(*) AS copies
+SELECT tenant_id, environment, lower(btrim(email)) AS email, count(*) AS copies
 FROM public.customers
-WHERE email IS NOT NULL
+WHERE nullif(btrim(email), '') IS NOT NULL
 GROUP BY 1, 2, 3
 HAVING count(*) > 1
 ORDER BY copies DESC, email
@@ -42,8 +44,8 @@ WITH ranked AS (
          first_value(id) OVER w AS kept_id,
          row_number()    OVER w AS rn
   FROM public.customers
-  WHERE email IS NOT NULL
-  WINDOW w AS (PARTITION BY tenant_id, environment, email ORDER BY created_at, id)
+  WHERE nullif(btrim(email), '') IS NOT NULL
+  WINDOW w AS (PARTITION BY tenant_id, environment, lower(btrim(email)) ORDER BY created_at, id)
 )
 INSERT INTO public._dev_dedupe_backup_20261120 (customer_id, tenant_id, environment, email, kept_id)
 SELECT id, tenant_id, environment, email, kept_id FROM ranked WHERE rn > 1
@@ -59,7 +61,7 @@ SELECT count(*) AS copies_resolved FROM public._dev_dedupe_backup_20261120;
 
 COMMIT;
 
--- ── Undo (run only if you need the duplicates back; drop script 46's index first) ──
+-- ── Undo (run only if you need the duplicates back; drop script 46's index and 92's rules first) ──
 -- DROP INDEX IF EXISTS public.idx_customers_tenant_env_email_unique;
 -- UPDATE public.customers c SET email = b.email
 --   FROM public._dev_dedupe_backup_20261120 b WHERE c.id = b.customer_id AND c.email IS NULL;

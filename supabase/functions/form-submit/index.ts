@@ -461,7 +461,7 @@ serve(async (req) => {
             .select('id')
             .eq('tenant_id', tenantId)
             .eq('environment', environment)
-            .eq('email', email)
+            .eq('email', email.trim().toLowerCase()) // TD-17: stored emails are lower-case (sql/92), so look up the same way.
             .is('deleted_at', null)
             .order('created_at', { ascending: true })
             .limit(1)

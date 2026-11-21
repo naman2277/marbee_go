@@ -854,7 +854,7 @@ export function upsertCustomerIdentity(input: {
           .from('customers')
           .select('id')
           .eq('tenant_id', tenantId)
-          .eq('email', emailVal)
+          .eq('email', String(emailVal).trim().toLowerCase()) // TD-17: stored emails are lower-case (sql/92), so look up the same way.
           .maybeSingle();
         if (data?.id) existingId = data.id;
       }

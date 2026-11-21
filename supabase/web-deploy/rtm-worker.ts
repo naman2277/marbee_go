@@ -338,7 +338,8 @@ async function processMessage(supabase: SupabaseClient, messageId: string): Prom
     if (!customer && (recipient.email || recipient.phone)) {
       let q = supabase.from('customers').select('id, email, mobile, first_name, last_name, consent, location, status')
         .eq('tenant_id', msg.tenant_id).eq('environment', msg.environment).is('deleted_at', null);
-      q = recipient.email ? q.eq('email', recipient.email) : q.eq('mobile', recipient.phone);
+      // TD-17: stored emails are lower-case (sql/92), so look up the same way.
+      q = recipient.email ? q.eq('email', String(recipient.email).trim().toLowerCase()) : q.eq('mobile', recipient.phone);
       const { data } = await q.limit(1).maybeSingle();
       customer = data;
     }
