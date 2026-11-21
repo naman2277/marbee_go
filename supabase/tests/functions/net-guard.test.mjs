@@ -9,7 +9,7 @@ const DNS = {
   'v6only.example.com': { AAAA: ['2606:2800:220:1::1'] },
   'v6private.example.com': { AAAA: ['fd00::1'] },
 };
-globalThis.Deno = { env: { get: () => undefined }, resolveDns: async (h, t) => { const r = DNS[h]?.[t]; if (!r) throw new Error('NXDOMAIN'); return r; } };
+globalThis.Deno = { env: { get: () => undefined }, resolveDns: async (h, t) => { const r = DNS[h]?.[t]; if (!r) { const e = new Error('no records'); e.name = 'NotFound'; throw e; } return r; } };
 const g = await import('../../functions/_shared/net-guard.ts');
 const blocked = async (u) => { try { await g.assertPublicHttpUrl(u); return false; } catch (e) { return e instanceof g.BlockedUrlError; } };
 
@@ -24,6 +24,11 @@ for (const u of [
 for (const u of ['https://api.example.com/v1/ping', 'http://api.example.com:8080/x', 'https://93.184.216.34', 'https://v6only.example.com'])
   ok(!(await blocked(u)), `allowed  ${u}`);
 
+// Runtime where DNS lookups are not permitted: must NOT block legitimate public hosts,
+// but must still block internal names / IPs.
+globalThis.Deno.resolveDns = async () => { const e = new Error('Requires net access'); e.name = 'PermissionDenied'; throw e; };
+ok(!(await blocked('https://api.partner.com/v1')), 'DNS unavailable: public hostname still allowed (no false blocks)');
+ok(await blocked('http://169.254.169.254/') && await blocked('http://localhost/') && await blocked('http://db.internal/'), 'DNS unavailable: metadata IP, localhost, internal names still blocked');
 ok(g.isPrivateAddress('172.31.255.255') && !g.isPrivateAddress('172.32.0.1'), '172.16/12 boundary handled exactly');
 console.log(failures === 0 ? '\nALL PASSED' : `\n${failures} FAILED`);
 process.exit(failures ? 1 : 0);

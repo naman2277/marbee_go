@@ -95,11 +95,27 @@ export async function assertPublicHttpUrl(raw: string): Promise<URL> {
   const resolve = (globalThis as any).Deno?.resolveDns as undefined | ((h: string, t: string) => Promise<string[]>);
   if (resolve) {
     const addrs: string[] = [];
+    let notFound = 0;
+    let lookupUnavailable = 0;
     for (const type of ['A', 'AAAA']) {
-      try { addrs.push(...await resolve(host, type)); } catch { /* no records of this type */ }
+      try {
+        addrs.push(...await resolve(host, type));
+      } catch (e) {
+        // "NotFound" = the name genuinely has no such records. Anything else (permission
+        // denied, resolver unsupported/timeout) means DNS checks aren't possible here.
+        if (e instanceof Error && /NotFound|NXDOMAIN|no data|not found/i.test(`${e.name} ${e.message}`)) notFound += 1;
+        else lookupUnavailable += 1;
+      }
     }
-    if (addrs.length === 0) throw new BlockedUrlError('Hostname does not resolve');
-    if (addrs.some(isPrivateAddress)) throw new BlockedUrlError('Hostname resolves to a private or internal address');
+    if (addrs.length > 0) {
+      if (addrs.some(isPrivateAddress)) throw new BlockedUrlError('Hostname resolves to a private or internal address');
+    } else if (notFound === 2) {
+      throw new BlockedUrlError('Hostname does not resolve');
+    } else if (lookupUnavailable > 0) {
+      // Degrade safely: hostname + IP-literal checks above still apply; never block every
+      // legitimate connector just because this runtime can't do DNS lookups.
+      console.warn('net-guard: DNS lookup unavailable; relying on hostname/IP checks for', host);
+    }
   }
   return url;
 }
