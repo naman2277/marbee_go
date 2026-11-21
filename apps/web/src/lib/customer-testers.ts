@@ -34,6 +34,8 @@ export type CustomerTesterProfile = {
   target_test_email: string;
   target_test_phone: string;
   notes?: string;
+  /** Optional — fills the {{company}} merge tag in previews. */
+  company?: string;
 };
 
 export const DEFAULT_CUSTOMER_TESTERS: CustomerTesterProfile[] = [

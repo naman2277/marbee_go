@@ -30,6 +30,10 @@ export type EmailContent = {
   text_body?: string;
   /** Plain-text version written by the studio (TD-11: type had fallen behind). */
   plain_text?: string;
+  /** Sender details the email studio keeps alongside the content. */
+  from_name?: string;
+  from_email?: string;
+  reply_to?: string;
   amp_html?: string;
   amp_enabled?: boolean;
   enabled_versions?: Array<'html' | 'amp' | 'text'>;
@@ -650,6 +654,6 @@ export async function duplicateContentTemplate(
   return createContentTemplate(tenantId, environment, copyName, original.channel, {
     content: structuredClone(original.content),
     settings: structuredClone(original.settings),
-    library_template_id: original.library_template_id,
+    library_template_id: original.library_template_id ?? undefined,
   });
 }

@@ -436,6 +436,8 @@ export function profileTableRecords(
     criticalIssues: criticalCount,
     warningIssues: warningCount + (namingIssues.length > 0 ? 1 : 0),
     columns: columnProfiles,
+    // TD-11: computed above (and counted in the score) but was never returned.
+    contaminatedRecords,
     marketingReachability: {
       emailReachablePercent: emailReachable,
       emailValidCount: totalValidEmails,
@@ -624,7 +626,7 @@ export function runQueryDoctor(sql: string): QueryDoctorAnalysis {
 }
 
 export function runCampaignPreflight(campaignName: string, audienceName: string, reachability: TableHealthProfile['marketingReachability']): CampaignPreflightResult {
-  const checks = [
+  const checks: Array<{ name: string; category: string; status: 'pass' | 'warn' | 'fail'; message: string; detail: string }> = [
     {
       name: 'Customer Identity Resolution',
       category: 'Identity',

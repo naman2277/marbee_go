@@ -714,9 +714,9 @@ export async function playBuddySpeech(
 
   if (matchingAdapter && matchingAdapter.provider === 'elevenlabs' && matchingAdapter.apiKey) {
     elevenLabsKey = matchingAdapter.apiKey.trim();
-  } else if (matchingVoiceAgent && matchingVoiceAgent.provider === 'elevenlabs' && matchingVoiceAgent.apiKey) {
-    elevenLabsKey = matchingVoiceAgent.apiKey.trim();
   }
+  // (TD-11) A second branch read provider/apiKey from VoiceAgentConfig, which has neither
+  // field (it uses `platform` and holds no key) — it could never run, so it was removed.
 
   // Auto-discover ElevenLabs API Key from workspace adapter if not explicitly assigned
   if (!elevenLabsKey && Array.isArray(voiceAvatarAdapters)) {

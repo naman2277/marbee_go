@@ -25,6 +25,7 @@ import {
 } from '@/lib/content-templates';
 import { useTenantScope } from '@/contexts/AuthContext';
 import { PREBUILT_EMAIL_TEMPLATES } from '@/lib/email-templates-library';
+import { DEFAULT_EMAIL_THEME } from '@/lib/email-builder-types';
 
 type Props = {
   open: boolean;
@@ -91,7 +92,7 @@ export function CreateTemplateModal({ open, onClose }: Props) {
             enabled_versions: enabledVersions.length > 0 ? enabledVersions : ['html', 'amp', 'text'],
             builder_state: {
               blocks: base.blocks,
-              theme: base.theme,
+              theme: { ...DEFAULT_EMAIL_THEME, ...base.theme },
             },
           };
         } else if (method === 'import' && importedHtml.trim()) {

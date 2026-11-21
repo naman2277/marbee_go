@@ -73,7 +73,7 @@ export function SchemaMappingTab({ draft, update, schemas }: TabProps) {
 
   const selectedSchema = schemas.find((s) => s.id === bot.target_schema_id);
   const targetFields = (selectedSchema?.schema_fields ?? []) as Array<{ name: string; field_type: string }>;
-  const sourceOptions = [
+  const sourceOptions: Array<{ key: string; label: string; system: boolean; type: string; pii?: boolean }> = [
     ...draft.fields.map((f) => ({ key: f.field_key, label: f.display_label, system: false, type: f.data_type, pii: f.pii_flag })),
     ...SYSTEM_SOURCE_FIELDS,
   ];

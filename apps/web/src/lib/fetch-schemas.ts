@@ -15,7 +15,24 @@ export type SchemaWithFields = {
   updated_at?: string;
   current_version?: number;
   published_at?: string | null;
-  schema_fields: Array<Record<string, unknown>>;
+  schema_fields: SchemaFieldRow[];
+};
+
+/** A row of public.schema_fields (sql/01). Extra keys are allowed (embeds, older shapes). */
+export type SchemaFieldRow = {
+  id?: string;
+  schema_id?: string;
+  name: string;
+  field_type: string;
+  is_required?: boolean;
+  is_primary_key?: boolean;
+  is_nullable?: boolean;
+  is_pii?: boolean;
+  is_indexed?: boolean;
+  default_value?: string | null;
+  description?: string | null;
+  sort_order?: number;
+  [key: string]: unknown;
 };
 
 /** Load schemas + fields; falls back to two queries if embed fails */

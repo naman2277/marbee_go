@@ -343,7 +343,7 @@ export type ExecutiveBriefing = {
   revenueSummary: {
     amount: string;
     deltaPct: number;
-    direction: 'up' | 'down';
+    direction: 'up' | 'down' | 'neutral';
     keyDriver: string;
   };
   biggestOpportunity: {
