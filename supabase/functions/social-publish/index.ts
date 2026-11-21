@@ -3,6 +3,8 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { serve } from 'https://deno.land/std@0.208.0/http/server.ts';
+import { AuthError } from '../_shared/auth.ts';
+import { requireMemberWithPermission } from '../_shared/tenant-guard.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -103,6 +105,16 @@ serve(async (req) => {
 
     const { tenant_id, environment, post_id } = await req.json();
     if (!tenant_id || !post_id) return json({ error: 'tenant_id and post_id required' }, 400);
+
+    // Phase 0: signed in was not enough — the caller must be an active member of THIS
+    // (active) workspace with content.manage. Previously any user could publish any
+    // workspace's posts.
+    try {
+      await requireMemberWithPermission(supabase, req, String(tenant_id), ['content.manage']);
+    } catch (e) {
+      if (e instanceof AuthError) return json({ error: e.message }, e.status);
+      throw e;
+    }
 
     const { data: post, error: postError } = await supabase
       .from('social_posts')

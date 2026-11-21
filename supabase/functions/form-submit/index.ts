@@ -17,6 +17,7 @@ import {
 } from '../_shared/form-security.ts';
 import { loadVariablePlaintext } from '../_shared/global-vars.ts';
 import { encryptFieldsWithKey } from '../_shared/field-crypto.ts';
+import { tenantIsActive } from '../_shared/tenant-guard.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -218,6 +219,7 @@ serve(async (req) => {
 
     if (formErr) return errorResponse(formErr.message, 500);
     if (!form) return errorResponse('Form not found or not published', 404);
+    if (!(await tenantIsActive(supabase, tenantId))) return errorResponse('This form is not available', 403);
 
     const fields = (form.fields ?? []) as FormField[];
     const settings = (form.settings ?? {}) as Record<string, unknown>;

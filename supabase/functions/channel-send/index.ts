@@ -1,5 +1,7 @@
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { serve } from 'https://deno.land/std@0.208.0/http/server.ts';
+import { AuthError } from '../_shared/auth.ts';
+import { assertTenantActive, isServiceCaller, requireMemberWithPermission } from '../_shared/tenant-guard.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -254,8 +256,27 @@ serve(async (req) => {
     const tenantId = req.headers.get('x-tenant-id') ?? payload.tenant_id;
     const environment = req.headers.get('x-environment') ?? payload.environment ?? 'production';
     if (!tenantId) return errorResponse('Missing tenant_id in request body', 401);
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)) {
+      return errorResponse('Invalid tenant_id', 400);
+    }
 
     const supabase = getServiceClient();
+
+    // Phase 0: this function used to accept ANY caller for ANY tenant. Now only the
+    // engine (service role) or a signed-in member with send rights may use it, and
+    // never for a suspended workspace.
+    try {
+      if (!isServiceCaller(req)) {
+        await requireMemberWithPermission(
+          supabase, req, tenantId,
+          payload.action === 'test_connection' ? ['settings.manage'] : ['journeys.publish', 'settings.manage'],
+        );
+      }
+      await assertTenantActive(supabase, tenantId);
+    } catch (e) {
+      if (e instanceof AuthError) return errorResponse(e.message, e.status);
+      throw e;
+    }
 
     if (payload.action === 'test_connection') {
       return await handleTestConnection(supabase, tenantId, environment, payload);

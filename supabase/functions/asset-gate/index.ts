@@ -1,9 +1,11 @@
 import { serve } from 'https://deno.land/std@0.208.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders, errorResponse } from '../_shared/supabase.ts';
+import { tenantIsActive } from '../_shared/tenant-guard.ts';
 
 type AssetRow = {
   id: string;
+  tenant_id: string;
   file_path: string;
   mime_type: string | null;
   archived_at: string | null;
@@ -43,13 +45,16 @@ serve(async (req) => {
 
   const { data: asset, error } = await supabase
     .from('assets')
-    .select('id, file_path, mime_type, archived_at, metadata')
+    .select('id, tenant_id, file_path, mime_type, archived_at, metadata')
     .eq('id', id)
     .maybeSingle();
 
   if (error || !asset) return errorResponse('Asset not found', 404);
 
   const row = asset as AssetRow;
+  if (!(await tenantIsActive(supabase, row.tenant_id).catch(() => false))) {
+    return errorResponse('Asset is not published or is unavailable', 403);
+  }
   if (row.archived_at || !isAccessible(row.metadata ?? {})) {
     return errorResponse('Asset is not published or is unavailable', 403);
   }

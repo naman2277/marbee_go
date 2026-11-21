@@ -582,6 +582,186 @@ async function decryptFieldsWithKey(
   return out;
 }
 
+// ---- _shared/auth.ts ---------------------------------
+// Shared caller authentication for edge functions (Phase 0, SEC-01).
+//
+// Rule (docs/cpo/09-security-baseline.md §2): a function derives tenant access
+// from a VERIFIED credential, never from a header or body. For calls made by a
+// signed-in app user, the safest pattern is to act AS that user: queries run
+// through a client carrying the user's JWT, so Postgres RLS enforces tenant
+// isolation even if function code has a bug. Use the service role only after
+// authentication, and only for work RLS can't express.
+
+
+class AuthError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
+type AuthedUser = {
+  userId: string;
+  email: string | null;
+  /** Client that runs every query as the caller — RLS applies. */
+  db: SupabaseClient;
+};
+
+const AUTH_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function requireEnv(name: string): string {
+  const v = Deno.env.get(name);
+  if (!v) throw new AuthError(500, `Server misconfigured: ${name} is not set`);
+  return v;
+}
+
+/** Verify the bearer token belongs to a real signed-in user (not the anon key). */
+async function authenticateUser(req: Request): Promise<AuthedUser> {
+  const header = req.headers.get('authorization') ?? '';
+  const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+  if (!token) throw new AuthError(401, 'Not signed in');
+
+  const db = createClient(requireEnv('SUPABASE_URL'), requireEnv('SUPABASE_ANON_KEY'), {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  // getUser validates signature + expiry with Auth; the anon key has no user and fails here.
+  const { data, error } = await db.auth.getUser(token);
+  if (error || !data?.user) throw new AuthError(401, 'Session is invalid or expired');
+
+  return { userId: data.user.id, email: data.user.email ?? null, db };
+}
+
+/** Confirm the caller is an active member of the tenant (checked by the database as the caller). */
+async function requireTenantMember(user: AuthedUser, tenantId: unknown): Promise<string> {
+  if (typeof tenantId !== 'string' || !AUTH_UUID_RE.test(tenantId)) throw new AuthError(400, 'tenant_id must be a UUID');
+  const { data, error } = await user.db.rpc('user_has_tenant_access', { p_tenant_id: tenantId });
+  if (error) {
+    console.error('tenant membership check failed', error.message);
+    throw new AuthError(500, 'Could not verify tenant access');
+  }
+  if (data !== true) throw new AuthError(403, 'No access to this tenant');
+  return tenantId.toLowerCase();
+}
+
+/** Tenant named by the caller (membership verified), or the caller's own active membership. */
+async function resolveTenant(user: AuthedUser, tenantId: unknown): Promise<string> {
+  if (tenantId !== undefined && tenantId !== null && tenantId !== '') return requireTenantMember(user, tenantId);
+  const { data, error } = await user.db.from('tenant_users').select('tenant_id')
+    .eq('user_id', user.userId).eq('status', 'active').order('created_at').limit(1);
+  if (error) throw new AuthError(500, 'Could not resolve your workspace');
+  const t = data?.[0]?.tenant_id as string | undefined;
+  if (!t) throw new AuthError(403, 'You are not a member of any workspace');
+  return t;
+}
+
+/** Throws 403 unless the caller holds `permission` in the tenant (tenant admins hold all). */
+async function requirePermission(user: AuthedUser, tenantId: string, permission: string, label?: string): Promise<void> {
+  const { data, error } = await user.db.rpc('user_has_permission', { p_tenant_id: tenantId, p_permission: permission });
+  if (error) throw new AuthError(500, 'Could not verify permissions');
+  if (data !== true) throw new AuthError(403, `You need the "${label ?? permission}" permission for this`);
+}
+
+// ---- _shared/webhook-sig.ts ------------------------------------------------------------------
+// Constant-time compare + HMAC signature verification (Phase 0 · SEC-18).
+// No imports, so it is easy to test and safe to share.
+
+function constantTimeEqual(a: string, b: string): boolean {
+  const ea = new TextEncoder().encode(a);
+  const eb = new TextEncoder().encode(b);
+  let diff = ea.length ^ eb.length;
+  for (let i = 0; i < Math.max(ea.length, eb.length); i += 1) diff |= (ea[i] ?? 0) ^ (eb[i] ?? 0);
+  return diff === 0;
+}
+
+/** HMAC-SHA* of `body` (the exact raw bytes received) with `secret`, as lowercase hex and base64. */
+async function hmacDigests(secret: string, body: string | Uint8Array, algorithm: string): Promise<{ hex: string; b64: string }> {
+  const algo = algorithm.toUpperCase();
+  const hash = algo === 'SHA512' ? 'SHA-512' : algo === 'SHA1' ? 'SHA-1' : 'SHA-256';
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash }, false, ['sign']);
+  const bytes: Uint8Array<ArrayBuffer> = typeof body === 'string' ? new TextEncoder().encode(body) : new Uint8Array(body);
+  const sig = new Uint8Array(await crypto.subtle.sign('HMAC', key, bytes));
+  const hex = Array.from(sig, (b) => b.toString(16).padStart(2, '0')).join('');
+  let bin = '';
+  for (const b of sig) bin += String.fromCharCode(b);
+  return { hex, b64: btoa(bin) };
+}
+
+/**
+ * Verify a webhook signature header. Accepts bare hex, bare base64, or
+ * "<algo>=<hex>" (e.g. GitHub's "sha256=…"). Constant-time compare.
+ */
+async function verifyHmacSignature(secret: string, body: string | Uint8Array, algorithm: string, provided: string): Promise<boolean> {
+  if (!secret || !provided) return false;
+  const value = provided.trim().replace(/^(sha1|sha256|sha512)=/i, '');
+  const { hex, b64 } = await hmacDigests(secret, body, algorithm);
+  return constantTimeEqual(value.toLowerCase(), hex) || constantTimeEqual(value, b64);
+}
+
+// ---- _shared/tenant-guard.ts -----------------------------------------------------------------
+// Workspace guards for edge functions that act with the service role
+// (Phase 0 · TD-12b, SEC-18).
+//
+// sql/91 makes suspension automatic for anything that goes through RLS or the
+// permission helpers. Functions that use the service role and find the tenant
+// themselves (a form id, a bot id, a webhook path, an asset id) must call
+// assertTenantActive() once they know the tenant. All checks fail CLOSED: if the
+// database can't answer, the request is refused.
+
+
+/** True only if the tenant exists and is not suspended. */
+async function tenantIsActive(service: SupabaseClient, tenantId: string): Promise<boolean> {
+  const { data, error } = await service.rpc('tenant_is_active', { p_tenant_id: tenantId });
+  if (error) {
+    console.error('tenant_is_active failed', error.message);
+    throw new AuthError(503, 'Workspace check unavailable — try again shortly');
+  }
+  return data === true;
+}
+
+/** Throws 403 "This workspace is suspended" (or 503 if the check can't run). */
+async function assertTenantActive(service: SupabaseClient, tenantId: string): Promise<void> {
+  if (!(await tenantIsActive(service, tenantId))) throw new AuthError(403, 'This workspace is suspended');
+}
+
+/** True when the caller presented the project's service-role key (internal engine calls). */
+function isServiceCaller(req: Request): boolean {
+  const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+  const header = req.headers.get('authorization') ?? '';
+  const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+  return key.length > 0 && token.length > 0 && constantTimeEqual(token, key);
+}
+
+/**
+ * Signed-in user who is an ACTIVE member of an ACTIVE tenant and holds one of
+ * `permissions` (tenant admins hold all). Returns the user id; throws AuthError.
+ */
+async function requireMemberWithPermission(
+  service: SupabaseClient,
+  req: Request,
+  tenantId: string,
+  permissions: string[],
+): Promise<string> {
+  const header = req.headers.get('authorization') ?? '';
+  const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+  if (!token) throw new AuthError(401, 'Not signed in');
+  const { data, error } = await service.auth.getUser(token);
+  if (error || !data?.user) throw new AuthError(401, 'Session is invalid or expired');
+  for (const permission of permissions) {
+    const { data: ok, error: permErr } = await service.rpc('user_has_permission_as', {
+      p_user_id: data.user.id, p_tenant_id: tenantId, p_permission: permission,
+    });
+    if (permErr) {
+      console.error('user_has_permission_as failed', permErr.message);
+      throw new AuthError(503, 'Permission check unavailable — try again shortly');
+    }
+    if (ok === true) return data.user.id;
+  }
+  throw new AuthError(403, 'You do not have permission for this in this workspace');
+}
+
 // ---- form-submit/index.ts --------------------------------------------------------------------
 // Deploy: Supabase Dashboard → Edge Functions → form-submit
 // Paste this entire file. Turn OFF "Enforce JWT Verification".
@@ -787,6 +967,7 @@ serve(async (req) => {
 
     if (formErr) return errorResponse(formErr.message, 500);
     if (!form) return errorResponse('Form not found or not published', 404);
+    if (!(await tenantIsActive(supabase, tenantId))) return errorResponse('This form is not available', 403);
 
     const fields = (form.fields ?? []) as FormField[];
     const settings = (form.settings ?? {}) as Record<string, unknown>;

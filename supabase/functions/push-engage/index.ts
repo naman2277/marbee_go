@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.208.0/http/server.ts';
 import { getServiceClient, corsHeaders, jsonResponse, errorResponse } from '../_shared/supabase.ts';
+import { tenantIsActive } from '../_shared/tenant-guard.ts';
 
 type EngageRequest = {
   tenant_id: string;
@@ -46,6 +47,7 @@ serve(async (req) => {
     }
 
     const supabase = getServiceClient();
+    if (!(await tenantIsActive(supabase, tenantId))) return errorResponse('This workspace is suspended', 403);
 
     const { data: duplicate } = await supabase
       .from('engagement_log')
