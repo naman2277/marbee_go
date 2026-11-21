@@ -38,7 +38,6 @@ serve(async (req) => {
     const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
     const appUrl = (Deno.env.get('APP_URL') ?? Deno.env.get('SITE_URL') ?? '').replace(/\/$/, '');
-    if (!appUrl) return err('Server misconfigured: APP_URL is not set', 500);
 
     const authHeader = req.headers.get('authorization');
     if (!authHeader?.startsWith('Bearer ')) return err('Missing authorization', 401);
@@ -49,6 +48,10 @@ serve(async (req) => {
     });
     const { data: actor, error: actorErr } = await userClient.auth.getUser(jwt);
     if (actorErr || !actor.user) return err('Invalid session', 401);
+    if (!appUrl) {
+      console.error('reset-tenant-user-password: APP_URL secret is not set');
+      return err('Password reset is not configured yet — contact support', 500);
+    }
 
     const body = (await req.json().catch(() => ({}))) as { tenant_id?: string; user_id?: string; password?: unknown };
     if (body.password !== undefined) {
