@@ -179,3 +179,9 @@ supersede it with a new entry.
 - **Why:** one choke point for keys, cost metering, rate limits and future model routing; removes 9 browser→provider integrations.
 - **Cost:** ₹0 infra. **Risk:** gateway down = AI features down (falls back to the built-in context engine for the assistant).
 
+### D-019 · Global-variable secrets and data keys live only on the server
+- **Date:** 2026-11-21 · **Status:** Approved (CTO decision) · **Validation:** In progress
+- **Problem (SEC-05):** secret variables and encryption keys were sealed in the browser with a master key kept in ONE admin's localStorage — lost if that storage was cleared, invisible to teammates, and unusable by the server. Consequences found: hosted CAPTCHA could never verify (the sealed envelope was sent to the provider) and public form submissions were stored unencrypted.
+- **Selected:** a `global-variables` edge function owns all variable writes and secret access, sealing with the same server master key as AI keys (`MARBEE_SECRETS_KEY`, D-018). Encryption keys are generated server-side and never leave it; field encryption/decryption of form data happens on the server (decrypt needs `customers.read`). Column-level privileges hide the value column from app users.
+- **Risk:** losing `MARBEE_SECRETS_KEY` makes every sealed secret and encrypted field unreadable → it must be backed up outside Supabase (password manager) and rotated only with a re-seal plan.
+

@@ -89,8 +89,9 @@ function VariableRow({
     setBusy(true);
     try {
       setRevealed(await revealVariable(tenantId, variable));
-    } catch {
-      setRevealed('[unable to decrypt — key material is missing on this device]');
+    } catch (e) {
+      // e.g. "Encryption keys are never revealed…" or a permission message from the server.
+      setRevealed(`[${e instanceof Error ? e.message : 'could not reveal'}]`);
     } finally {
       setBusy(false);
     }
