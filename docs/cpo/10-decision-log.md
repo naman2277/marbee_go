@@ -186,7 +186,7 @@ supersede it with a new entry.
 - **Risk:** losing `MARBEE_SECRETS_KEY` makes every sealed secret and encrypted field unreadable → it must be backed up outside Supabase (password manager) and rotated only with a re-seal plan.
 
 ### D-020 · What a suspended workspace means
-- **Date:** 2026-11-21 · **Status:** Approved (CTO decision) · **Validation:** In progress (sql/91 not yet run)
+- **Date:** 2026-11-21 · **Status:** Approved (CTO decision) · **Validation:** Validated on dev 2026-11-21 (sql/91)
 - **Problem (TD-12):** the Platform Console can suspend a workspace, but nothing enforced it — members, API/website keys and scheduled pipelines all kept working.
 - **Selected:** suspension is a **freeze, not a deletion**: members get no access (immediately — checked on every request, not at token refresh); API keys and website keys stop verifying; no new scheduled runs, and queued/waiting runs are **held** and resume on reactivation; data is kept; the Platform Console still sees everything. `trial` and `active` are unaffected.
 - **How:** one `tenant_is_active()` check inside the five tenant-access helpers that every RLS policy and permission check already uses (sql/91; v2/52 fast path + token hook carry the same check).
