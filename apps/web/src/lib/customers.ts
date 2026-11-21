@@ -166,10 +166,17 @@ export type CustomerFilters = {
   loyaltyMember?: boolean;
 };
 
-function applyCustomerFilters(
-  query: ReturnType<typeof supabase.from<'customers'>>,
+/** The three query methods the filters use (works for any Supabase select builder). */
+type FilterableQuery<Q> = {
+  or(filters: string): Q;
+  eq(column: string, value: unknown): Q;
+  not(column: string, operator: string, value: unknown): Q;
+};
+
+function applyCustomerFilters<Q extends FilterableQuery<Q>>(
+  query: Q,
   filters: CustomerFilters,
-) {
+): Q {
   let q = query;
   if (filters.search?.trim()) {
     q = q.or(customerSearchFilter(filters.search.trim())) as typeof q;

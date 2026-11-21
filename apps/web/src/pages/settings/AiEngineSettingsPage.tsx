@@ -760,6 +760,10 @@ export function AiEngineSettingsPage() {
       return;
     }
     stopBuddySpeech();
+    if (!voiceId) {
+      showToast('This voice has no voice ID configured yet.');
+      return;
+    }
     setPlayingVoiceId(id);
 
     const elevenLabsAdapter = voiceAvatarAdapters.find((a) => a.provider === 'elevenlabs');

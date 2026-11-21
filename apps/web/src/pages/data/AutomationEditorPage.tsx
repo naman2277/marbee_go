@@ -1143,7 +1143,7 @@ function InspectorParams({ node, onChange, onStudioOpenChange }: { node: Automat
         </>
       )}
 
-      {(node.title.toLowerCase().includes('email') || node.title.toLowerCase().includes('mail') || node.type === 'action_email' || node.type === 'target_email') && node.type !== 'trigger' && (
+      {(node.title.toLowerCase().includes('email') || node.title.toLowerCase().includes('mail')) && node.type !== 'trigger' && (
         <SendEmailActivityConfigurator
           activityName={node.title}
           onActivityNameChange={(name) => updateField('title', name)}

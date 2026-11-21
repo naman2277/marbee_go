@@ -70,7 +70,7 @@ export function SessionIntelligenceTab({
     0
   );
   const deadClicksCount = sessions.reduce(
-    (acc, s) => acc + s.frictionSignals.filter((f) => f.type === 'dead_click' || f.type === 'error_click').length,
+    (acc, s) => acc + s.frictionSignals.filter((f) => f.type === 'dead_click').length,
     0
   );
 

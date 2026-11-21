@@ -21,6 +21,7 @@ import {
   connectSocialAccount,
   disconnectSocialAccount,
   publishSocialPost,
+  saveSocialPost,
 } from '@/lib/social-media';
 import {
   SOCIAL_PLATFORMS,
@@ -96,7 +97,9 @@ export function SocialConnectionsManager({ tenantId, environment }: Props) {
     setTestingPlatform(platform);
     setTestResult(null);
     try {
-      const res = await publishSocialPost({
+      // TD-11: publishSocialPost publishes an EXISTING post by id; the test used to pass
+      // one object (tenant_id became "[object Object]") and read fields the result lacks.
+      const postId = await saveSocialPost({
         tenantId,
         environment,
         content: `🎉 Marbee Social Connection Test for ${platform.toUpperCase()} — Published via BYOP API on ${new Date().toLocaleDateString()}`,
@@ -104,11 +107,12 @@ export function SocialConnectionsManager({ tenantId, environment }: Props) {
         linkUrl: 'https://marbee.io',
         platforms: [platform],
       });
-      if (res.status === 'failed' || res.errorMessage) {
+      const res = await publishSocialPost(tenantId, environment, postId);
+      if (!res.ok) {
         setTestResult({
           platform,
           success: false,
-          message: res.errorMessage || 'Publish test failed. Please verify your token permissions.',
+          message: res.error || 'Publish test failed. Please verify your token permissions.',
         });
       } else {
         setTestResult({
