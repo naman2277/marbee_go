@@ -185,3 +185,10 @@ supersede it with a new entry.
 - **Selected:** a `global-variables` edge function owns all variable writes and secret access, sealing with the same server master key as AI keys (`MARBEE_SECRETS_KEY`, D-018). Encryption keys are generated server-side and never leave it; field encryption/decryption of form data happens on the server (decrypt needs `customers.read`). Column-level privileges hide the value column from app users.
 - **Risk:** losing `MARBEE_SECRETS_KEY` makes every sealed secret and encrypted field unreadable → it must be backed up outside Supabase (password manager) and rotated only with a re-seal plan.
 
+### D-020 · What a suspended workspace means
+- **Date:** 2026-11-21 · **Status:** Approved (CTO decision) · **Validation:** In progress (sql/91 not yet run)
+- **Problem (TD-12):** the Platform Console can suspend a workspace, but nothing enforced it — members, API/website keys and scheduled pipelines all kept working.
+- **Selected:** suspension is a **freeze, not a deletion**: members get no access (immediately — checked on every request, not at token refresh); API keys and website keys stop verifying; no new scheduled runs, and queued/waiting runs are **held** and resume on reactivation; data is kept; the Platform Console still sees everything. `trial` and `active` are unaffected.
+- **How:** one `tenant_is_active()` check inside the five tenant-access helpers that every RLS policy and permission check already uses (sql/91; v2/52 fast path + token hook carry the same check).
+- **Not yet covered (TD-12b):** public endpoints that find the tenant without a key (form-submit, chatbot-runtime, webhook-trigger, web-analytics-ingest, asset-gate) and the channel/social workers — they still accept work for a suspended tenant. Next increment, via one shared server check.
+- **Cost:** ₹0; one primary-key lookup per request.

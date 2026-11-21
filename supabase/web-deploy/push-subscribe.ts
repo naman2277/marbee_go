@@ -202,6 +202,7 @@ async function authenticateSiteKey(
     const status = r?.reason === 'invalid_key' ? 401 : 403;
     const message = r?.reason === 'origin_not_allowed'
       ? 'This website is not allowed to use this site key'
+      : r?.reason === 'tenant_suspended' ? 'This workspace is suspended'
       : r?.reason?.startsWith('site_') ? 'Site is not active' : 'Invalid site key';
     throw new AuthError(status, message);
   }

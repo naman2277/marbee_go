@@ -24,6 +24,7 @@ Severity: **Critical** = cross-tenant data exposure or account takeover · High 
 | SEC-15 | High (functional) | `verify_api_key()` was declared STABLE but runs an UPDATE → Postgres rejects it, so every **valid** API key errored in `tenant-api` / `rtm-ingest`. Reproduced on Postgres. | `supabase/sql/46_api_hub.sql` | Re-create VOLATILE (sql/85). |
 | SEC-16 | Low | `rtm-ingest` lets the `x-environment` header override the API key's environment (same tenant only). | `supabase/functions/rtm-ingest` | Bind environment to the key; fix with the next rtm change. |
 | SEC-17 | **Critical** | 7 tenant tables were created with **no row-level security**: `coupon_campaigns`, `coupon_codes`, `voice_agents`, `autonomous_agent_tasks` (49) and `web_analytics_sites/events/sessions` (50). Supabase grants table access to the public key by default, so anyone with the anon key could read/modify every tenant's rows (incl. redeemable coupon codes). Found by auditing every table the chain creates. | `supabase/sql/49`, `50` | sql/86: RLS + tenant-isolation policy, anon revoked. 16-check isolation test. |
+| SEC-18 | High | `webhook-trigger` auth modes are broken: `basic` accepts **any** credentials, and `bearer`/`api_key` compare the stored key *hash* to the raw key (so real keys never match, while anyone holding a hash would pass). Found during TD-12. | `supabase/functions/webhook-trigger` | Use `authenticateApiKey` (verify_api_key) for bearer/api_key; implement or remove basic. Phase 0 wrap-up. |
 
 **Fix status**
 
