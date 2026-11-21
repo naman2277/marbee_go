@@ -54,6 +54,13 @@ export type EmailBlockStyle = {
   line_height?: number;
   font_weight?: string;
   box_shadow?: string;
+  // Typography & button fields used by the studio and renderer (TD-11: type had fallen behind).
+  letter_spacing?: number;
+  font_style?: 'normal' | 'italic' | string;
+  text_decoration?: 'none' | 'underline' | 'line-through' | string;
+  highlight_color?: string;
+  button_bg?: string;
+  button_color?: string;
 };
 
 export type EmailBlock = {
@@ -72,6 +79,8 @@ export type EmailGlobalTheme = {
   font_family: string;
   max_width: number;
   border_radius: number;
+  /** Background of the content area inside the card (optional; studio setting). */
+  content_bg?: string;
 };
 
 export const DEFAULT_EMAIL_THEME: EmailGlobalTheme = {

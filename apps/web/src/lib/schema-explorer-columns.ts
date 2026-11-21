@@ -5,6 +5,7 @@ import {
   fieldExpr,
   inferExprType,
   type ExprNode,
+  parseExpression,
 } from '@/lib/schema-expressions';
 import { inferFieldType, type SchemaFilterField } from '@/lib/schema-filters';
 

@@ -18,6 +18,7 @@ import {
   executeSingleNode,
 } from '../../lib/automations';
 import { SendEmailActivityConfigurator } from '../../components/channels/SendEmailActivityConfigurator';
+import { useTenantScope } from '@/contexts/AuthContext';
 
 const ICON_MAP: Record<string, React.FC<{ className?: string }>> = {
   Globe, Clock, FileInput, Zap, CreditCard, Mail, GitBranch, Repeat,
@@ -59,7 +60,7 @@ export default function AutomationEditorPage() {
   const navigate = useNavigate();
   const canvasRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
-  const [isEmailStudioOpen] = useState(false);
+  const [isEmailStudioOpen, setIsEmailStudioOpen] = useState(false);
 
   const [workflow, setWorkflow] = useState<AutomationWorkflow | null>(null);
   const [nodes, setNodes] = useState<AutomationNode[]>([]);
@@ -935,7 +936,7 @@ export default function AutomationEditorPage() {
             {/* Inspector Body Content */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
               {inspectorTab === 'params' ? (
-                <InspectorParams node={selectedNodeData} onChange={(updated) => setNodes((prev) => prev.map((n) => n.id === updated.id ? updated : n))} />
+                <InspectorParams node={selectedNodeData} onChange={(updated) => setNodes((prev) => prev.map((n) => n.id === updated.id ? updated : n))} onStudioOpenChange={setIsEmailStudioOpen} />
               ) : (
                 <div className="space-y-3">
                   {selectedNodeData.lastOutput ? (
@@ -1024,7 +1025,10 @@ export default function AutomationEditorPage() {
 
 // ─── Inspector Parameters Component ───────────────────────────────────────
 
-function InspectorParams({ node, onChange }: { node: AutomationNode; onChange: (n: AutomationNode) => void }) {
+function InspectorParams({ node, onChange, onStudioOpenChange }: { node: AutomationNode; onChange: (n: AutomationNode) => void; onStudioOpenChange?: (open: boolean) => void }) {
+  // TD-11: these were referenced but never defined here (crashed when an email step was opened).
+  const { tenantId, environment } = useTenantScope();
+  const setIsEmailStudioOpen = (open: boolean) => onStudioOpenChange?.(open);
   const updateConfig = (key: string, value: any) => {
     onChange({ ...node, config: { ...node.config, [key]: value } });
   };

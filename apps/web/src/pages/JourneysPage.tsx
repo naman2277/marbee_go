@@ -34,6 +34,7 @@ import {
   resolveJourneyDisplayStatus,
   resolveJourneyVersion,
   updateCampaignDetails,
+  type JourneyRow,
 } from '@/lib/journeys';
 import {
   buildJourneyFolderTree,

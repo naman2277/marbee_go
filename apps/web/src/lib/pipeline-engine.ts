@@ -508,7 +508,7 @@ const executors: Record<string, (ctx: ExecContext) => ExecResult | Promise<ExecR
   },
 
   // ─── SOURCES ─────────────────────────────────────────────────────
-  source: async ({ config, ctx }) => {
+  source: async ({ config, inputRows, ctx }) => {
     const schemaSlug = str(config, 'schema') || 'customer';
     const selectedFields = config.selected_fields as string[] | undefined;
     const filterGroup = config.filter_group as { logic: string; conditions: unknown[] } | undefined;
@@ -643,7 +643,7 @@ const executors: Record<string, (ctx: ExecContext) => ExecResult | Promise<ExecR
     if (inputRows.length > 0) return { rows: inputRows, summary: `${str(config, 'format') || 'CSV'} file → ${inputRows.length} rows (pass-through)` };
     return { rows: [], summary: `${str(config, 'format') || 'CSV'} file — 0 rows (requires file upload)` };
   },
-  source_query: async ({ config, ctx }) => {
+  source_query: async ({ config, inputRows, ctx }) => {
     const query = str(config, 'query');
     const maxRows = num(config, 'max_rows', 1000);
     if (ctx && query) {

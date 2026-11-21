@@ -36,6 +36,8 @@ import {
   fetchBuddyAgentsConfig,
   type VoiceAgentConfig,
   type BuddyCustomAgentConfig,
+  type AiModelConfig,
+  type VoiceAvatarAiAdapter,
 } from '@/lib/ai-engine-config';
 import {
   SUPPORTED_LANGUAGES,

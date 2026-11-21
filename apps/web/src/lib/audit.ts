@@ -42,7 +42,13 @@ export type AuditResourceType =
   | 'social_account'
   | 'social_post'
   | 'chatbot'
-  | 'ai_engine_providers';
+  | 'ai_engine_providers'
+  | 'coupon_campaign'
+  | 'custom_api_endpoint'
+  | 'decision_policies'
+  | 'nbe_policies'
+  | 'data_ingestion'
+  | 'web_analytics_site';
 
 export const AUDIT_RETENTION_DAYS = 7;
 

@@ -7,7 +7,7 @@ import {
   Trash2, X, Zap,
 } from 'lucide-react';
 import { Badge, Button, EmptyState } from '@/components/ui';
-import { CHANNELS, STATUS_TONE, listDefinitions, type DefinitionSummary } from '@/lib/rtm';
+import { CHANNELS, STATUS_TONE, listDefinitions, type DefinitionSummary, dispatchRealTimeEvent } from '@/lib/rtm';
 import { RtmWizard } from './RtmWizard';
 import { RtmDefinitionDrawer } from './RtmDefinitionDrawer';
 

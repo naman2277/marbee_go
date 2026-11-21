@@ -1,3 +1,4 @@
+import { validateFirebaseClientFields } from '@/lib/firebase-provider-validation';
 export type ChannelType = 'email' | 'sms' | 'whatsapp' | 'web_push' | 'rcs' | 'api' | 'social';
 
 export type ProviderFieldType = 'text' | 'password' | 'textarea' | 'url' | 'select' | 'number' | 'json';

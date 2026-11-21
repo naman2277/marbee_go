@@ -23,7 +23,7 @@ import {
   parseWorkflowGraph, serializeWorkflowGraph, JOB_TYPES,
 } from '@/lib/data-jobs';
 import type { WorkflowNodeData } from '@/lib/data-jobs';
-import { useStartPipelineRun, usePublishPipelineVersion, usePipelineVersions } from '@/lib/pipeline-runs';
+import { useStartPipelineRun, usePublishPipelineVersion, usePipelineVersions, type PipelineVersion } from '@/lib/pipeline-runs';
 import type { PipelineRunMode } from '@/lib/pipeline-runs';
 import { diffPipelineSnapshots, useRestorePipelineVersion } from '@/lib/pipeline-versions';
 import { PipelineDiffView } from '@/components/data/PipelineDiffView';

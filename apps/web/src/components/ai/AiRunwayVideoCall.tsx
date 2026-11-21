@@ -9,6 +9,7 @@ import {
   Copy,
   Code2,
   ChevronDown,
+  Check,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SUPPORTED_LANGUAGES, getLanguageByCode } from '@/lib/ai-languages';

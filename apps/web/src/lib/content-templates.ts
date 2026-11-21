@@ -28,6 +28,8 @@ export type EmailContent = {
   preheader?: string;
   html_body: string;
   text_body?: string;
+  /** Plain-text version written by the studio (TD-11: type had fallen behind). */
+  plain_text?: string;
   amp_html?: string;
   amp_enabled?: boolean;
   enabled_versions?: Array<'html' | 'amp' | 'text'>;
