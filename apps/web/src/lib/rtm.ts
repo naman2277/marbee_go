@@ -364,7 +364,7 @@ export type RtmEngagement = {
 // ---------------------------------------------------------------------------
 
 export type TriggerStatus = 'draft' | 'active' | 'paused' | 'archived';
-export type TriggerCategory = 'commerce' | 'content' | 'travel' | 'saas' | 'financial' | 'custom';
+export type TriggerCategory = 'commerce' | 'content' | 'travel' | 'saas' | 'financial' | 'transactional' | 'custom';
 export type ConditionOp = 'eq' | 'neq' | 'gt' | 'lt' | 'gte' | 'lte' | 'contains' | 'starts_with' | 'ends_with' | 'exists' | 'not_exists' | 'in' | 'not_in' | 'regex';
 export type TemporalType = 'absence' | 'delay' | 'within' | 'sequence';
 

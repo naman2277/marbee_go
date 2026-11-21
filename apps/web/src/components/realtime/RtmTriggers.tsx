@@ -80,7 +80,7 @@ const PRESETS: Preset[] = [
 ];
 
 const CATEGORY_LABELS: Record<TriggerCategory, string> = {
-  commerce: 'Commerce', content: 'Content', travel: 'Travel & Booking', saas: 'SaaS & Product', financial: 'Financial', custom: 'Custom',
+  commerce: 'Commerce', content: 'Content', travel: 'Travel & Booking', saas: 'SaaS & Product', financial: 'Financial', transactional: 'Transactional', custom: 'Custom',
 };
 
 // ─── Demo triggers ──────────────────────────────────────────────────────────

@@ -37,6 +37,10 @@ export type JoinIndexIssue = {
   status: 'optimal' | 'missing_index' | 'orphan_warning';
   description: string;
   recommendedIndexSql?: string;
+  /** Optional display fields (the page falls back to the fields above when absent). */
+  title?: string;
+  impact?: 'critical' | 'high' | 'medium' | 'low';
+  recommendedSql?: string;
 };
 
 export type DuplicateMatchCriteria = 'email' | 'mobile' | 'both' | 'custom';
@@ -67,6 +71,9 @@ export function analyzeCustomerDataIssues(
   cleanCount: number;
   totalCount: number;
   healthScore: number;
+  /** Same value as healthScore / totalCount; kept for the Data Quality page. */
+  cleanScore: number;
+  totalCustomers: number;
   issueCounts: Record<RealDataIssueType, number>;
 } {
   const issues: RealCustomerIssue[] = [];

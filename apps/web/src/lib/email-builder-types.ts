@@ -81,6 +81,8 @@ export type EmailGlobalTheme = {
   border_radius: number;
   /** Background of the content area inside the card (optional; studio setting). */
   content_bg?: string;
+  /** Width of the content area (optional; studio setting). */
+  content_width?: number | string;
 };
 
 export const DEFAULT_EMAIL_THEME: EmailGlobalTheme = {

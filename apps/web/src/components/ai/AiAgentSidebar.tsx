@@ -14,7 +14,7 @@ export type BuddyAgent = {
   voiceLabel: string;
   voiceAdapterId?: string;
   voiceId?: string;
-  voiceProvider?: 'elevenlabs' | 'runwayml' | 'heygen' | 'tavus' | 'did' | 'vapi' | 'browser';
+  voiceProvider?: 'gemini' | 'google' | 'elevenlabs' | 'runwayml' | 'heygen' | 'tavus' | 'did' | 'vapi' | 'browser';
   imageUrl: string;
   greeting: string;
   description?: string;

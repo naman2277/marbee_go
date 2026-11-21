@@ -79,7 +79,7 @@ import {
   Unlock,
   type LucideIcon,
 } from 'lucide-react';
-import type { EmailBlock, EmailGlobalTheme } from '@/lib/email-builder-types';
+import type { EmailBlock } from '@/lib/email-builder-types';
 import { DEFAULT_EMAIL_THEME } from '@/lib/email-builder-types';
 import { renderBlocksToAmpHtml, renderBlocksToHtml, renderBlocksToPlainText } from '@/lib/email-renderer';
 import type { EmailContent } from '@/lib/content-templates';

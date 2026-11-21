@@ -37,6 +37,8 @@ export type EmailContent = {
   builder_state?: {
     theme?: EmailGlobalTheme;
     blocks?: EmailBlock[];
+    /** Review state written by the email studio. */
+    approval_status?: string;
   };
   blocks?: EmailBlock[];
   theme?: EmailGlobalTheme;

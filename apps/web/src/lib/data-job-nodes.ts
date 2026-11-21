@@ -656,13 +656,16 @@ export type ConfigField =
   | { kind: 'schema'; key: string; label: string }
   | { kind: 'connector'; key: string; label: string }
   | { kind: 'time'; key: string; label: string; hint?: string }
-  | { kind: 'date'; key: string; label: string; hint?: string }
+  | { kind: 'date'; key: string; label: string; placeholder?: string; hint?: string }
   | { kind: 'multi_select'; key: string; label: string; options: { value: string; label: string }[]; hint?: string }
   | { kind: 'column_picker'; key: string; label: string; placeholder?: string; hint?: string }
   | { kind: 'folder_picker'; key: string; label: string; placeholder?: string; hint?: string };
 
 export type VisibleWhen = { key: string; value: string };
-export type ConfigFieldExt = ConfigField & { visibleWhen?: VisibleWhen };
+/** Show a field only when another field has a value. `equals` may be a sentinel such as
+ *  '__nonempty__' / '__not_create__' (see WorkflowNodeConfigPanel). */
+export type ShowWhen = { key: string; equals: string };
+export type ConfigFieldExt = ConfigField & { visibleWhen?: VisibleWhen; showWhen?: ShowWhen };
 
 const TIMEZONE_OPTS = [
   { value: 'UTC', label: 'UTC' },
