@@ -314,6 +314,13 @@ async function loadVariablePlaintext(
   if (error || !data) return null;
   const scopes = (data.scopes as string[] | null) ?? ['all'];
   if (scope !== 'all' && !scopes.includes('all') && !scopes.includes(scope)) return null;
+  // Secrets and keys saved before SEC-05 are in the old browser-encrypted format (mbe1),
+  // sealed with a master key the server never had. They can't be opened here — refuse them
+  // (never hand out the envelope as if it were the value). The admin must re-enter / rotate.
+  if (data.kind !== 'plain' && !isSealed(String(data.value ?? ''))) {
+    console.warn('global variable needs re-entry (pre-SEC-05 format)', { tenantId, environment, name });
+    return null;
+  }
   const plaintext = data.kind === 'plain' ? String(data.value ?? '') : await openSecret(String(data.value ?? ''));
   if (!plaintext) return null;
   await svc.from('global_variables').update({ last_used_at: new Date().toISOString() }).eq('id', data.id);
@@ -394,7 +401,13 @@ const ops: Record<string, (u: AuthedUser, p: Json) => Promise<unknown>> = {
     if (error) throw new AuthError(500, 'Could not list variables');
     // Plain values are config and are returned; secret values and keys never are.
     return {
-      variables: (data ?? []).map((r) => ({ ...r, value: r.kind === 'plain' ? r.value : '', has_value: Boolean(r.value) })),
+      variables: (data ?? []).map((r) => ({
+        ...r,
+        value: r.kind === 'plain' ? r.value : '',
+        has_value: Boolean(r.value),
+        // Saved before SEC-05 (old browser-encrypted format): unusable until re-entered / rotated.
+        needs_reentry: r.kind !== 'plain' && Boolean(r.value) && !isSealed(String(r.value)),
+      })),
     };
   },
 
@@ -464,6 +477,9 @@ const ops: Record<string, (u: AuthedUser, p: Json) => Promise<unknown>> = {
   async reveal(user, p) {
     const row = await loadOwned(user, p.id);
     if (row.kind === 'encryption_key') throw new AuthError(403, 'Encryption keys are never revealed');
+    if (row.value && !isSealed(String(row.value))) {
+      throw new AuthError(409, 'This value was saved in the old format and can no longer be read — enter it again');
+    }
     const found = await loadVariablePlaintext(getServiceClient(), row.tenant_id, row.environment, row.name, 'all');
     await audit(row.tenant_id, row.environment, user.userId, 'reveal', row.id, { name: row.name });
     return { value: found?.plaintext ?? '' };

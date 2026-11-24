@@ -501,6 +501,13 @@ async function loadVariablePlaintext(
   if (error || !data) return null;
   const scopes = (data.scopes as string[] | null) ?? ['all'];
   if (scope !== 'all' && !scopes.includes('all') && !scopes.includes(scope)) return null;
+  // Secrets and keys saved before SEC-05 are in the old browser-encrypted format (mbe1),
+  // sealed with a master key the server never had. They can't be opened here — refuse them
+  // (never hand out the envelope as if it were the value). The admin must re-enter / rotate.
+  if (data.kind !== 'plain' && !isSealed(String(data.value ?? ''))) {
+    console.warn('global variable needs re-entry (pre-SEC-05 format)', { tenantId, environment, name });
+    return null;
+  }
   const plaintext = data.kind === 'plain' ? String(data.value ?? '') : await openSecret(String(data.value ?? ''));
   if (!plaintext) return null;
   await svc.from('global_variables').update({ last_used_at: new Date().toISOString() }).eq('id', data.id);

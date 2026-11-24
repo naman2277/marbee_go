@@ -20,7 +20,7 @@
 import { serve } from 'https://deno.land/std@0.208.0/http/server.ts';
 import { getServiceClient, corsHeaders, jsonResponse, errorResponse } from '../_shared/supabase.ts';
 import { AuthError, authenticateUser, requirePermission, resolveTenant, type AuthedUser } from '../_shared/auth.ts';
-import { sealSecret } from '../_shared/secret-box.ts';
+import { isSealed, sealSecret } from '../_shared/secret-box.ts';
 import { dataKeyFingerprint, decryptFieldsWithKey, encryptFieldsWithKey, generateDataKey } from '../_shared/field-crypto.ts';
 import { loadVariablePlaintext } from '../_shared/global-vars.ts';
 
@@ -77,7 +77,13 @@ const ops: Record<string, (u: AuthedUser, p: Json) => Promise<unknown>> = {
     if (error) throw new AuthError(500, 'Could not list variables');
     // Plain values are config and are returned; secret values and keys never are.
     return {
-      variables: (data ?? []).map((r) => ({ ...r, value: r.kind === 'plain' ? r.value : '', has_value: Boolean(r.value) })),
+      variables: (data ?? []).map((r) => ({
+        ...r,
+        value: r.kind === 'plain' ? r.value : '',
+        has_value: Boolean(r.value),
+        // Saved before SEC-05 (old browser-encrypted format): unusable until re-entered / rotated.
+        needs_reentry: r.kind !== 'plain' && Boolean(r.value) && !isSealed(String(r.value)),
+      })),
     };
   },
 
@@ -147,6 +153,9 @@ const ops: Record<string, (u: AuthedUser, p: Json) => Promise<unknown>> = {
   async reveal(user, p) {
     const row = await loadOwned(user, p.id);
     if (row.kind === 'encryption_key') throw new AuthError(403, 'Encryption keys are never revealed');
+    if (row.value && !isSealed(String(row.value))) {
+      throw new AuthError(409, 'This value was saved in the old format and can no longer be read — enter it again');
+    }
     const found = await loadVariablePlaintext(getServiceClient(), row.tenant_id, row.environment, row.name, 'all');
     await audit(row.tenant_id, row.environment, user.userId, 'reveal', row.id, { name: row.name });
     return { value: found?.plaintext ?? '' };

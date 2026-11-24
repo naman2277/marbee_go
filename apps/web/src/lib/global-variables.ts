@@ -41,6 +41,8 @@ export type GlobalVariable = {
   value: string;
   /** True when a value is stored (secrets show "set" without revealing it). */
   has_value?: boolean;
+  /** Saved before SEC-05 in the old browser-encrypted format — must be re-entered (secret) or rotated (key). */
+  needs_reentry?: boolean;
   /** Where this variable is allowed to be resolved. */
   scopes: GlobalVariableScope[];
   /** Short SHA-256 fingerprint — shown instead of the key itself. */

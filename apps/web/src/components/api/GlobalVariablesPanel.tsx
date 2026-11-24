@@ -133,6 +133,14 @@ function VariableRow({
             </p>
           )}
 
+          {variable.needs_reentry && (
+            <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] font-medium text-amber-800" role="alert">
+              {variable.kind === 'encryption_key'
+                ? 'This key was saved in the old format and can no longer be used. Rotate it to create a new key.'
+                : 'This value was saved in the old format and can no longer be used. Edit the variable and enter the value again.'}
+            </p>
+          )}
+
           {revealed !== null && (
             <div className="mt-2.5 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2">
               <code className="min-w-0 flex-1 break-all font-mono text-[11px] text-slate-800">
