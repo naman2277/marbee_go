@@ -15,7 +15,6 @@ import {
   calibrateScore,
   buildCalibrationMap,
   thompsonSampleForItem,
-  normalizeMinMax,
   type LogisticWeights,
   type CalibrationBin,
 } from './ml';

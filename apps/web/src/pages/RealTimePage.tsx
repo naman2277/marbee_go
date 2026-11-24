@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   Activity, AlertTriangle, BarChart3, Bell, CheckCircle2, ChevronDown,
   LayoutTemplate, MessageSquare, MousePointerClick, Power, PowerOff,
-  Radio, Search, Send, Settings, Shield, Target, Zap,
+  Radio, Search, Send, Settings, Shield, Target,
 } from 'lucide-react';
 import { PageHeader, Badge, Button } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';

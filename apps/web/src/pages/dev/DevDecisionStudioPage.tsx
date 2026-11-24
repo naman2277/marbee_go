@@ -4,7 +4,7 @@
  * Seeds realistic items, policies, guardrails, and customers into localStorage
  * so the full ML pipeline can be exercised without auth or Supabase.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { DecisionStudioPage } from '@/pages/DecisionStudioPage';
 import { AuthContext } from '@/contexts/AuthContext';

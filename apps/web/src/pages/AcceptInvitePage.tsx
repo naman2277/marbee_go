@@ -9,7 +9,7 @@ import { acceptInvite, fetchInvitePreview, type InvitePreview } from '@/lib/acce
 export function AcceptInvitePage() {
   const { token } = useParams<{ token: string }>();
   const navigate = useNavigate();
-  const { session, signIn, refreshAccess } = useAuth();
+  const { session, signIn, refreshWorkspace } = useAuth();
   const [preview, setPreview] = useState<InvitePreview | null>(null);
   const [loading, setLoading] = useState(true);
   const [accepting, setAccepting] = useState(false);
@@ -39,7 +39,7 @@ export function AcceptInvitePage() {
     setError(null);
     try {
       await acceptInvite(token);
-      await refreshAccess();
+      await refreshWorkspace(); // pick up the workspace just joined (permissions follow it)
       navigate('/dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to accept invite');

@@ -5,9 +5,6 @@ import {
   ArrowUpRight,
   BarChart3,
   Bell,
-  Check,
-  ChevronDown,
-  Clock,
   Globe,
   Layers,
   Mail,
@@ -21,9 +18,7 @@ import {
   TrendingUp,
   Trash2,
   UserCheck,
-  UserMinus,
   Users,
-  X,
   Zap,
 } from 'lucide-react';
 import { Badge, Button, EmptyState } from '@/components/ui';
@@ -348,7 +343,7 @@ function ServicesTab({
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'archived'>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [, setDeletingId] = useState<string | null>(null);
 
   const deleteMutation = useMutation({
     mutationFn: ({ service }: { service: InformationService }) =>

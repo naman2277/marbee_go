@@ -289,7 +289,6 @@ function buildJoinMeta(
       isPrimaryKey: targetColumn === 'id',
     };
 
-  const fkIndexed = sourceField.isIndexed ? 'yes' : 'recommended';
   const suggestedIndex = `idx_${sourceTable}_${fieldName}`;
 
   return {

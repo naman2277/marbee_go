@@ -145,6 +145,19 @@ export async function fetchWebAnalyticsSites(
   return getStoredSites(tenantId, environment);
 }
 
+/** Lowercase alphanumeric token from the browser's CSPRNG (not Math.random). */
+function randomToken(length: number): string {
+  const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  const bytes = crypto.getRandomValues(new Uint8Array(length));
+  // 252 = largest multiple of 36 below 256 → no modulo bias
+  let out = '';
+  for (let i = 0; out.length < length; i += 1) {
+    const b = i < bytes.length ? bytes[i] : crypto.getRandomValues(new Uint8Array(1))[0];
+    if (b < 252) out += alphabet[b % 36];
+  }
+  return out;
+}
+
 /** Register a new site */
 export async function createWebAnalyticsSite(
   tenantId: string,
@@ -156,10 +169,10 @@ export async function createWebAnalyticsSite(
   }
 ): Promise<WebAnalyticsSite> {
   const cleanDomain = input.domain.replace(/^https?:\/\//, '').replace(/\/$/, '').toLowerCase();
-  const hexRandom = Math.random().toString(36).substring(2, 8);
-  const siteId = `site_${hexRandom}`;
-  const writeKey = `mb_live_${Math.random().toString(36).substring(2, 14)}`;
-  const verificationToken = `vtok_${Math.random().toString(36).substring(2, 10)}`;
+  // Cryptographically random ids (SEC-02). site_id is globally unique in the DB (sql/85).
+  const siteId = `site_${randomToken(12)}`;
+  const writeKey = `mb_live_${randomToken(32)}`;
+  const verificationToken = `vtok_${randomToken(16)}`;
 
   const allowedOrigins = input.allowedOrigins && input.allowedOrigins.length > 0
     ? input.allowedOrigins
@@ -192,9 +205,13 @@ export async function createWebAnalyticsSite(
     updatedAt: new Date().toISOString(),
   };
 
-  try {
-    await supabase.from('web_analytics_sites').insert({
-      id: newSite.id,
+  // Save to the database FIRST and fail loudly. Previously the row was sent with a
+  // non-UUID id ("was_<timestamp>"), the insert always failed, the error was ignored,
+  // and the site lived only in localStorage — so the server never recognised its key
+  // and every analytics/event call from that website was refused. (Found 2026-11-20.)
+  const { data: saved, error: saveError } = await supabase
+    .from('web_analytics_sites')
+    .insert({
       tenant_id: tenantId,
       environment,
       site_id: newSite.siteId,
@@ -205,8 +222,15 @@ export async function createWebAnalyticsSite(
       verification_token: newSite.verificationToken,
       status: newSite.status,
       settings: newSite.settings,
-    });
-  } catch {}
+    })
+    .select('id, created_at, updated_at')
+    .single();
+  if (saveError || !saved) {
+    throw new Error(`Could not register the site: ${saveError?.message ?? 'no row returned'}`);
+  }
+  newSite.id = String(saved.id);
+  newSite.createdAt = String(saved.created_at ?? newSite.createdAt);
+  newSite.updatedAt = String(saved.updated_at ?? newSite.updatedAt);
 
   const current = getStoredSites(tenantId, environment);
   saveStoredSites(tenantId, environment, [newSite, ...current]);
@@ -440,8 +464,8 @@ export async function verifySiteConnection(
 
 /** Fetch Aggregated Metrics for the Dashboard */
 export async function fetchWebAnalyticsMetrics(
-  tenantId: string,
-  environment: string,
+  _tenantId: string,
+  _environment: string,
   siteId: string,
   dateRange?: { from: Date; to: Date }
 ): Promise<WebAnalyticsMetrics> {
@@ -1699,7 +1723,7 @@ async function buildSessionsFromEvents(
         eventName: e.eventName,
         path: e.path,
         url: e.url,
-        pageTitle: e.pageTitle,
+        pageTitle: e.pageTitle ?? undefined,
         timestamp: e.clientTimestamp || e.serverTimestamp,
         properties: e.properties,
       })),

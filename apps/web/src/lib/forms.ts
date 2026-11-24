@@ -6,8 +6,7 @@ import { invokeFunction } from './functions';
 import { getStorageTarget } from './form-mapping';
 import { upsertCustomerFromForm } from './form-customer-upsert';
 import { applyFieldMappingValue } from './form-field-mapping-rules';
-import { decryptFields, encryptFields } from './crypto-vault';
-import { resolveVariable } from './global-variables';
+import { decryptFormRecords, encryptFormFields } from './global-variables';
 import type { FormBanner, FormTheme } from './form-design';
 import type { FormSecurityConfig } from './form-security';
 
@@ -627,18 +626,15 @@ export async function submitFormResponse(input: {
   let storedData = data;
   const encryption = form.settings.encryption;
   if (encryption?.enabled && encryption.key_variable) {
-    const key = await resolveVariable(tenantId, environment, encryption.key_variable, 'forms');
-    if (!key) {
-      return { error: `Encryption key ${encryption.key_variable} could not be resolved` };
-    }
+    // Encrypted on the server with the named key — the key never reaches the browser (SEC-05).
     const targets = encryption.encrypt_all
       ? form.fields.filter((f) => !NON_INPUT_FIELD_TYPES.includes(f.field_type)).map((f) => f.name)
       : encryption.fields ?? [];
-    try {
-      storedData = await encryptFields(data, targets, key);
-    } catch {
-      return { error: 'Failed to encrypt submission' };
+    const sealed = await encryptFormFields(tenantId, environment, encryption.key_variable, targets, data);
+    if (sealed.error || !sealed.data) {
+      return { error: sealed.error ?? 'Failed to encrypt submission' };
     }
+    storedData = sealed.data;
   }
 
   const { data: submission, error } = await supabase
@@ -674,17 +670,10 @@ export async function decryptSubmissionData(
   const encryption = form.settings.encryption;
   if (!encryption?.enabled || !encryption.key_variable) return data;
 
-  const key = await resolveVariable(tenantId, environment, encryption.key_variable, 'forms');
-  if (!key) return data;
-
-  const targets = encryption.encrypt_all
-    ? Object.keys(data)
-    : encryption.fields ?? [];
-  try {
-    return await decryptFields(data, targets, key);
-  } catch {
-    return data;
-  }
+  // Decrypted on the server (needs "View customer data"); the key never reaches the browser.
+  const targets = encryption.encrypt_all ? [] : encryption.fields ?? [];
+  const r = await decryptFormRecords(tenantId, environment, encryption.key_variable, targets, [{ data }]);
+  return r.records?.[0]?.data ?? data;
 }
 
 /** Does `field` currently apply given the other submitted values (conditional visibility)? */

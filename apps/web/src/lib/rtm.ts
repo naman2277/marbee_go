@@ -364,7 +364,7 @@ export type RtmEngagement = {
 // ---------------------------------------------------------------------------
 
 export type TriggerStatus = 'draft' | 'active' | 'paused' | 'archived';
-export type TriggerCategory = 'commerce' | 'content' | 'travel' | 'saas' | 'financial' | 'custom';
+export type TriggerCategory = 'commerce' | 'content' | 'travel' | 'saas' | 'financial' | 'transactional' | 'custom';
 export type ConditionOp = 'eq' | 'neq' | 'gt' | 'lt' | 'gte' | 'lte' | 'contains' | 'starts_with' | 'ends_with' | 'exists' | 'not_exists' | 'in' | 'not_in' | 'regex';
 export type TemporalType = 'absence' | 'delay' | 'within' | 'sequence';
 
@@ -854,7 +854,7 @@ export function upsertCustomerIdentity(input: {
           .from('customers')
           .select('id')
           .eq('tenant_id', tenantId)
-          .eq('email', emailVal)
+          .eq('email', String(emailVal).trim().toLowerCase()) // TD-17: stored emails are lower-case (sql/92), so look up the same way.
           .maybeSingle();
         if (data?.id) existingId = data.id;
       }

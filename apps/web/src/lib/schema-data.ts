@@ -2,7 +2,7 @@ import type { SchemaFilterField } from '@/lib/schema-filters';
 import type { Customer } from '@marbee/shared';
 import { evaluateExpr, fieldExpr, formatExprCode, type ExprNode } from '@/lib/schema-expressions';
 import { getCustomerDisplayName } from '@/lib/customers';
-import { fieldToAlias, normalizeColumnSpec, resolveColumnSourceKey } from '@/lib/schema-explorer-columns';
+import { normalizeColumnSpec, resolveColumnSourceKey } from '@/lib/schema-explorer-columns';
 
 type CustomerJoin = Pick<Customer, 'title' | 'first_name' | 'middle_name' | 'last_name' | 'email' | 'mobile'>;
 

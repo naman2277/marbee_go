@@ -523,9 +523,8 @@ export function TemplatesPage() {
         <ConfirmDialog
           open={Boolean(singleDelete)}
           title="Delete Template"
-          description={`Are you sure you want to delete "${singleDelete.name}"? This action cannot be undone.`}
+          message={`Are you sure you want to delete "${singleDelete.name}"? This action cannot be undone.`}
           confirmLabel="Delete"
-          destructive
           onConfirm={() => deleteMutation.mutate(singleDelete.id)}
           onCancel={() => setSingleDelete(null)}
         />
@@ -535,13 +534,12 @@ export function TemplatesPage() {
         <ConfirmDialog
           open={bulkDeleteOpen}
           title={`Delete ${selectedIds.size} template${selectedIds.size === 1 ? '' : 's'}`}
-          description={`This permanently deletes ${
+          message={`This permanently deletes ${
             selectedNames.length <= 3
               ? selectedNames.map((n) => `"${n}"`).join(', ')
               : `${selectedNames.slice(0, 3).map((n) => `"${n}"`).join(', ')} and ${selectedNames.length - 3} more`
           }. This action cannot be undone.`}
           confirmLabel={`Delete ${selectedIds.size}`}
-          destructive
           onConfirm={() => bulkDeleteMutation.mutate([...selectedIds])}
           onCancel={() => setBulkDeleteOpen(false)}
         />

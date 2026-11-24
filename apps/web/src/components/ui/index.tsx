@@ -2,7 +2,7 @@ import { cn } from '@/lib/utils';
 import type { ButtonHTMLAttributes } from 'react';
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
+  variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger';
   size?: 'sm' | 'md' | 'lg';
 };
 
@@ -14,6 +14,7 @@ export function Button({ className, variant = 'primary', size = 'md', type = 'bu
         'inline-flex items-center justify-center rounded-lg font-medium transition-colors disabled:opacity-50',
         variant === 'primary' && 'bg-brand-600 text-white hover:bg-brand-700',
         variant === 'secondary' && 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50',
+        variant === 'outline' && 'border border-slate-300 bg-transparent text-slate-700 hover:bg-slate-50',
         variant === 'ghost' && 'text-slate-600 hover:bg-slate-100',
         variant === 'danger' && 'bg-red-600 text-white hover:bg-red-700',
         size === 'sm' && 'px-3 py-1.5 text-sm',
@@ -49,15 +50,19 @@ export function CardHeader({ title, subtitle, action }: { title: string; subtitl
 export { Avatar } from './Avatar';
 export { MarbeeLogo } from './MarbeeLogo';
 
-export function Badge({ children, variant = 'default' }: { children: React.ReactNode; variant?: 'default' | 'success' | 'warning' | 'error' }) {
+export type BadgeVariant = 'default' | 'neutral' | 'info' | 'success' | 'warning' | 'error';
+
+export function Badge({ children, variant = 'default', className }: { children: React.ReactNode; variant?: BadgeVariant; className?: string }) {
   return (
     <span
       className={cn(
         'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium',
-        variant === 'default' && 'bg-slate-100 text-slate-700',
+        (variant === 'default' || variant === 'neutral') && 'bg-slate-100 text-slate-700',
+        variant === 'info' && 'bg-sky-100 text-sky-700',
         variant === 'success' && 'bg-emerald-100 text-emerald-700',
         variant === 'warning' && 'bg-amber-100 text-amber-700',
         variant === 'error' && 'bg-red-100 text-red-700',
+        className,
       )}
     >
       {children}
@@ -75,9 +80,10 @@ export function StatCard({ label, value, change }: { label: string; value: strin
   );
 }
 
-export function EmptyState({ title, description, action }: { title: string; description: string; action?: React.ReactNode }) {
+export function EmptyState({ title, description, action, icon: Icon }: { title: string; description: string; action?: React.ReactNode; icon?: React.ComponentType<{ className?: string }> }) {
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
+      {Icon && <Icon className="mb-3 h-10 w-10 text-slate-300" />}
       <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
       <p className="mt-2 max-w-sm text-sm text-slate-500">{description}</p>
       {action && <div className="mt-6">{action}</div>}

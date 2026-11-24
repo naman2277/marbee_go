@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import { toSchemaSlug } from './schema-slug';
-import { logAudit, diffChanges } from './audit';
+import { logAudit } from './audit';
 
 export type LandingSectionType =
   // legacy (v1) — rendering unchanged
@@ -760,9 +760,9 @@ export async function updateLandingPage(
 export async function publishLandingPage(
   id: string,
   publish: boolean,
-  tenantId: string,
-  environment: string,
-  slug: string,
+  _tenantId: string,
+  _environment: string,
+  _slug: string,
   existingContent: LandingContent,
 ): Promise<{ error?: string; publicUrl?: string }> {
   if (!publish) {

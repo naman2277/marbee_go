@@ -1,22 +1,11 @@
 import { useState } from 'react';
 import {
-  AlertTriangle,
   ArrowRight,
   Check,
   CheckCircle2,
   FileCode2,
   GitBranch,
   GitCommit,
-  GitPullRequest,
-  Layers,
-  ListFilter,
-  Plus,
-  Radio,
-  Send,
-  Shield,
-  Sparkles,
-  Tag,
-  Users,
 } from 'lucide-react';
 import { Button } from '@/components/ui';
 import type { TableHealthProfile } from '@/lib/data-health-engine';

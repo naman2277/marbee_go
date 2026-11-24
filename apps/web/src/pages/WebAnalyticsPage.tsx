@@ -2,8 +2,6 @@ import { useMemo, useState, useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Activity,
-  ArrowRight,
-  ArrowUpRight,
   BarChart3,
   Bell,
   Bot,
@@ -14,47 +12,29 @@ import {
   Code2,
   Compass,
   Copy,
-  Cpu,
   Download,
   ExternalLink,
   Eye,
   Globe,
-  HelpCircle,
-  Info,
-  Laptop,
   Layers,
-  Lightbulb,
-  Lock,
   MapPin,
-  Maximize2,
   Monitor,
-  Phone,
   PieChart,
-  Play,
   Plus,
   Radio,
   RefreshCw,
   RotateCcw,
   Save,
-  Search,
   Send,
-  Server,
-  Share2,
   Shield,
   ShieldAlert,
   ShieldCheck,
   Smartphone,
   Sparkles,
   Tablet,
-  Tag,
-  Target,
-  Terminal,
   Trash2,
   TrendingDown,
-  TrendingUp,
-  UserCheck,
   Users,
-  Wifi,
   X,
   Zap,
 } from 'lucide-react';
@@ -81,14 +61,13 @@ import {
   generateAIBrainAnalysis,
   generateExecutiveBriefing,
   fetchRevenueOpportunities,
-  calculateTrackingHealth,
 } from '@/lib/ai-behavioral-brain';
 import { AIBrainTab } from '@/components/analytics/AIBrainTab';
 import { AIAgentsTab } from '@/components/analytics/AIAgentsTab';
 import { SessionIntelligenceTab } from '@/components/analytics/SessionIntelligenceTab';
 import { AskWebsiteCopilotTab } from '@/components/analytics/AskWebsiteCopilotTab';
 import { DeveloperCopilotTab } from '@/components/analytics/DeveloperCopilotTab';
-import type { WebAnalyticsSite, WebAnalyticsEvent, WebPushSubscriber } from '@/lib/web-analytics-types';
+import type { WebAnalyticsSite, WebAnalyticsEvent } from '@/lib/web-analytics-types';
 import { formatNumber } from '@/lib/utils';
 
 export function WebAnalyticsPage() {
@@ -102,7 +81,6 @@ export function WebAnalyticsPage() {
   const [registerModalOpen, setRegisterModalOpen] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
-  const [snippetType, setSnippetType] = useState<'async' | 'inline'>('async');
   const [isCheckingPushDeployment, setIsCheckingPushDeployment] = useState(false);
   const [pushDeploymentResult, setPushDeploymentResult] = useState<{
     configured: boolean;
@@ -339,7 +317,7 @@ export function WebAnalyticsPage() {
   };
 
   // Web Push Subscribers Query (Auto-syncs every 3s)
-  const { data: subscribers = [], refetch: refetchSubscribers, isLoading: isSubscribersLoading } = useQuery({
+  const { data: subscribers = [], refetch: refetchSubscribers } = useQuery({
     queryKey: ['web-push-subscribers', tenantId, environment, currentSite?.siteId],
     queryFn: () => fetchWebPushSubscribers(tenantId, environment, currentSite?.siteId),
     enabled: Boolean(tenantId),
@@ -503,7 +481,7 @@ export function WebAnalyticsPage() {
     }
   };
 
-  const { data: metrics, isLoading: isMetricsLoading, refetch: refetchMetrics, dataUpdatedAt } = useQuery({
+  const { data: metrics, refetch: refetchMetrics, dataUpdatedAt } = useQuery({
     queryKey: ['web-analytics-metrics', tenantId, environment, currentSite?.siteId, dateRange.from.toISOString(), dateRange.to.toISOString()],
     queryFn: () => currentSite ? fetchWebAnalyticsMetrics(tenantId, environment, currentSite.siteId, dateRange) : null,
     enabled: Boolean(currentSite?.siteId),
@@ -569,7 +547,7 @@ export function WebAnalyticsPage() {
     enabled: Boolean(currentSite?.siteId),
   });
 
-  const { data: frictionSignals = [], refetch: refetchFrictionSignals } = useQuery({
+  const { data: frictionSignals = [] } = useQuery({
     queryKey: ['friction-signals', currentSite?.siteId],
     queryFn: () => (currentSite ? fetchFrictionSignals(currentSite.siteId) : []),
     enabled: Boolean(currentSite?.siteId),
@@ -682,6 +660,9 @@ export function WebAnalyticsPage() {
       void queryClient.invalidateQueries({ queryKey: ['web-analytics-sites', tenantId, environment] });
       refetchSites();
     },
+    onError: (err) => {
+      showToast(err instanceof Error ? err.message : 'Could not register the website');
+    },
   });
 
   const deleteSiteMutation = useMutation({
@@ -782,108 +763,7 @@ export function WebAnalyticsPage() {
     ? currentSite.domain.replace(/^https?:\/\//, '').replace(/\/.*$/, '')
     : 'example.com';
 
-  const snippetCodeAsync = currentSite
-    ? `<!-- Marbee Web Analytics SDK v2 (Async) -->
-<script>
-(function(w,d,s,id,key){
-  if(w.__marbee_loaded) return;
-  var j=d.createElement(s); j.async=true;
-  j.src="${window.location.origin}/sdk/v1/marbee-analytics.js";
-  j.setAttribute('data-site', id);
-  j.setAttribute('data-write-key', key);
-  d.head.appendChild(j);
-})(window, document, 'script', '${currentSite.siteId}', '${currentSite.writeKey || `mb_live_${currentSite.siteId}`}');
-</script>`
-    : '';
 
-  const snippetCodeInline = currentSite
-    ? `<!-- Marbee Universal Inline Tracker (Zero-Dependency - Pageviews, Scroll Depth, Clicks, Dwell Time) -->
-<script>
-(function(w,d,sId,wKey){
-  try {
-    if(w.__marbee_loaded) return; w.__marbee_loaded = true;
-    var ENDPOINT = 'https://uqffhyaftlwetqigfenp.supabase.co/functions/v1/web-analytics-ingest';
-    var aId = localStorage.getItem('_mb_aid_' + sId) || ('mb_' + Math.random().toString(36).substr(2,9));
-    localStorage.setItem('_mb_aid_' + sId, aId);
-    var sSess = sessionStorage.getItem('_mb_sid_' + sId) || ('sess_' + Math.random().toString(36).substr(2,9));
-    sessionStorage.setItem('_mb_sid_' + sId, sSess);
-    
-    var maxScroll = 0, startT = Date.now(), pages = [location.pathname];
-    function send(evts, withSess){
-      var payload = { write_key: wKey, site_id: sId, session_id: sSess, anonymous_id: aId, events: evts };
-      if(withSess){
-        payload.session_summary = {
-          start_time: new Date(startT).toISOString(),
-          end_time: new Date().toISOString(),
-          duration_sec: Math.round((Date.now() - startT)/1000),
-          active_time_sec: Math.round((Date.now() - startT)/1000),
-          page_count: pages.length,
-          pages_visited: pages,
-          max_scroll_depth: maxScroll,
-          click_count: 1,
-          rage_click_count: 0,
-          form_submit_count: 0,
-          js_error_count: 0,
-          converted: false
-        };
-      }
-      var body = JSON.stringify(payload);
-      if(navigator.sendBeacon) { navigator.sendBeacon(ENDPOINT, new Blob([body], {type:'application/json'})); }
-      else { fetch(ENDPOINT, {method:'POST', headers:{'Content-Type':'application/json'}, body:body, keepalive:true}).catch(function(){}); }
-      if(w.BroadcastChannel) new BroadcastChannel('marbee_analytics_stream').postMessage({type:'EVENT', payload:payload});
-    }
-
-    function createEvt(name, extra){
-      var ua = navigator.userAgent;
-      return {
-        event_id: 'e_' + Math.random().toString(36).substr(2,9),
-        event_name: name,
-        url: location.href,
-        path: location.pathname,
-        hostname: location.hostname,
-        page_title: document.title || '',
-        referrer: document.referrer || null,
-        device_type: /iPad/i.test(ua) ? 'tablet' : /Mobile|Android|iPhone/i.test(ua) ? 'mobile' : 'desktop',
-        browser: /Edg\\//i.test(ua)?'Edge':/Firefox\\//i.test(ua)?'Firefox':/Safari/i.test(ua)&&!/Chrome/i.test(ua)?'Safari':'Chrome',
-        os: /Windows/i.test(ua)?'Windows':/Mac/i.test(ua)?'macOS':/Android/i.test(ua)?'Android':/iPhone|iPad/i.test(ua)?'iOS':'Linux',
-        client_timestamp: new Date().toISOString(),
-        properties: extra || {}
-      };
-    }
-
-    // Track initial pageview
-    send([createEvt('pageview')]);
-
-    // Track scroll depth milestones (25%, 50%, 75%, 100%)
-    var reported = {};
-    w.addEventListener('scroll', function(){
-      var docH = Math.max(d.body.scrollHeight, d.documentElement.scrollHeight, 1);
-      var pct = Math.min(100, Math.round(((w.scrollY + w.innerHeight)/docH)*100));
-      if(pct > maxScroll) maxScroll = pct;
-      [25, 50, 75, 100].forEach(function(m){
-        if(pct >= m && !reported[m]){
-          reported[m] = true;
-          send([createEvt('scroll_depth', { depth_pct: m, path: location.pathname })]);
-        }
-      });
-    }, {passive:true});
-
-    // Track clicks on CTA / links
-    d.addEventListener('click', function(e){
-      var t = e.target.closest('a, button, input[type="submit"], [role="button"]');
-      if(t){
-        send([createEvt('click', { element: t.tagName.toLowerCase() + (t.id ? '#'+t.id : ''), text: (t.innerText||'').slice(0,50) })]);
-      }
-    }, {passive:true});
-
-    // Send session summary on exit
-    w.addEventListener('pagehide', function(){
-      send([createEvt('page_exit', { dwell_time_sec: Math.round((Date.now() - startT)/1000), max_scroll: maxScroll })], true);
-    });
-  } catch(e){}
-})(window, document, '${currentSite.siteId}', '${currentSite.writeKey || `mb_live_${currentSite.siteId}`}');
-</script>`
-    : '';
 
   const webPushSwCode = currentSite
     ? `// Marbee Web Push Service Worker — Place in your website root: /sw.js

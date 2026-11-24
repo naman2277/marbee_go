@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { FunctionSquare, Pencil, Sparkles, X } from 'lucide-react';
+import { FunctionSquare, Pencil, X } from 'lucide-react';
 import { AdobeExpressionBuilderModal } from '@/components/schemas/AdobeExpressionBuilderModal';
 import {
   fieldExpr,
@@ -93,7 +93,6 @@ export function FilterSideInput({
   fields,
   valueType = 'string',
   defaultField,
-  layout = 'default',
 }: Props) {
   const [showBuilderModal, setShowBuilderModal] = useState(false);
 

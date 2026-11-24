@@ -84,10 +84,10 @@ export type WebAnalyticsEvent = {
   deviceType: 'desktop' | 'mobile' | 'tablet' | 'bot' | 'unknown';
   browser: string;
   os: string;
-  countryCode: string;
-  countryName: string;
+  countryCode: string | null;
+  countryName: string | null;
   city?: string | null;
-  ipHash: string;
+  ipHash: string | null;
   isBot: boolean;
   properties: Record<string, unknown>;
   clientTimestamp: string;
@@ -244,7 +244,7 @@ export type BehavioralSession = {
     type: string;
     os: string;
     browser: string;
-    screen: string;
+    screen: string | null;
   };
   geo: {
     country: string | null;
@@ -343,7 +343,7 @@ export type ExecutiveBriefing = {
   revenueSummary: {
     amount: string;
     deltaPct: number;
-    direction: 'up' | 'down';
+    direction: 'up' | 'down' | 'neutral';
     keyDriver: string;
   };
   biggestOpportunity: {

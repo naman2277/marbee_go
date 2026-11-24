@@ -24,7 +24,6 @@ export function JourneyFolderTile({
   folderPath,
   dropTarget,
   isDropTarget,
-  dragging,
   onNavigate,
   onOpen,
   onDrop,

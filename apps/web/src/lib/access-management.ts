@@ -548,16 +548,15 @@ export async function createTenantUser(
 export async function resetTenantUserPassword(
   tenantId: string,
   environment: string,
-  input: { userId: string; memberEmail: string; password: string },
+  input: { userId: string; memberEmail: string },
 ): Promise<{ message: string }> {
   const result = await invokeFunction<{ message: string }>('reset-tenant-user-password', {
     tenant_id: tenantId,
     user_id: input.userId,
-    password: input.password,
   });
 
   if (!result.ok || !result.data) {
-    throw new Error(result.error ?? 'Failed to reset password');
+    throw new Error(result.error ?? 'Failed to send the reset link');
   }
 
   void logAudit({
@@ -567,7 +566,7 @@ export async function resetTenantUserPassword(
     resourceType: 'tenant_member',
     resourceId: input.userId,
     resourceName: input.memberEmail,
-    summary: 'Admin reset member password',
+    summary: 'Admin sent password reset link',
   });
 
   return { message: result.data.message };

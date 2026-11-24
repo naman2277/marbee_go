@@ -63,7 +63,7 @@ async function findCustomerByEmail(
     .select('id')
     .eq('tenant_id', tenantId)
     .eq('environment', environment)
-    .eq('email', email)
+    .eq('email', email.trim().toLowerCase()) // TD-17: stored emails are lower-case (sql/92), so look up the same way.
     .order('created_at', { ascending: true })
     .limit(1)
     .maybeSingle();

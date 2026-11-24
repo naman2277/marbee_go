@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { CheckCircle2, ChevronRight, Info, Link2, Sparkles, LayoutGrid, Table, Wand2 } from 'lucide-react';
+import { CheckCircle2, ChevronRight, Info, Link2, Sparkles, LayoutGrid, Table } from 'lucide-react';
 import { Badge, Button, Card, CardHeader } from '@/components/ui';
 import { FormMappingTable } from '@/components/forms/FormMappingTable';
 import { FormMappingVisualFlow } from '@/components/forms/FormMappingVisualFlow';
@@ -395,7 +395,7 @@ export function HtmlFormMappingTab({ form, html = '', schemas = [], isHtmlMode =
         <div className="flex gap-2">
           <Button
             variant="secondary"
-            onClick={() => saveMutation.mutate()}
+            onClick={() => saveMutation.mutate(undefined)}
             disabled={saveMutation.isPending || fields.length === 0}
           >
             {saveMutation.isPending ? 'Saving…' : 'Save mapping'}

@@ -1,14 +1,13 @@
 import { useMemo, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import {
-  Activity, AlertTriangle, ArrowRight, CheckCircle2, ChevronDown,
-  Eye, Pause, Play, Power, PowerOff, Radio, Send, Shield, StopCircle,
-  X, Zap,
+  Activity, AlertTriangle, 
+  Pause, Play, PowerOff, Radio, Send, StopCircle,
+  Zap,
 } from 'lucide-react';
-import { Badge, Button } from '@/components/ui';
+import { Badge } from '@/components/ui';
 import {
-  CHANNELS, STATUS_TONE, listDefinitions, usageSummary,
-  type DefinitionSummary,
+  CHANNELS, listDefinitions, usageSummary,
 } from '@/lib/rtm';
 
 // ─── Event source controls ─────────────────────────────────────────────────
@@ -41,7 +40,6 @@ function loadSourceControls(): SourceControl[] {
 // ═══════════════════════════════════════════════════════════════════════════
 
 export function RtmOverview({ tenantId, environment, days, dateLabel }: { tenantId: string; environment: string; days: number; dateLabel: string }) {
-  const queryClient = useQueryClient();
   const usage = useQuery({
     queryKey: ['rtm-usage', tenantId, environment, days],
     queryFn: () => usageSummary(tenantId, environment, days),

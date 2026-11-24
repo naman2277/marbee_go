@@ -1,32 +1,21 @@
 import { useMemo, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import {
-  Calendar,
   Check,
   CheckCircle2,
-  Clock,
   Copy,
   Download,
-  FileSpreadsheet,
-  Filter,
   KeyRound,
-  Layers,
   Plus,
-  QrCode,
-  RefreshCw,
   Search,
-  Shield,
-  ShieldAlert,
   Sparkles,
   Tag,
   Ticket,
   Trash2,
   TrendingUp,
-  Users,
   X,
   Zap,
   AlertTriangle,
-  RotateCcw,
 } from 'lucide-react';
 import { Button, Card } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
@@ -38,14 +27,12 @@ import {
   deleteCouponCampaign,
   clearAllCouponCampaigns,
   type CouponCampaign,
-  type CouponCode,
   type CouponType,
 } from '@/lib/coupons';
 import { formatNumber } from '@/lib/utils';
 
 export function CouponsPage() {
   const { tenantId, environment } = useAuth();
-  const queryClient = useQueryClient();
 
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'generic' | 'unique'>('all');
@@ -78,7 +65,7 @@ export function CouponsPage() {
     setTimeout(() => setCopiedCodeId(null), 2000);
   };
 
-  const { data: campaigns = [], isLoading, refetch } = useQuery({
+  const { data: campaigns = [], refetch } = useQuery({
     queryKey: ['coupon-campaigns', tenantId, environment],
     queryFn: () => fetchCouponCampaigns(tenantId, environment),
     enabled: Boolean(tenantId),

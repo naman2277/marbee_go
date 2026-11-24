@@ -112,15 +112,6 @@ export function resetSeed(seed = 42) { rng = new SeededRng(seed); }
 // Sample data generators (for sources/triggers that produce data)
 // ═══════════════════════════════════════════════════════════════════════════
 
-const FIRST_NAMES = ['Emma', 'Liam', 'Sophia', 'Noah', 'Ava', 'James', 'Mia', 'Oliver', 'Priya', 'Raj', 'Chen', 'Yuki', 'Maria', 'Carlos', 'Fatima', 'Ahmed', 'Anika', 'Lucas', 'Isabella', 'Ethan'];
-const LAST_NAMES = ['Smith', 'Johnson', 'Patel', 'Kim', 'Chen', 'Garcia', 'Müller', 'Tanaka', 'Singh', 'Ali', 'Lee', 'Wilson', 'Brown', 'Davis', 'Kumar', 'Hernandez', 'Liu', 'Nakamura', 'Sharma', 'Martinez'];
-const CITIES = ['New York', 'London', 'Mumbai', 'Tokyo', 'Berlin', 'São Paulo', 'Sydney', 'Toronto', 'Dubai', 'Singapore', 'Paris', 'Seoul', 'Bangalore', 'Chicago', 'Amsterdam'];
-const COUNTRIES = ['US', 'UK', 'IN', 'JP', 'DE', 'BR', 'AU', 'CA', 'AE', 'SG', 'FR', 'KR', 'US', 'US', 'NL'];
-const STATUSES = ['active', 'inactive', 'pending', 'churned'];
-const TIERS = ['Bronze', 'Silver', 'Gold', 'Platinum'];
-const CATEGORIES = ['Electronics', 'Clothing', 'Food', 'Books', 'Home', 'Sports', 'Beauty', 'Toys'];
-const CHANNELS = ['email', 'sms', 'push', 'whatsapp', 'web'];
-const EVENT_NAMES = ['page_view', 'add_to_cart', 'purchase', 'sign_up', 'login', 'search', 'product_view', 'checkout_start'];
 
 function randomFrom<T>(arr: T[]): T { return rng.from(arr); }
 function randomInt(min: number, max: number) { return rng.int(min, max); }
@@ -130,65 +121,8 @@ function randomDate(daysBack: number) {
   return d.toISOString().split('T')[0];
 }
 
-function generateCustomerRows(count: number): DataRow[] {
-  const GENDERS = ['Male', 'Female', 'Non-binary', 'Prefer not to say'];
-  return Array.from({ length: count }, (_, i) => {
-    const fn = randomFrom(FIRST_NAMES), ln = randomFrom(LAST_NAMES);
-    const ci = randomInt(0, CITIES.length - 1);
-    return {
-      id: i + 1,
-      customer_id: `cust_${String(1000 + i)}`,
-      email: `${fn.toLowerCase()}.${ln.toLowerCase()}${i}@example.com`,
-      first_name: fn,
-      last_name: ln,
-      phone: `+1${String(randomInt(2000000000, 9999999999))}`,
-      mobile: `+1${String(randomInt(2000000000, 9999999999))}`,
-      city: CITIES[ci],
-      country: COUNTRIES[ci],
-      gender: randomFrom(GENDERS),
-      date_of_birth: randomDate(365 * 50),
-      status: randomFrom(STATUSES),
-      loyalty_tier: randomFrom(TIERS),
-      age: randomInt(18, 72),
-      lifetime_value: Math.round(rng.next() * 5000 * 100) / 100,
-      last_purchase_date: randomDate(120),
-      last_purchase_category: randomFrom(CATEGORIES),
-      signup_date: randomDate(730),
-      email_opt_in: rng.next() > 0.15,
-      sms_opt_in: rng.next() > 0.4,
-      push_token: rng.next() > 0.5 ? `tok_${randomInt(100000, 999999)}` : null,
-      preferred_channel: randomFrom(CHANNELS),
-      campaign_count: randomInt(0, 50),
-      engagement_score: Math.round(rng.next() * 100),
-      created_at: randomDate(730),
-      updated_at: randomDate(30),
-    };
-  });
-}
 
-function generateEventRows(count: number): DataRow[] {
-  return Array.from({ length: count }, (_, i) => ({
-    event_id: `evt_${String(10000 + i)}`,
-    customer_id: `cust_${String(1000 + randomInt(0, 200))}`,
-    event_name: randomFrom(EVENT_NAMES),
-    timestamp: new Date(Date.now() - randomInt(0, 86400000 * 30)).toISOString(),
-    properties: { page: `/page-${randomInt(1, 50)}`, source: randomFrom(['web', 'mobile', 'api']), value: Math.round(rng.next() * 200 * 100) / 100 },
-    channel: randomFrom(CHANNELS),
-    session_id: `sess_${randomInt(10000, 99999)}`,
-  }));
-}
 
-function generateProductRows(count: number): DataRow[] {
-  return Array.from({ length: count }, (_, i) => ({
-    product_id: `prod_${String(100 + i)}`,
-    name: `Product ${String.fromCharCode(65 + (i % 26))}${i}`,
-    category: randomFrom(CATEGORIES),
-    price: Math.round((5 + rng.next() * 495) * 100) / 100,
-    stock: randomInt(0, 1000),
-    rating: Math.round((3 + rng.next() * 2) * 10) / 10,
-    created_at: randomDate(365),
-  }));
-}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Operator evaluation
@@ -476,7 +410,7 @@ const executors: Record<string, (ctx: ExecContext) => ExecResult | Promise<ExecR
       let query = ctx.supabase.from('events').select('*').eq('tenant_id', ctx.tenantId).eq('environment', ctx.environment).limit(maxBatchSize);
       if (eventName) query = query.eq('event_type', eventName);
       const { data } = await query;
-      const rows = (data ?? []) as DataRow[];
+      const rows = (data ?? []) as unknown as DataRow[];
       return { rows, summary: `${rows.length} "${eventName}" events from DB (source: ${source})` };
     }
     const sampleRow: DataRow = {
@@ -494,7 +428,7 @@ const executors: Record<string, (ctx: ExecContext) => ExecResult | Promise<ExecR
   trigger_api: async ({ ctx }) => {
     if (ctx) {
       const { data } = await ctx.supabase.from('customers').select('*').eq('tenant_id', ctx.tenantId).eq('environment', ctx.environment).limit(100);
-      const rows = (data ?? []) as DataRow[];
+      const rows = (data ?? []) as unknown as DataRow[];
       return { rows, summary: `API trigger → ${rows.length} records from DB` };
     }
     return { rows: [], summary: `API trigger — 0 data rows (awaiting API call)` };
@@ -502,7 +436,7 @@ const executors: Record<string, (ctx: ExecContext) => ExecResult | Promise<ExecR
   trigger_manual: async ({ config, ctx }) => {
     if (ctx) {
       const { data } = await ctx.supabase.from('customers').select('*').eq('tenant_id', ctx.tenantId).eq('environment', ctx.environment).limit(100);
-      const rows = (data ?? []) as DataRow[];
+      const rows = (data ?? []) as unknown as DataRow[];
       return { rows, summary: `Manual run → ${rows.length} records` };
     }
     return { rows: [], summary: `Manual trigger "${str(config, 'description') || ''}" — 0 data rows (connect a source node)` };
@@ -574,10 +508,10 @@ const executors: Record<string, (ctx: ExecContext) => ExecResult | Promise<ExecR
   },
 
   // ─── SOURCES ─────────────────────────────────────────────────────
-  source: async ({ config, ctx }) => {
+  source: async ({ config, inputRows, ctx }) => {
     const schemaSlug = str(config, 'schema') || 'customer';
     const selectedFields = config.selected_fields as string[] | undefined;
-    const filterGroup = config.filter_group as { logic: string; conditions: unknown[] } | undefined;
+    const filterGroup = config.filter_group as FilterGroup | undefined;
     const sortField = str(config, 'sort_field');
     const sortOrder = str(config, 'sort_order') || 'desc';
     const limit = num(config, 'limit', 10000);
@@ -627,7 +561,7 @@ const executors: Record<string, (ctx: ExecContext) => ExecResult | Promise<ExecR
         console.error('[pipeline] source query error:', { tableName, tenantId: ctx.tenantId, environment: ctx.environment, error });
         return { rows: [], summary: `Schema "${schemaSlug}" from ${tableName} (tenant: ${ctx.tenantId}, env: ${ctx.environment}): query error — ${error.message}`, errorRows: [] };
       }
-      rows = (data ?? []) as DataRow[];
+      rows = (data ?? []) as unknown as DataRow[];
 
       // Apply field selection client-side (keep only selected fields if specified)
       if (selectedFields && selectedFields.length > 0) {
@@ -694,7 +628,7 @@ const executors: Record<string, (ctx: ExecContext) => ExecResult | Promise<ExecR
         }
       }
       const { data } = await q.limit(1000);
-      const rows = (data ?? []) as DataRow[];
+      const rows = (data ?? []) as unknown as DataRow[];
       return { rows, summary: `Connector "${connectorId || 'crm'}" → ${object} → ${rows.length} rows` };
     }
     if (inputRows.length > 0) return { rows: inputRows, summary: `Connector "${connectorId || 'crm'}" → ${object} → ${inputRows.length} rows (pass-through)` };
@@ -709,7 +643,7 @@ const executors: Record<string, (ctx: ExecContext) => ExecResult | Promise<ExecR
     if (inputRows.length > 0) return { rows: inputRows, summary: `${str(config, 'format') || 'CSV'} file → ${inputRows.length} rows (pass-through)` };
     return { rows: [], summary: `${str(config, 'format') || 'CSV'} file — 0 rows (requires file upload)` };
   },
-  source_query: async ({ config, ctx }) => {
+  source_query: async ({ config, inputRows, ctx }) => {
     const query = str(config, 'query');
     const maxRows = num(config, 'max_rows', 1000);
     if (ctx && query) {
@@ -740,7 +674,7 @@ const executors: Record<string, (ctx: ExecContext) => ExecResult | Promise<ExecR
       const limitMatch = query.match(/LIMIT\s+(\d+)/i);
       const limit = limitMatch ? Math.min(parseInt(limitMatch[1]), maxRows) : maxRows;
       const { data } = await q.limit(limit);
-      const rows = (data ?? []) as DataRow[];
+      const rows = (data ?? []) as unknown as DataRow[];
       return { rows, summary: `SQL → ${table}: ${rows.length} rows` };
     }
     if (inputRows.length > 0) return { rows: inputRows, summary: `SQL query → ${inputRows.length} rows (pass-through)` };
@@ -757,7 +691,7 @@ const executors: Record<string, (ctx: ExecContext) => ExecResult | Promise<ExecR
       const limitMatch = query.match(/LIMIT\s+(\d+)/i);
       const limit = limitMatch ? parseInt(limitMatch[1]) : 1000;
       const { data } = await q.limit(limit);
-      const rows = (data ?? []) as DataRow[];
+      const rows = (data ?? []) as unknown as DataRow[];
       return { rows, summary: `DB "${connectorId || 'db'}" → ${table}: ${rows.length} rows (timeout: ${timeout}s)` };
     }
     if (inputRows.length > 0) return { rows: inputRows, summary: `DB query (${connectorId || 'db'}) → ${inputRows.length} rows (pass-through)` };
@@ -771,7 +705,7 @@ const executors: Record<string, (ctx: ExecContext) => ExecResult | Promise<ExecR
     if (ctx) {
       const table = str(config, 'table_name') || 'customers';
       const { data } = await ctx.supabase.from(table).select('*').eq('tenant_id', ctx.tenantId).eq('environment', ctx.environment).limit(1000);
-      const rows = (data ?? []) as DataRow[];
+      const rows = (data ?? []) as unknown as DataRow[];
       return { rows, summary: `${str(config, 'provider') || 'storage'}://${str(config, 'bucket') || 'bucket'} → ${rows.length} rows` };
     }
     if (inputRows.length > 0) return { rows: inputRows, summary: `${str(config, 'provider') || 's3'}://${str(config, 'bucket') || 'bucket'} → ${inputRows.length} rows (pass-through)` };
@@ -910,7 +844,7 @@ const executors: Record<string, (ctx: ExecContext) => ExecResult | Promise<ExecR
         .from('schema_definitions').select('table_name').eq('tenant_id', ctx.tenantId).eq('name', rightSchema).maybeSingle();
       const table = schemaDef?.table_name || rightSchema;
       const { data } = await ctx.supabase.from(table).select('*').eq('tenant_id', ctx.tenantId).eq('environment', ctx.environment).limit(5000);
-      rightRows = (data ?? []) as DataRow[];
+      rightRows = (data ?? []) as unknown as DataRow[];
     }
 
     if (leftRows.length === 0 && rightRows.length === 0) {
@@ -1073,7 +1007,7 @@ const executors: Record<string, (ctx: ExecContext) => ExecResult | Promise<ExecR
       const table = schemaDef?.table_name || lookupSchema;
       const selectCols = fieldsToAdd.length ? [lookupKey, ...fieldsToAdd].join(',') : '*';
       const { data } = await ctx.supabase.from(table).select(selectCols).eq('tenant_id', ctx.tenantId).eq('environment', ctx.environment).limit(5000);
-      lookupRows = (data ?? []) as DataRow[];
+      lookupRows = (data ?? []) as unknown as DataRow[];
     } else if (!lookupSchema) {
       return { rows: inputRows, summary: `Enrich — no lookup schema configured` };
     } else {
@@ -1112,7 +1046,7 @@ const executors: Record<string, (ctx: ExecContext) => ExecResult | Promise<ExecR
       const table = schemaDef?.table_name || lookupTable;
       const cols = [lookupKeyField || 'id', returnField].join(',');
       const { data } = await ctx.supabase.from(table).select(cols).eq('tenant_id', ctx.tenantId).eq('environment', ctx.environment).limit(5000);
-      (data ?? []).forEach((r: DataRow) => {
+      ((data ?? []) as unknown as DataRow[]).forEach((r) => {
         const k = String(val(r, lookupKeyField || 'id') ?? '');
         const v = String(val(r, returnField) ?? '');
         if (k) lookupMap.set(k, v);
@@ -1203,7 +1137,7 @@ const executors: Record<string, (ctx: ExecContext) => ExecResult | Promise<ExecR
     return { rows, summary: `Union of ${streamSizes.length} streams (${streamSizes.join('+')}): ${combined.length} total → ${rows.length} unique, ${dupes} duplicates removed` };
   },
 
-  set_intersection: ({ config, inputRows, allInputs }) => {
+  set_intersection: ({ config, allInputs }) => {
     const keyFields = str(config, 'key_fields').split(',').map((k) => k.trim()).filter(Boolean);
     const streams: DataRow[][] = [];
     if (allInputs && Object.keys(allInputs).length >= 2) {
@@ -1695,7 +1629,7 @@ const executors: Record<string, (ctx: ExecContext) => ExecResult | Promise<ExecR
         .from('schema_definitions').select('table_name').eq('tenant_id', ctx.tenantId).eq('name', itemCatalog).maybeSingle();
       const table = schemaDef?.table_name || itemCatalog;
       const { data } = await ctx.supabase.from(table).select('*').eq('tenant_id', ctx.tenantId).eq('environment', ctx.environment).limit(500);
-      products = (data ?? []) as DataRow[];
+      products = (data ?? []) as unknown as DataRow[];
     } else if (!itemCatalog) {
       return { rows: inputRows.map((r) => ({ ...r, [outputField]: [], _rec_model: model })), summary: `Recommendation — no item catalog configured` };
     } else {

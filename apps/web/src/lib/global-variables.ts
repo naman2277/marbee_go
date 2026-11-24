@@ -6,21 +6,17 @@
  * and a rotation happens in a single place.
  *
  * Three kinds:
- *   - `plain`      — non-sensitive config (a base URL, a region code). Readable.
- *   - `secret`     — sensitive text (a third-party token). Stored AES-encrypted.
+ *   - `plain`          — non-sensitive config (a base URL, a region code). Readable.
+ *   - `secret`         — sensitive text (a third-party token). Sealed on the server.
  *   - `encryption_key` — an AES-256 key used to encrypt other data (e.g. form PII).
+ *                        Generated on the server; NEVER sent to the browser.
  *
- * `secret` and `encryption_key` values are sealed with the tenant master key before
- * they leave the browser, so the stored row never contains plaintext.
+ * Phase 0 · SEC-05 (D-019): everything goes through the `global-variables` edge function.
+ * The browser no longer holds a master key, never sees secret values unless an authorised
+ * user explicitly reveals one (audited), and never sees encryption keys at all.
  */
 
-import { supabase } from './supabase';
-import {
-  decryptValue,
-  encryptValue,
-  generateAesKey,
-  keyFingerprint,
-} from './crypto-vault';
+import { invokeFunction } from './functions';
 
 export type GlobalVariableKind = 'plain' | 'secret' | 'encryption_key';
 
@@ -41,8 +37,12 @@ export type GlobalVariable = {
   name: string;
   description: string | null;
   kind: GlobalVariableKind;
-  /** Plaintext for `plain`; AES envelope for `secret` and `encryption_key`. */
+  /** The value for `plain` variables; always '' for `secret` and `encryption_key`. */
   value: string;
+  /** True when a value is stored (secrets show "set" without revealing it). */
+  has_value?: boolean;
+  /** Saved before SEC-05 in the old browser-encrypted format — must be re-entered (secret) or rotated (key). */
+  needs_reentry?: boolean;
   /** Where this variable is allowed to be resolved. */
   scopes: GlobalVariableScope[];
   /** Short SHA-256 fingerprint — shown instead of the key itself. */
@@ -63,9 +63,6 @@ export const VARIABLE_SCOPES: Array<{ value: GlobalVariableScope; label: string 
   { value: 'connectors', label: 'Connectors' },
 ];
 
-const STORAGE_KEY = 'marbee_global_variables_v1';
-const MASTER_KEY_STORAGE = 'marbee_vault_master_key_v1';
-
 /** Reference syntax: `{{vars.NAME}}` — tolerant of surrounding whitespace. */
 const REFERENCE_PATTERN = /\{\{\s*vars\.([A-Z0-9_]+)\s*\}\}/g;
 
@@ -83,73 +80,37 @@ export function variableReference(name: string): string {
   return `{{vars.${name}}}`;
 }
 
-// -----------------------------------------------------------------------------
-// Master key — seals secret values at rest
-// -----------------------------------------------------------------------------
-
-/**
- * The tenant master key wraps every `secret` / `encryption_key` value.
- * It is created on first use and kept in local storage for this browser; a
- * server-side KMS would replace this in a hardened deployment.
- */
-async function getMasterKey(tenantId: string): Promise<string> {
-  const storageKey = `${MASTER_KEY_STORAGE}_${tenantId}`;
-  const existing = localStorage.getItem(storageKey);
-  if (existing) return existing;
-  const created = await generateAesKey();
-  localStorage.setItem(storageKey, created);
-  return created;
-}
-
-// -----------------------------------------------------------------------------
-// Local fallback storage (used when the Supabase table is unavailable)
-// -----------------------------------------------------------------------------
-
-function localKey(tenantId: string, environment: string) {
-  return `${STORAGE_KEY}_${tenantId}_${environment}`;
-}
-
-function readLocal(tenantId: string, environment: string): GlobalVariable[] {
+// Older versions kept a master key and a cache of variables in localStorage. Remove both.
+function scrubLegacyStorage(): void {
   try {
-    const raw = localStorage.getItem(localKey(tenantId, environment));
-    return raw ? (JSON.parse(raw) as GlobalVariable[]) : [];
+    const stale: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && (k.startsWith('marbee_vault_master_key_v1') || k.startsWith('marbee_global_variables_v1'))) stale.push(k);
+    }
+    stale.forEach((k) => localStorage.removeItem(k));
   } catch {
-    return [];
+    /* storage unavailable */
   }
 }
 
-function writeLocal(tenantId: string, environment: string, list: GlobalVariable[]) {
-  try {
-    localStorage.setItem(localKey(tenantId, environment), JSON.stringify(list));
-  } catch {
-    /* storage full or unavailable — non-fatal */
-  }
+type Fn<T> = { data?: T };
+
+async function call<T>(op: string, body: Record<string, unknown>): Promise<{ data?: T; error?: string }> {
+  const r = await invokeFunction<Fn<T>>('global-variables', { op, ...body });
+  if (!r.ok) return { error: r.error ?? 'Request failed' };
+  return { data: r.data?.data };
 }
 
 // -----------------------------------------------------------------------------
 // CRUD
 // -----------------------------------------------------------------------------
 
-export async function fetchGlobalVariables(
-  tenantId: string,
-  environment: string,
-): Promise<GlobalVariable[]> {
-  try {
-    const { data, error } = await supabase
-      .from('global_variables')
-      .select('*')
-      .eq('tenant_id', tenantId)
-      .eq('environment', environment)
-      .order('name');
-    if (error) throw error;
-    if (data) {
-      writeLocal(tenantId, environment, data as GlobalVariable[]);
-      return data as GlobalVariable[];
-    }
-  } catch {
-    /* fall through to local */
-  }
-  return readLocal(tenantId, environment);
+export async function fetchGlobalVariables(tenantId: string, environment: string): Promise<GlobalVariable[]> {
+  scrubLegacyStorage();
+  const r = await call<{ variables: GlobalVariable[] }>('list', { tenant_id: tenantId, environment });
+  if (r.error) throw new Error(r.error);
+  return r.data?.variables ?? [];
 }
 
 export type CreateVariableInput = {
@@ -158,7 +119,7 @@ export type CreateVariableInput = {
   name: string;
   description?: string;
   kind: GlobalVariableKind;
-  /** Omit for `encryption_key` to generate a fresh AES-256 key. */
+  /** Required for `plain` / `secret`. Ignored for `encryption_key` (generated on the server). */
   value?: string;
   scopes?: GlobalVariableScope[];
 };
@@ -168,148 +129,79 @@ export async function createGlobalVariable(
 ): Promise<{ variable?: GlobalVariable; error?: string }> {
   const name = normalizeVariableName(input.name);
   if (!name) return { error: 'A variable name is required' };
-
-  const existing = await fetchGlobalVariables(input.tenantId, input.environment);
-  if (existing.some((v) => v.name === name)) {
-    return { error: `A variable named ${name} already exists in this environment` };
-  }
-
-  const plaintext =
-    input.kind === 'encryption_key' ? input.value || (await generateAesKey()) : input.value ?? '';
-
-  if (input.kind !== 'encryption_key' && !plaintext) {
-    return { error: 'A value is required' };
-  }
-
-  const master = await getMasterKey(input.tenantId);
-  const stored = input.kind === 'plain' ? plaintext : await encryptValue(plaintext, master);
-  const fingerprint = input.kind === 'encryption_key' ? await keyFingerprint(plaintext) : null;
-  const now = new Date().toISOString();
-
-  const row: GlobalVariable = {
-    id: crypto.randomUUID(),
+  if (input.kind !== 'encryption_key' && !input.value) return { error: 'A value is required' };
+  const r = await call<{ variable: GlobalVariable }>('create', {
     tenant_id: input.tenantId,
     environment: input.environment,
     name,
-    description: input.description?.trim() || null,
     kind: input.kind,
-    value: stored,
-    scopes: input.scopes?.length ? input.scopes : ['all'],
-    fingerprint,
-    rotated_at: input.kind === 'encryption_key' ? now : null,
-    last_used_at: null,
-    created_at: now,
-    updated_at: now,
-  };
-
-  try {
-    const { error } = await supabase.from('global_variables').insert(row);
-    if (error) throw error;
-  } catch {
-    /* persisted locally below */
-  }
-  writeLocal(input.tenantId, input.environment, [...existing, row]);
-  return { variable: row };
+    value: input.kind === 'encryption_key' ? undefined : input.value,
+    description: input.description,
+    scopes: input.scopes,
+  });
+  return r.error ? { error: r.error } : { variable: r.data?.variable };
 }
 
 export async function updateGlobalVariable(
-  tenantId: string,
-  environment: string,
+  _tenantId: string,
+  _environment: string,
   id: string,
   patch: { description?: string; scopes?: GlobalVariableScope[]; value?: string },
 ): Promise<{ error?: string }> {
-  const list = await fetchGlobalVariables(tenantId, environment);
-  const current = list.find((v) => v.id === id);
-  if (!current) return { error: 'Variable not found' };
-
-  const update: Partial<GlobalVariable> = { updated_at: new Date().toISOString() };
-  if (patch.description !== undefined) update.description = patch.description.trim() || null;
-  if (patch.scopes !== undefined) update.scopes = patch.scopes.length ? patch.scopes : ['all'];
-
-  if (patch.value !== undefined && patch.value !== '') {
-    const master = await getMasterKey(tenantId);
-    update.value = current.kind === 'plain' ? patch.value : await encryptValue(patch.value, master);
-    if (current.kind === 'encryption_key') {
-      update.fingerprint = await keyFingerprint(patch.value);
-      update.rotated_at = update.updated_at;
-    }
-  }
-
-  try {
-    const { error } = await supabase.from('global_variables').update(update).eq('id', id);
-    if (error) throw error;
-  } catch {
-    /* persisted locally below */
-  }
-  writeLocal(
-    tenantId,
-    environment,
-    list.map((v) => (v.id === id ? { ...v, ...update } : v)),
-  );
-  return {};
+  const r = await call<{ updated: boolean }>('update', { id, ...patch });
+  return r.error ? { error: r.error } : {};
 }
 
-/** Replace an encryption key's material with a freshly generated AES-256 key. */
+/** Replace an encryption key with a freshly generated one (on the server). */
 export async function rotateEncryptionKey(
-  tenantId: string,
-  environment: string,
+  _tenantId: string,
+  _environment: string,
   id: string,
 ): Promise<{ error?: string }> {
-  const fresh = await generateAesKey();
-  return updateGlobalVariable(tenantId, environment, id, { value: fresh });
+  const r = await call<{ rotated: boolean }>('rotate', { id });
+  return r.error ? { error: r.error } : {};
 }
 
 export async function deleteGlobalVariable(
-  tenantId: string,
-  environment: string,
+  _tenantId: string,
+  _environment: string,
   id: string,
 ): Promise<{ error?: string }> {
-  const list = await fetchGlobalVariables(tenantId, environment);
-  try {
-    const { error } = await supabase.from('global_variables').delete().eq('id', id);
-    if (error) throw error;
-  } catch {
-    /* removed locally below */
-  }
-  writeLocal(
-    tenantId,
-    environment,
-    list.filter((v) => v.id !== id),
-  );
-  return {};
+  const r = await call<{ deleted: boolean }>('delete', { id });
+  return r.error ? { error: r.error } : {};
 }
 
 // -----------------------------------------------------------------------------
 // Resolution
 // -----------------------------------------------------------------------------
 
-/** Reveal the plaintext of a variable. Secrets are unwrapped with the master key. */
-export async function revealVariable(
-  tenantId: string,
-  variable: GlobalVariable,
-): Promise<string> {
+/**
+ * Reveal a variable's value. Plain values are already loaded; secrets are fetched from the
+ * server (needs "Manage API keys & variables", audited). Encryption keys are never revealed.
+ */
+export async function revealVariable(_tenantId: string, variable: GlobalVariable): Promise<string> {
   if (variable.kind === 'plain') return variable.value;
-  const master = await getMasterKey(tenantId);
-  return decryptValue(variable.value, master);
+  if (variable.kind === 'encryption_key') throw new Error('Encryption keys are never revealed — they stay on the server');
+  const r = await call<{ value: string }>('reveal', { id: variable.id });
+  if (r.error) throw new Error(r.error);
+  return r.data?.value ?? '';
 }
 
-/** Look up one variable by name and return its plaintext, or null when absent. */
+/**
+ * Value of a PLAIN variable by name, or null. Secrets and keys are resolved only on the
+ * server (edge functions) — they are never handed to browser code.
+ */
 export async function resolveVariable(
   tenantId: string,
   environment: string,
   name: string,
   scope: GlobalVariableScope = 'all',
 ): Promise<string | null> {
-  const list = await fetchGlobalVariables(tenantId, environment);
+  const list = await fetchGlobalVariables(tenantId, environment).catch(() => []);
   const found = list.find(
     (v) => v.name === name && (scope === 'all' || v.scopes.includes('all') || v.scopes.includes(scope)),
   );
-  if (!found) return null;
-  try {
-    return await revealVariable(tenantId, found);
-  } catch {
-    return null;
-  }
+  return found && found.kind === 'plain' ? found.value : null;
 }
 
 /** Every `{{vars.NAME}}` reference found in a string. */
@@ -320,9 +212,8 @@ export function extractReferences(template: string): string[] {
 }
 
 /**
- * Substitute every `{{vars.NAME}}` reference in a template with its value.
- * Unknown names are left in place so the problem stays visible rather than
- * silently collapsing to an empty string.
+ * Substitute `{{vars.NAME}}` references with PLAIN variable values. Secret references are
+ * left in place (servers substitute those); unknown names stay visible too.
  */
 export async function interpolateVariables(
   template: string,
@@ -332,30 +223,50 @@ export async function interpolateVariables(
 ): Promise<string> {
   const names = extractReferences(template);
   if (names.length === 0) return template;
-
-  const list = await fetchGlobalVariables(tenantId, environment);
+  const list = await fetchGlobalVariables(tenantId, environment).catch(() => []);
   const resolved = new Map<string, string>();
   for (const name of names) {
     const found = list.find(
-      (v) =>
-        v.name === name && (scope === 'all' || v.scopes.includes('all') || v.scopes.includes(scope)),
+      (v) => v.name === name && v.kind === 'plain' && (scope === 'all' || v.scopes.includes('all') || v.scopes.includes(scope)),
     );
-    if (!found) continue;
-    try {
-      resolved.set(name, await revealVariable(tenantId, found));
-    } catch {
-      /* leave the reference in place */
-    }
+    if (found) resolved.set(name, found.value);
   }
-
   return template.replace(REFERENCE_PATTERN, (whole, name: string) => resolved.get(name) ?? whole);
 }
 
 /** Encryption keys only — the list offered when picking a key for field encryption. */
-export async function listEncryptionKeys(
-  tenantId: string,
-  environment: string,
-): Promise<GlobalVariable[]> {
+export async function listEncryptionKeys(tenantId: string, environment: string): Promise<GlobalVariable[]> {
   const list = await fetchGlobalVariables(tenantId, environment);
   return list.filter((v) => v.kind === 'encryption_key');
+}
+
+// -----------------------------------------------------------------------------
+// Field encryption — done on the server with the named key (key never in the browser)
+// -----------------------------------------------------------------------------
+
+export async function encryptFormFields(
+  tenantId: string,
+  environment: string,
+  keyVariable: string,
+  fields: string[],
+  data: Record<string, unknown>,
+): Promise<{ data?: Record<string, unknown>; error?: string }> {
+  const r = await call<{ data: Record<string, unknown> }>('encrypt_fields', {
+    tenant_id: tenantId, environment, key_variable: keyVariable, fields, data,
+  });
+  return r.error ? { error: r.error } : { data: r.data?.data };
+}
+
+/** Decrypt stored submissions (needs "View customer data"). Pass fields=[] to decrypt every envelope. */
+export async function decryptFormRecords(
+  tenantId: string,
+  environment: string,
+  keyVariable: string,
+  fields: string[],
+  records: Array<{ id?: string | null; data: Record<string, unknown> }>,
+): Promise<{ records?: Array<{ id: string | null; data: Record<string, unknown> }>; error?: string }> {
+  const r = await call<{ records: Array<{ id: string | null; data: Record<string, unknown> }> }>('decrypt_fields', {
+    tenant_id: tenantId, environment, key_variable: keyVariable, fields, records,
+  });
+  return r.error ? { error: r.error } : { records: r.data?.records };
 }

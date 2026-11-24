@@ -6,7 +6,7 @@ import {
   GitBranch, Zap, Radio, BarChart3, Image, FileInput, FileUp, Globe, LayoutTemplate,
   Database, Search, Plug, Clock, Workflow, ShieldCheck, Route,
   Megaphone, PieChart, IndianRupee, Settings, Share2, Key, Lock,
-  Gauge, BookOpen, Shield, ChevronDown, Hexagon, Building2, LineChart,
+  Gauge, BookOpen, Shield, ChevronDown, Building2, LineChart,
   Award, Brain, Layers, Tag, LayoutGrid, Gift, Cpu, Bot, CheckSquare,
 } from 'lucide-react';
 import { NAV_SECTIONS } from '@marbee/shared';

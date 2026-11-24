@@ -4,7 +4,6 @@ import {
   FolderLock,
   GripVertical,
   Lock,
-  MoreVertical,
   Pencil,
   Trash2,
 } from 'lucide-react';

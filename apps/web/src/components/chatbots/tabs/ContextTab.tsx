@@ -216,7 +216,6 @@ export function ContextTab({ draft, update }: TabProps) {
     setLookups([
       ...lookups,
       {
-        lookup_key: key,
         name: preset?.name || 'New API Lookup',
         description: preset?.description || '',
         http_method: 'GET',

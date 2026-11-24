@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Bot, Send, User, Loader2, Star, X } from 'lucide-react';
+import { Bot, Send, User, Loader2 } from 'lucide-react';
 import {
   runtimeGetBot, runtimeStartSession, runtimeSendMessage, runtimeExecuteCta,
   runtimeIdleFollowup, runtimeCloseSession, runtimeSubmitFeedback,
@@ -44,8 +44,8 @@ export function PublicChatBotPage({ embed = false }: { embed?: boolean }) {
   const [showFeedback, setShowFeedback] = useState(false);
   const [feedbackRating, setFeedbackRating] = useState<number | null>(null);
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
-  const [lifecycle, setLifecycle] = useState<LifecycleConfig | null>(null);
-  const [followupSent, setFollowupSent] = useState(false);
+  const [, setLifecycle] = useState<LifecycleConfig | null>(null);
+  const [, setFollowupSent] = useState(false);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -115,8 +115,9 @@ export function PublicChatBotPage({ embed = false }: { embed?: boolean }) {
       if (!b || !sid || !cid) return;
       try {
         const result = await runtimeIdleFollowup({ botId: String(b.id), sessionId: sid, conversationId: cid, mode: 'live' });
-        if (result.success && result.message) {
-          setMessages((prev) => [...prev, { id: `followup-${Date.now()}`, role: 'bot', text: result.message }]);
+        const followupText = result.message;
+        if (result.success && followupText) {
+          setMessages((prev) => [...prev, { id: `followup-${Date.now()}`, role: 'bot', text: followupText }]);
           setFollowupSent(true);
         }
       } catch {

@@ -2,11 +2,11 @@ import { useMemo, useState, useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Activity, AlertTriangle, ArrowRight, BarChart3, BookOpen, Brain,
-  CheckCircle2, ChevronDown, ChevronRight, Clock, Edit2, Eye,
-  Filter, Gift, Globe, Layers, LayoutGrid, MessageSquare, Minus,
-  Play, Plus, Search, Settings2, Shield, ShieldCheck, Sliders,
-  Sparkles, Tag, Target, Ticket, TrendingUp, User, X, Zap,
-  FileText, Layout, FlaskConical, Info, Database, Gauge,
+  CheckCircle2, ChevronDown, ChevronRight, Edit2, 
+  Gift, Layers, MessageSquare, Minus,
+  Play, Plus, Search, Shield, ShieldCheck, Sliders,
+  Sparkles, Target, Ticket, X, Zap,
+  FileText, Layout, FlaskConical, Gauge,
 } from 'lucide-react';
 import { Button, Card } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
@@ -14,13 +14,13 @@ import { fetchCustomers, getCustomerDisplayName } from '@/lib/customers';
 import { formatNumber } from '@/lib/utils';
 import {
   type DecisionItem, type DecisionItemType, type DecisionPolicy,
-  type DecisionResponse, type DecisionRequest, type Guardrail,
-  type DecisionLogEntry, type EligibilityCondition,
+  type DecisionResponse, type DecisionRequest, 
+  
   type ConditionField, type ConditionOperator, type BusinessObjective,
-  type RankingMethod, type RfmSegment, type CustomerFeatures,
-  type ScoreBreakdown, type ScoredCandidate,
+  type RankingMethod, type CustomerFeatures,
+  
   ITEM_TYPE_LABELS, CONDITION_CATEGORIES, OBJECTIVE_LABELS,
-  DEFAULT_FORMULA, DEFAULT_GUARDRAILS, DEFAULT_PLACEMENTS,
+  DEFAULT_GUARDRAILS, DEFAULT_PLACEMENTS,
   fetchDecisionItems, saveDecisionItem, deleteDecisionItem,
   fetchDecisionPolicies, saveDecisionPolicyItem, deleteDecisionPolicyItem,
   fetchGuardrails, saveGuardrails, fetchDecisionLog,

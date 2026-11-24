@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { Check, Settings, Globe, ArrowRight, ShieldCheck, Mail, Sparkles } from 'lucide-react';
+import { Check, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { updateForm, type FormSettings, type MarbeeForm } from '@/lib/forms';
 

@@ -81,10 +81,8 @@ export function buildFormFieldsPreviewHtml(
           control = `<input type="${field.field_type === 'email' ? 'email' : field.field_type === 'number' ? 'number' : field.field_type === 'date' ? 'date' : field.field_type === 'phone' ? 'tel' : 'text'}" placeholder="${ph}" style="${inputStyle}"${req} disabled />`;
       }
 
-      const label =
-        field.field_type !== 'checkbox'
-          ? `<label style="${labelStyle}">${escapeHtml(field.label)}${field.required ? ' <span style="color:#ef4444">*</span>' : ''}</label>`
-          : '';
+      // (checkbox fields returned above, so every field reaching here gets a label)
+      const label = `<label style="${labelStyle}">${escapeHtml(field.label)}${field.required ? ' <span style="color:#ef4444">*</span>' : ''}</label>`;
 
       const help = field.help_text
         ? `<p style="margin:4px 0 0;font-size:12px;color:#94a3b8">${escapeHtml(field.help_text)}</p>`

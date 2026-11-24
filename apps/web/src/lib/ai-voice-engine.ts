@@ -492,10 +492,10 @@ export const NEURAL_VOICE_PROFILES: VoiceOption[] = [
  * Returns available voices categorized by provider (Gemini, ElevenLabs, Web Speech)
  */
 export function getAvailableBuddyVoices(
-  voiceAvatarAdapters: VoiceAvatarAiAdapter[] = [],
-  voiceAgents: VoiceAgentConfig[] = [],
+  _voiceAvatarAdapters: VoiceAvatarAiAdapter[] = [],
+  _voiceAgents: VoiceAgentConfig[] = [],
   customVoices: CustomVoiceConfig[] = [],
-  onlyConfigured: boolean = false
+  _onlyConfigured: boolean = false
 ): VoiceOption[] {
   const result: VoiceOption[] = [];
 
@@ -714,9 +714,9 @@ export async function playBuddySpeech(
 
   if (matchingAdapter && matchingAdapter.provider === 'elevenlabs' && matchingAdapter.apiKey) {
     elevenLabsKey = matchingAdapter.apiKey.trim();
-  } else if (matchingVoiceAgent && matchingVoiceAgent.provider === 'elevenlabs' && matchingVoiceAgent.apiKey) {
-    elevenLabsKey = matchingVoiceAgent.apiKey.trim();
   }
+  // (TD-11) A second branch read provider/apiKey from VoiceAgentConfig, which has neither
+  // field (it uses `platform` and holds no key) — it could never run, so it was removed.
 
   // Auto-discover ElevenLabs API Key from workspace adapter if not explicitly assigned
   if (!elevenLabsKey && Array.isArray(voiceAvatarAdapters)) {
@@ -1137,7 +1137,7 @@ export async function previewVoiceById(
   onEnd?: () => void,
   voiceAvatarAdapters: VoiceAvatarAiAdapter[] = [],
   customText?: string,
-  customApiKey?: string
+  _customApiKey?: string
 ): Promise<void> {
   const isHindi = label.toLowerCase().includes('hindi') || label.toLowerCase().includes('swara') || label.toLowerCase().includes('madhur');
   const sampleText =

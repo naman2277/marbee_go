@@ -1,23 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Video,
-  VideoOff,
   PhoneOff,
-  PhoneCall,
   Mic,
   MicOff,
-  Sparkles,
   Send,
   Paperclip,
   Check,
   Copy,
   ArrowRight,
-  RefreshCw,
-  Cpu,
-  Sliders,
   X,
   FileText,
-  Edit3,
   Lightbulb,
   Layers,
   Database,
@@ -26,17 +19,9 @@ import {
   ChevronDown,
   Plus,
   CheckSquare,
-  Users,
-  Radio,
   Volume2,
-  VolumeX,
   Monitor,
   Minimize2,
-  Maximize2,
-  HelpCircle,
-  Compass,
-  TrendingUp,
-  Bot,
   MessageSquare,
   Globe,
 } from 'lucide-react';
@@ -51,11 +36,12 @@ import {
   fetchBuddyAgentsConfig,
   type VoiceAgentConfig,
   type BuddyCustomAgentConfig,
+  type AiModelConfig,
+  type VoiceAvatarAiAdapter,
 } from '@/lib/ai-engine-config';
 import {
   SUPPORTED_LANGUAGES,
   getLanguageByCode,
-  type SupportedLanguage,
 } from '@/lib/ai-languages';
 import { playBuddySpeech, stopBuddySpeech } from '@/lib/ai-voice-engine';
 import { useAuth } from '@/contexts/AuthContext';
@@ -188,8 +174,7 @@ export function AiProfessionalAgent({
 
   // Live Call & Screen Sharing Copilot States
   const [isScreenSharing, setIsScreenSharing] = useState(false);
-  const [isCallFloating, setIsCallFloating] = useState(false);
-  const [isCameraActive, setIsCameraActive] = useState(true);
+  const [, setIsCallFloating] = useState(false);
   const screenVideoRef = useRef<HTMLVideoElement | null>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
 

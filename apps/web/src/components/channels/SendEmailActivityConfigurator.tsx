@@ -1,12 +1,8 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  Mail, Sparkles, Layout, Search, Check, X, ArrowRight,
-  Shield, AlertTriangle, UserCheck, Zap, Palette,
-  ExternalLink, Filter, Plus, RefreshCw, FileText, CheckCircle2,
-  Lock, Eye, Trash2, ChevronRight, HelpCircle, ArrowLeft
-} from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+  Mail, Layout, Search, Check, X, ArrowRight,
+  Shield, AlertTriangle, Zap, Palette} from 'lucide-react';
 import {
   CONTENT_TEMPLATE_LIBRARY,
   fetchContentTemplates,
@@ -115,7 +111,7 @@ export function SendEmailActivityConfigurator({
 
   // Template fetching
   const [templates, setTemplates] = useState<MarbeeContentTemplate[]>([]);
-  const [loadingTemplates, setLoadingTemplates] = useState(false);
+  const [, setLoadingTemplates] = useState(false);
   const [templateSearch, setTemplateSearch] = useState('');
   const [templateTab, setTemplateTab] = useState<'all' | 'published' | 'draft' | 'library'>('all');
 

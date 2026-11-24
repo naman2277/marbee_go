@@ -1,23 +1,16 @@
 import { useState } from 'react';
 import {
   CheckCircle2,
-  ChevronRight,
-  Flame,
   Globe2,
   Mail,
   MessageCircle,
   MessageSquare,
-  Play,
   Radio,
   Send,
   ShieldAlert,
-  ShieldCheck,
   Smartphone,
   Sparkles,
-  Users,
-  Zap,
 } from 'lucide-react';
-import { Button } from '@/components/ui';
 import type { TableHealthProfile } from '@/lib/data-health-engine';
 import { runCampaignPreflight } from '@/lib/data-health-engine';
 
@@ -27,7 +20,7 @@ type Props = {
 
 export function MarketingReadinessTab({ profile }: Props) {
   const [selectedCampaign, setSelectedCampaign] = useState('Black Friday VIP Early Access');
-  const [selectedAudience, setSelectedAudience] = useState('High-Value Active Buyers (90d)');
+  const [selectedAudience] = useState('High-Value Active Buyers (90d)');
 
   const reachability = profile.marketingReachability;
   const preflight = runCampaignPreflight(selectedCampaign, selectedAudience, reachability);

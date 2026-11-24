@@ -1,6 +1,5 @@
-import React from 'react';
 import { BUDDY_AGENTS, type BuddyAgent } from './AiAgentSidebar';
-import { Users, Bot, MessageSquare, Video, Mic, Check, AlertCircle, Sparkles, ArrowRight } from 'lucide-react';
+import { Users, MessageSquare, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface AiAvailableAgentsTabProps {

@@ -3,9 +3,9 @@ import { getColumnCellValue } from '@/lib/schema-data';
 import {
   evaluateExpr,
   fieldExpr,
-  formatExprCode,
   inferExprType,
   type ExprNode,
+  parseExpression,
 } from '@/lib/schema-expressions';
 import { inferFieldType, type SchemaFilterField } from '@/lib/schema-filters';
 

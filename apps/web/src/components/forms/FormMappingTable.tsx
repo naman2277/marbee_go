@@ -281,8 +281,6 @@ export function FormMappingTable({
 
   const safeFields = fields ?? [];
   const safeMappings = mappings ?? [];
-  const safeColumns = columnOptions ?? [];
-  const safeSchemas = schemas ?? [];
 
   const getMapping = (name: string) => safeMappings.find((m) => m && m.form_field === name);
 

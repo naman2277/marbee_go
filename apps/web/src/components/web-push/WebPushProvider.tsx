@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { onMessage } from 'firebase/messaging';
+import { onMessage } from '@firebase/messaging';
 import { useTenantScope } from '@/contexts/AuthContext';
 import { WebPushPrompt } from '@/components/web-push/WebPushPrompt';
 import type { WebPushRuntimeConfig } from '@/lib/web-push-config';

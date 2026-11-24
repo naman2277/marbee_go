@@ -13,8 +13,6 @@ import type {
   ScoredCandidate,
   ScoreBreakdown,
   StageTrace,
-  PipelineStage,
-  ConditionGroup,
   EligibilityCondition,
   RankingFormula,
   DecisionLogEntry,
@@ -24,10 +22,8 @@ import {
   normalizeAcrossCatalog,
   sigmoidSquash,
   computeAttributions,
-  deterministicHash,
   assignToExperimentGroup,
   computeReplayHash,
-  type FeatureAttribution,
 } from './ml';
 import {
   extractFeatures,
@@ -80,7 +76,7 @@ function resolveCustomerContext(
 function generateCandidates(
   items: DecisionItem[],
   policy: DecisionPolicy,
-  customer: CustomerFeatures,
+  _customer: CustomerFeatures,
 ): { candidates: DecisionItem[]; filtered: StageTrace['filtered']; duration_ms: number } {
   const t0 = performance.now();
   const filtered: StageTrace['filtered'] = [];

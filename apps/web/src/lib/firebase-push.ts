@@ -1,5 +1,5 @@
-import { deleteApp, getApps, initializeApp, type FirebaseApp } from 'firebase/app';
-import { getMessaging, getToken, isSupported, type Messaging } from 'firebase/messaging';
+import { deleteApp, getApps, initializeApp, type FirebaseApp } from '@firebase/app';
+import { getMessaging, getToken, isSupported, type Messaging } from '@firebase/messaging';
 import type { ResolvedWebPushPayload } from './web-push-config';
 import { supabase } from './supabase';
 import { invokeFunction, type FunctionCallResult } from './functions';

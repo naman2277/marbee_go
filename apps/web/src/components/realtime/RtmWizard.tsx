@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, AlertTriangle, Check, ChevronLeft, ChevronRight, Folder, Globe, Loader2, Lock, Send, Shield, TestTube2, X, Zap } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Check, ChevronLeft, ChevronRight, Loader2, Send, Shield, X, Zap } from 'lucide-react';
 import { Button, Badge } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
 import { PayloadSchemaBuilder } from './PayloadSchemaBuilder';

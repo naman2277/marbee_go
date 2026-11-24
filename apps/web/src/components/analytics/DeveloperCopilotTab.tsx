@@ -1,18 +1,14 @@
 import { useState } from 'react';
 import {
-  Code2,
   Copy,
   Check,
   ShieldCheck,
   AlertTriangle,
   Sparkles,
   Zap,
-  Layers,
   Terminal,
   Activity,
   CheckCircle2,
-  FileCode,
-  Smartphone,
   Eye,
 } from 'lucide-react';
 import { Card, Button } from '@/components/ui';

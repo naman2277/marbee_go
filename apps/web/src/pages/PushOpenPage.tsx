@@ -44,7 +44,7 @@ export function PushOpenPage() {
 
         setTitle(opened.title ?? 'Notification');
         setBody(opened.body ?? '');
-        setClickUrl(opened.click_url ?? null);
+        setClickUrl(safeHttpUrl(opened.click_url));
         setDeliveryName(opened.delivery_name ?? deliveryNameParam ?? null);
       } catch (err) {
         if (!cancelled) {
@@ -133,4 +133,15 @@ export function PushOpenPage() {
       </main>
     </div>
   );
+}
+
+/** Only follow absolute http(s) links (no javascript:, data:, etc.). */
+function safeHttpUrl(v: unknown): string | null {
+  if (typeof v !== 'string') return null;
+  try {
+    const u = new URL(v);
+    return u.protocol === 'https:' || u.protocol === 'http:' ? u.href : null;
+  } catch {
+    return null;
+  }
 }

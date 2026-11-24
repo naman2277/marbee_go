@@ -5,13 +5,6 @@ import {
   Send,
   Bot,
   Zap,
-  BarChart2,
-  PieChart,
-  Target,
-  ArrowRight,
-  HelpCircle,
-  TrendingDown,
-  TrendingUp,
 } from 'lucide-react';
 import { Card, Button } from '@/components/ui';
 import type { BehavioralSession, WebAnalyticsMetrics } from '@/lib/web-analytics-types';

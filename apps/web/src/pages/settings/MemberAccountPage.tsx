@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, KeyRound, Save, Shield, UserMinus } from 'lucide-react';
@@ -8,12 +8,6 @@ import { InstanceAccessPanel } from '@/components/profile/InstanceAccessPanel';
 import { LastLoginCard } from '@/components/profile/LastLoginCard';
 import { useAuth } from '@/contexts/AuthContext';
 import { PERMISSIONS } from '@/lib/permissions';
-import {
-  PASSWORD_REQUIREMENTS,
-  passwordStrengthLabel,
-  passwordsMatch,
-  validatePassword,
-} from '@/lib/password-policy';
 import {
   disableMember,
   fetchMemberDetail,
@@ -50,8 +44,6 @@ export function MemberAccountPage() {
   const [ipError, setIpError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [resetPassword, setResetPassword] = useState('');
-  const [resetPasswordConfirm, setResetPasswordConfirm] = useState('');
   const [resetSuccess, setResetSuccess] = useState<string | null>(null);
 
   const memberQuery = useQuery({
@@ -88,11 +80,6 @@ export function MemberAccountPage() {
     setSettings(member.settings);
     setIpInput(formatIpList(member.settings.allowed_ips));
   }, [member]);
-
-  const resetPasswordValidation = useMemo(
-    () => validatePassword(resetPassword, member?.email),
-    [resetPassword, member?.email],
-  );
 
   const saveMutation = useMutation({
     mutationFn: () => {
@@ -139,13 +126,10 @@ export function MemberAccountPage() {
       return resetTenantUserPassword(tenantId, environment, {
         userId: member.userId,
         memberEmail: member.email,
-        password: resetPassword,
       });
     },
     onSuccess: (result) => {
       setResetSuccess(result.message);
-      setResetPassword('');
-      setResetPasswordConfirm('');
       setError(null);
       void queryClient.invalidateQueries({ queryKey: ['member-detail', tenantId, userId] });
       void queryClient.invalidateQueries({ queryKey: ['access-members', tenantId] });
@@ -417,54 +401,20 @@ export function MemberAccountPage() {
           {!isSelf && (
             <Card className="space-y-4 p-6">
               <div>
-                <h3 className="text-sm font-semibold text-slate-900">Reset password</h3>
+                <h3 className="text-sm font-semibold text-slate-900">Password</h3>
                 <p className="mt-1 text-xs text-slate-500">
-                  Set a new password for this user. It cannot be viewed again after saving.
+                  Email this member a one-time link to choose a new password. Only they can use it — admins never see or set passwords.
                 </p>
               </div>
               {!resetSuccess ? (
                 <>
-                  <Field label="New password">
-                    <input
-                      type="password"
-                      autoComplete="new-password"
-                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                      value={resetPassword}
-                      onChange={(e) => setResetPassword(e.target.value)}
-                    />
-                  </Field>
-                  <Field label="Confirm password">
-                    <input
-                      type="password"
-                      autoComplete="new-password"
-                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                      value={resetPasswordConfirm}
-                      onChange={(e) => setResetPasswordConfirm(e.target.value)}
-                    />
-                  </Field>
-                  {resetPassword.length > 0 && (
-                    <div className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-xs">
-                      <p className={`font-medium ${passwordStrengthLabel(resetPasswordValidation.score).color}`}>
-                        Strength: {passwordStrengthLabel(resetPasswordValidation.score).label}
-                      </p>
-                      <ul className="mt-2 space-y-0.5 text-slate-600">
-                        {PASSWORD_REQUIREMENTS.map((req) => (
-                          <li key={req}>{req}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
                   <Button
                     variant="secondary"
-                    disabled={
-                      resetPasswordMutation.isPending
-                      || !resetPasswordValidation.valid
-                      || !passwordsMatch(resetPassword, resetPasswordConfirm)
-                    }
+                    disabled={resetPasswordMutation.isPending}
                     onClick={() => resetPasswordMutation.mutate()}
                   >
                     <KeyRound className="mr-2 h-4 w-4" />
-                    Save new password
+                    {resetPasswordMutation.isPending ? 'Sending…' : 'Send reset link'}
                   </Button>
                 </>
               ) : (

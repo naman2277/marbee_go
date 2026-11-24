@@ -15,7 +15,7 @@ Go to: **https://supabase.com/dashboard/project/uqffhyaftlwetqigfenp/functions**
 3. Paste the entire contents of: **`supabase/web-deploy/create-tenant-user.ts`**
 4. Deploy
 5. Open function **Settings** → turn **OFF** "Enforce JWT Verification"
-6. Optional: add secret **`APP_URL`** = your Marbee app URL (e.g. `http://localhost:5173` or production domain) so setup-password links work
+6. Required: secret **`APP_URL`** = your Marbee app URL (e.g. `http://localhost:5173` or production domain) so setup-password links work
 7. **Authentication → URL Configuration → Redirect URLs** — add:
    - `http://localhost:5173/setup-password` (local dev)
    - `https://YOUR_DOMAIN/setup-password` (production)
@@ -24,7 +24,7 @@ Without redirect URLs whitelisted, create-user fails with a redirect URL error.
 
 Without this function, **Create user** shows "Failed to fetch". **Invite link** still works (database RPC only).
 
-**Set password now (no SMTP):** re-deploy from the latest `create-tenant-user.ts`, run **`supabase/sql/40_admin_password_provision.sql`**, and use **Add member → Create user → Set password now**.
+**Admins never set passwords (SEC-12):** new members get an invite email, existing accounts get a join email, and no link is shown to the admin. Auth email (SMTP) must work — configure custom SMTP in **Authentication → Emails** for more than a handful of emails/hour.
 
 **Member account settings:** run **`supabase/sql/41_member_account_settings.sql`** for company, IP allowlist, and folder access fields on member accounts.
 
@@ -42,7 +42,9 @@ https://YOUR_PROJECT.supabase.co/functions/v1/create-tenant-user
 
 ---
 
-## Deploy `reset-tenant-user-password` (required for **Reset password** on members)
+## Deploy `reset-tenant-user-password` (required for **Send reset link** on members)
+
+Emails the member a one-time password-reset link; needs secret **`APP_URL`** and `/setup-password` in Redirect URLs.
 
 1. Click **Deploy a new function**
 2. Name: `reset-tenant-user-password` (exact name)

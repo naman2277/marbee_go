@@ -7,7 +7,7 @@ table that gets partitioned is kept as `<name>_v1_backup`.
 ## Run order
 
 ```bash
-# after 01..51 have been applied:
+# after ALL numbered scripts in supabase/sql (01..91 and later) — v2/52 must run after 91 (TD-12)
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/sql/v2/52_extensions_helpers.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/sql/v2/53_partitioning.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/sql/v2/54_indexes.sql

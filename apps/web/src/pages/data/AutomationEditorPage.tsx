@@ -8,7 +8,7 @@ import {
   MessageSquare, MessageCircle, Database, Send, Sheet, Reply,
   CheckCircle2, XCircle, Loader2,
   Maximize2, Minimize2, Search,
-  ToggleLeft, ToggleRight, Rocket, FlaskConical,
+  Rocket, FlaskConical,
   Sliders, Terminal,
 } from 'lucide-react';
 import type { AutomationNode, AutomationEdge, AutomationWorkflow } from '../../lib/automations';
@@ -60,7 +60,6 @@ export default function AutomationEditorPage() {
   const navigate = useNavigate();
   const canvasRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
-  const { tenantId, environment } = useTenantScope?.() ?? { tenantId: undefined, environment: 'production' };
   const [isEmailStudioOpen, setIsEmailStudioOpen] = useState(false);
 
   const [workflow, setWorkflow] = useState<AutomationWorkflow | null>(null);
@@ -937,7 +936,7 @@ export default function AutomationEditorPage() {
             {/* Inspector Body Content */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
               {inspectorTab === 'params' ? (
-                <InspectorParams node={selectedNodeData} onChange={(updated) => setNodes((prev) => prev.map((n) => n.id === updated.id ? updated : n))} />
+                <InspectorParams node={selectedNodeData} onChange={(updated) => setNodes((prev) => prev.map((n) => n.id === updated.id ? updated : n))} onStudioOpenChange={setIsEmailStudioOpen} />
               ) : (
                 <div className="space-y-3">
                   {selectedNodeData.lastOutput ? (
@@ -1026,7 +1025,10 @@ export default function AutomationEditorPage() {
 
 // ─── Inspector Parameters Component ───────────────────────────────────────
 
-function InspectorParams({ node, onChange }: { node: AutomationNode; onChange: (n: AutomationNode) => void }) {
+function InspectorParams({ node, onChange, onStudioOpenChange }: { node: AutomationNode; onChange: (n: AutomationNode) => void; onStudioOpenChange?: (open: boolean) => void }) {
+  // TD-11: these were referenced but never defined here (crashed when an email step was opened).
+  const { tenantId, environment } = useTenantScope();
+  const setIsEmailStudioOpen = (open: boolean) => onStudioOpenChange?.(open);
   const updateConfig = (key: string, value: any) => {
     onChange({ ...node, config: { ...node.config, [key]: value } });
   };
@@ -1141,7 +1143,7 @@ function InspectorParams({ node, onChange }: { node: AutomationNode; onChange: (
         </>
       )}
 
-      {(node.title.toLowerCase().includes('email') || node.title.toLowerCase().includes('mail') || node.type === 'action_email' || node.type === 'target_email') && node.type !== 'trigger' && (
+      {(node.title.toLowerCase().includes('email') || node.title.toLowerCase().includes('mail')) && node.type !== 'trigger' && (
         <SendEmailActivityConfigurator
           activityName={node.title}
           onActivityNameChange={(name) => updateField('title', name)}

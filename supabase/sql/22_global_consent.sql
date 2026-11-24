@@ -4,21 +4,36 @@
 ALTER TABLE public.customers
   ADD COLUMN IF NOT EXISTS global_consent BOOLEAN NOT NULL DEFAULT FALSE;
 
--- Migrate from global_blacklist (inverted: consent = not blacklisted)
-UPDATE public.customers
-SET global_consent = NOT COALESCE(global_blacklist, FALSE)
-WHERE global_blacklist IS NOT NULL;
+-- Legacy data migrations — only on databases that still have the legacy columns
+-- (fresh databases built from today's 01 never had them; TD-15).
+DO $$
+BEGIN
+  -- Migrate from global_blacklist (inverted: consent = not blacklisted)
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema = 'public' AND table_name = 'customers' AND column_name = 'global_blacklist') THEN
+    EXECUTE $q$
+      UPDATE public.customers
+      SET global_consent = NOT COALESCE(global_blacklist, FALSE)
+      WHERE global_blacklist IS NOT NULL
+    $q$;
+  END IF;
 
--- Migrate from legacy consent JSON when global_consent still false
-UPDATE public.customers
-SET global_consent = (
-  (consent->>'global') IN ('true', 'granted', 'opt_in')
-  OR (consent->>'marketing') IN ('true', 'granted', 'opt_in')
-  OR (consent->>'all') IN ('true', 'granted', 'opt_in')
-)
-WHERE consent IS NOT NULL
-  AND consent <> '{}'::jsonb
-  AND global_consent = FALSE;
+  -- Migrate from legacy consent JSON when global_consent still false
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema = 'public' AND table_name = 'customers' AND column_name = 'consent') THEN
+    EXECUTE $q$
+      UPDATE public.customers
+      SET global_consent = (
+        (consent->>'global') IN ('true', 'granted', 'opt_in')
+        OR (consent->>'marketing') IN ('true', 'granted', 'opt_in')
+        OR (consent->>'all') IN ('true', 'granted', 'opt_in')
+      )
+      WHERE consent IS NOT NULL
+        AND consent <> '{}'::jsonb
+        AND global_consent = FALSE
+    $q$;
+  END IF;
+END $$;
 
 DROP INDEX IF EXISTS idx_customers_global_blacklist;
 

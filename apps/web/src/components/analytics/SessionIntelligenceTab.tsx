@@ -3,21 +3,14 @@ import {
   Play,
   Flame,
   AlertTriangle,
-  MousePointerClick,
   Sparkles,
   Search,
-  CheckCircle2,
   Clock,
   Smartphone,
   Laptop,
-  ArrowRight,
-  Eye,
   X,
-  Zap,
-  Layers,
   ChevronRight,
   ChevronLeft,
-  FileText,
   Code2,
   Copy,
   Check,
@@ -34,7 +27,6 @@ interface SessionIntelligenceTabProps {
 
 export function SessionIntelligenceTab({
   sessions,
-  frictionSignals,
 }: SessionIntelligenceTabProps) {
   const [selectedSession, setSelectedSession] = useState<BehavioralSession | null>(null);
   const [modalTab, setModalTab] = useState<'replay' | 'json'>('replay');
@@ -78,7 +70,7 @@ export function SessionIntelligenceTab({
     0
   );
   const deadClicksCount = sessions.reduce(
-    (acc, s) => acc + s.frictionSignals.filter((f) => f.type === 'dead_click' || f.type === 'error_click').length,
+    (acc, s) => acc + s.frictionSignals.filter((f) => f.type === 'dead_click').length,
     0
   );
 

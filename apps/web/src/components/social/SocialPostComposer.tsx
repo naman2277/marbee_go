@@ -3,49 +3,27 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import {
   X as CloseIcon,
   Send,
-  Calendar as CalendarIcon,
   Image as ImageIcon,
-  Link as LinkIcon,
-  Sparkles,
   AlertCircle,
   Eye,
   Clock,
-  CheckCircle2,
-  Trash2,
   ChevronDown,
-  ChevronUp,
   Vote,
   FileText,
   MousePointerClick,
-  Share2,
   Globe,
   Users,
   Plus,
-  UploadCloud,
   FolderOpen,
   Loader2,
   Folder,
-  Smile,
   Hash,
-  ArrowLeft,
   Calendar,
-  Check,
   MapPin,
   MessageSquare,
-  Film,
-  Layers,
 } from 'lucide-react';
-import { Button, Card, Badge } from '@/components/ui';
+import { Button } from '@/components/ui';
 
-function InstagramIcon({ className = 'h-4 w-4' }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect width="20" height="20" x="2" y="2" rx="5" ry="5" />
-      <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
-      <line x1="17.5" x2="17.51" y1="6.5" y2="6.5" />
-    </svg>
-  );
-}
 
 import {
   SOCIAL_PLATFORMS,
@@ -64,7 +42,6 @@ import {
   uploadSocialMediaAsset,
   fetchAssets,
   getAssetDisplayUrl,
-  type MarbeeAsset,
 } from '@/lib/assets';
 import { SocialPostPreviewMockup } from './SocialPostPreviewMockup';
 
@@ -103,11 +80,9 @@ export function SocialPostComposer({
   const [showLivePreview, setShowLivePreview] = useState(false);
 
   // Media upload state
-  const [uploading, setUploading] = useState(false);
+  const [, setUploading] = useState(false);
   const [uploadProgressMsg, setUploadProgressMsg] = useState('');
   const [showAssetPicker, setShowAssetPicker] = useState(false);
-  const [showUrlInput, setShowUrlInput] = useState(false);
-  const [directUrl, setDirectUrl] = useState('');
 
   // ----------------------------------------------------
   // LINKEDIN DEDICATED STATE
@@ -258,16 +233,6 @@ export function SocialPostComposer({
     });
   };
 
-  const handleAddDirectUrl = () => {
-    if (!directUrl.trim()) return;
-    setMediaUrls((prev) => {
-      const next = [...prev, directUrl.trim()];
-      if (next.length > 1 && igMediaType === 'IMAGE') setIgMediaType('CAROUSEL');
-      return next;
-    });
-    setDirectUrl('');
-    setShowUrlInput(false);
-  };
 
   const setPresetSchedule = (hoursFromNow: number) => {
     const d = new Date();
@@ -373,7 +338,6 @@ export function SocialPostComposer({
             {SOCIAL_PLATFORMS.map((p) => {
               const isActiveTab = activeChannel === p.id;
               const isIncluded = platforms.includes(p.id);
-              const isConn = connectedPlatforms.has(p.id);
 
               return (
                 <div key={p.id} className="relative flex items-center">

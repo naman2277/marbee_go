@@ -124,10 +124,28 @@ $$;
 
 REVOKE ALL ON FUNCTION public.verify_api_key(TEXT) FROM PUBLIC;
 
--- Unique email per tenant/env for upsert_customer pipeline step
+-- Unique email per tenant/env for the upsert_customer pipeline step and tenant-api.
+-- FULL (non-partial) index on purpose (fixed 2026-11-20): PostgREST upserts send
+-- ON CONFLICT (tenant_id, environment, email) with no WHERE clause, and Postgres can't
+-- match a PARTIAL index to that — the original "WHERE email IS NOT NULL AND deleted_at
+-- IS NULL" version made every API customer upsert fail. Rows with NULL email are still
+-- allowed (NULLs never conflict). Merged/soft-deleted customers are hard-deleted (68).
+DROP INDEX IF EXISTS public.idx_customers_tenant_env_email_unique;
+
+DO $$
+DECLARE v_groups INT; v_example TEXT;
+BEGIN
+  SELECT count(*), min(email) INTO v_groups, v_example
+  FROM (SELECT tenant_id, environment, email FROM public.customers
+        WHERE email IS NOT NULL GROUP BY 1, 2, 3 HAVING count(*) > 1) d;
+  IF v_groups > 0 THEN
+    RAISE EXCEPTION '% customer email(s) are duplicated within a tenant/environment (e.g. %). Resolve them first — on dev, run supabase/sql/tools/dev_dedupe_customer_emails.sql — then re-run 46.',
+      v_groups, v_example;
+  END IF;
+END $$;
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_tenant_env_email_unique
-  ON public.customers (tenant_id, environment, email)
-  WHERE email IS NOT NULL AND deleted_at IS NULL;
+  ON public.customers (tenant_id, environment, email);
 
 CREATE OR REPLACE FUNCTION public.validate_api_pipeline(p_pipeline JSONB)
 RETURNS VOID

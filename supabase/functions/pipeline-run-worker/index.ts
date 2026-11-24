@@ -67,8 +67,17 @@ serve(async (req) => {
       .select('tenant_id')
       .eq('user_id', uid)
       .eq('tenant_id', run.tenant_id)
+      .eq('status', 'active')   // disabled members must not start runs
       .maybeSingle();
     if (!member) return json({ error: 'Forbidden' }, 403);
+  }
+
+  // TD-12: a suspended workspace's runs are held (left queued, not claimed) and continue
+  // automatically if it is reactivated. Fails closed if the check itself errors.
+  const { data: tenantActive, error: tenantErr } = await supabase.rpc('tenant_is_active', { p_tenant_id: run.tenant_id });
+  if (tenantErr || tenantActive !== true) {
+    if (tenantErr) console.error('pipeline-run-worker: tenant check failed', tenantErr.message);
+    return json({ skipped: true, reason: tenantErr ? 'workspace check unavailable' : 'workspace suspended' }, tenantErr ? 503 : 409);
   }
 
   // Claim a queued run, or recover one whose worker lease has expired.

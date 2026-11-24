@@ -89,8 +89,9 @@ function VariableRow({
     setBusy(true);
     try {
       setRevealed(await revealVariable(tenantId, variable));
-    } catch {
-      setRevealed('[unable to decrypt — key material is missing on this device]');
+    } catch (e) {
+      // e.g. "Encryption keys are never revealed…" or a permission message from the server.
+      setRevealed(`[${e instanceof Error ? e.message : 'could not reveal'}]`);
     } finally {
       setBusy(false);
     }
@@ -129,6 +130,14 @@ function VariableRow({
           {variable.fingerprint && (
             <p className="mt-1.5 font-mono text-[11px] text-slate-400">
               Fingerprint {variable.fingerprint}
+            </p>
+          )}
+
+          {variable.needs_reentry && (
+            <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] font-medium text-amber-800" role="alert">
+              {variable.kind === 'encryption_key'
+                ? 'This key was saved in the old format and can no longer be used. Rotate it to create a new key.'
+                : 'This value was saved in the old format and can no longer be used. Edit the variable and enter the value again.'}
             </p>
           )}
 

@@ -3,16 +3,10 @@ import {
   Check,
   Copy,
   Code2,
-  Link2,
   Globe,
   ExternalLink,
-  QrCode,
-  Layers,
-  Sparkles,
-  Smartphone,
-  Maximize2,
 } from 'lucide-react';
-import { Button, Card, CardHeader, Badge } from '@/components/ui';
+import { Button, Card, Badge } from '@/components/ui';
 import { getFormEmbedCode, getFormPublicUrl, type MarbeeForm } from '@/lib/forms';
 import { copyText } from '@/lib/schema-export';
 

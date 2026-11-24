@@ -59,6 +59,7 @@ export function OffersPanel() {
       saveOffer({
         tenantId, environment, id: editing?.id, programId: programId || null,
         name, slug, description, offerType, offerValue, channel, placement, status, priority,
+        stackingMode: editing?.stackingMode ?? 'exclusive', // panel has no stacking control; keep existing
         minPurchase: minPurchase === '' ? null : Number(minPurchase),
         expectedLift, marginImpact, propensityWeight,
         frequencyCapHours: frequencyCapHours === '' ? null : Number(frequencyCapHours),

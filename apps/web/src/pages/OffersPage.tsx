@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -8,39 +8,25 @@ import {
   ArrowUp,
   CheckCircle2,
   ChevronLeft,
-  ChevronDown,
   ChevronRight,
-  Copy,
   Download,
   Edit2,
-  ExternalLink,
   Eye,
   FileSpreadsheet,
   Gift,
   History,
-  Globe,
   Grid3X3,
   Image as ImageIcon,
   LayoutList,
-  Link as LinkIcon,
-  Megaphone,
-  Minus,
   MousePointerClick,
-  Percent,
   Plus,
   Rocket,
   Search,
   Settings2,
   Users,
-  ShoppingCart,
-  Sparkles,
-  Tag,
-  Ticket,
   Trash2,
-  TrendingUp,
   Upload,
   X,
-  Zap,
 } from 'lucide-react';
 import { Button, Card } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
@@ -117,7 +103,6 @@ function generateId() {
 
 export function OffersPage() {
   const { tenantId, environment } = useAuth();
-  const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [pageTab, setPageTab] = useState<PageTab>('offers');
@@ -1158,7 +1143,7 @@ export function OffersPage() {
 
             {/* Step Navigation */}
             <div className="flex items-center gap-1 border-b border-slate-100 px-5 py-2 shrink-0 overflow-x-auto">
-              {editorSteps.map((s, i) => {
+              {editorSteps.map((s, _i) => {
                 const Icon = s.icon;
                 return (
                   <button key={s.id} type="button" onClick={() => setEditorStep(s.id)}
@@ -1628,7 +1613,7 @@ export function OffersPage() {
             {/* Modal Footer */}
             <div className="flex items-center justify-between border-t border-slate-100 px-5 py-3 shrink-0">
               <div className="flex items-center gap-1.5">
-                {editorSteps.map((s, i) => (
+                {editorSteps.map((s, _i) => (
                   <div key={s.id} className={`h-1.5 w-6 rounded-full transition ${editorStep === s.id ? 'bg-purple-600' : 'bg-slate-200'}`} />
                 ))}
               </div>

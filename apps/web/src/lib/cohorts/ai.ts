@@ -871,7 +871,7 @@ WINDOWS
 {"kind":"all_time"} | {"kind":"last","value":N,"unit":"minute|hour|day|week|month"} | {"kind":"this","unit":"day|week|month|quarter|year"} | {"kind":"previous","unit":"..."} | {"kind":"before","date":"ISO"} | {"kind":"after","date":"ISO"} | {"kind":"between","start":"ISO","end":"ISO"}`;
 
 function getClientOpenAiKey(): string | undefined {
-  const key = import.meta.env.VITE_OPENAI_API_KEY as string | undefined;
+  const key = undefined as string | undefined /* SEC-06: AI keys never in the browser — edge functions / ai-gateway only */;
   return key?.trim() || undefined;
 }
 

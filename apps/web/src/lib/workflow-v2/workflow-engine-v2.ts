@@ -1,13 +1,34 @@
 import { supabase } from '../supabase';
 import { WorkflowError } from './workflow-error';
 import { nodeRegistry } from './universal-node-registry';
-import { CircuitBreaker } from './circuit-breaker';
-import { calculateRetryDelay, shouldRetry, generateIdempotencyKey } from './retry-engine';
+import { calculateRetryDelay } from './retry-engine';
 import { enqueueToDLQ } from './dead-letter-queue';
-import { checkTenantConcurrency, providerRateLimiters, getDefaultLimits } from './flow-control';
+import { checkTenantConcurrency, type TenantLimits } from './flow-control';
+import type { RetryPolicy } from './retry-engine';
+
+// TD-11: the engine called helpers with missing arguments and compared statuses /
+// fields the node contract doesn't use. Defaults below make those calls correct.
+// NOTE: this module is not wired into the app and its wf_* tables are not in the live
+// schema — it must move server-side before use (charter: server is the runtime).
+const DEFAULT_TENANT_LIMITS: TenantLimits = {
+  maxConcurrentNodeExecutions: 50,
+  maxWorkflowRunsPerMinute: 120,
+  maxFanOutBatchSize: 500,
+  maxSubWorkflowDepth: 5,
+};
+const DEFAULT_RETRY_POLICY: RetryPolicy = { maxAttempts: 3, initialDelayMs: 1000, maxDelayMs: 60_000, backoffMultiplier: 2 };
+
+/** Resolve {{...}} templates in every string value of a node's config (recursively). */
+function resolveConfigTemplates(value: unknown, context: Parameters<typeof resolveTemplate>[1]): unknown {
+  if (typeof value === 'string') return resolveTemplate(value, context);
+  if (Array.isArray(value)) return value.map((v) => resolveConfigTemplates(v, context));
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, resolveConfigTemplates(v, context)]));
+  }
+  return value;
+}
 import { resolveTemplate, evaluateCondition } from './sandboxed-expression-engine';
-import { startSubWorkflow, checkSubWorkflowCompletion, cancelChildWorkflows } from './sub-workflow-engine';
-import { FanOutEngine, persistFanOutProgress } from './fan-out-engine';
+import { cancelChildWorkflows } from './sub-workflow-engine';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Types
@@ -236,7 +257,7 @@ export async function executeWorkflowCycle(params: {
   }
 
   // Check concurrency limit
-  const limitCheck = await checkTenantConcurrency(tenantId);
+  const limitCheck = await checkTenantConcurrency(tenantId, DEFAULT_TENANT_LIMITS);
   if (!limitCheck.allowed) {
     return { nodeProcessed: null, status: 'concurrency_limit' };
   }
@@ -295,7 +316,7 @@ async function executeNode(params: {
   workerToken: string;
   traceId: string;
 }): Promise<void> {
-  const { tenantId, workflowRunId, nodeExecution, workerId, workerToken, traceId } = params;
+  const { tenantId, workflowRunId, nodeExecution, workerId, traceId } = params;
 
   await emitExecutionEvent(tenantId, workflowRunId, 'NODE_STARTED', { nodeId: nodeExecution.node_id }, nodeExecution.id, traceId);
 
@@ -311,7 +332,7 @@ async function executeNode(params: {
 
   try {
     // Resolve inputs
-    const resolvedInputs = resolveTemplate(nodeExecution.config, context);
+    const resolvedInputs = resolveConfigTemplates(nodeExecution.config, context) as Record<string, unknown>;
 
     // Create attempt record
     const { data: attempt } = await supabase.from('wf_node_attempts').insert({
@@ -328,23 +349,23 @@ async function executeNode(params: {
     }
 
     // Execute node
-    const result = await nodeImpl.execute({
-      inputs: resolvedInputs,
-      context,
+    // Node contract: execute(input, context).
+    const result = await nodeImpl.execute(resolvedInputs, {
+      ...(context as Record<string, unknown>),
       executionId: nodeExecution.id,
-      tenantId
+      tenantId,
     });
 
     if (attempt) {
       await supabase.from('wf_node_attempts').update({ completed_at: new Date().toISOString(), result_status: 'SUCCEEDED' }).eq('id', attempt.id);
     }
 
-    if (result.status === 'WAITING') {
+    if (result.status === 'waiting') {
       await supabase.from('wf_node_executions').update({ status: 'WAITING', inputs: resolvedInputs }).eq('id', nodeExecution.id);
       await emitExecutionEvent(tenantId, workflowRunId, 'NODE_WAITING', { nodeId: nodeExecution.node_id }, nodeExecution.id, traceId);
     } else {
-      await supabase.from('wf_node_executions').update({ status: 'SUCCEEDED', outputs: result.outputs ?? {}, inputs: resolvedInputs }).eq('id', nodeExecution.id);
-      await emitExecutionEvent(tenantId, workflowRunId, 'NODE_SUCCEEDED', { nodeId: nodeExecution.node_id, outputs: result.outputs }, nodeExecution.id, traceId);
+      await supabase.from('wf_node_executions').update({ status: 'SUCCEEDED', outputs: result.output ?? {}, inputs: resolvedInputs }).eq('id', nodeExecution.id);
+      await emitExecutionEvent(tenantId, workflowRunId, 'NODE_SUCCEEDED', { nodeId: nodeExecution.node_id, outputs: result.output }, nodeExecution.id, traceId);
       
       // Load edges
       const { data: edgeData } = await supabase.from('wf_workflow_definitions')
@@ -358,17 +379,17 @@ async function executeNode(params: {
           workflowRunId,
           completedNodeId: nodeExecution.node_id,
           edges: edgeData.edges as any,
-          nodeOutputs: result.outputs ?? {}
+          nodeOutputs: result.output ?? {}
         });
       }
     }
   } catch (error) {
-    const errorDetails = error instanceof Error ? { message: error.message, name: error.name, stack: error.stack } : { message: String(error) };
+    const errorDetails = WorkflowError.fromUnknown(error).toJSON();
     
     // Check retry
     const maxRetries = 3;
     if (nodeExecution.retry_count < maxRetries) {
-      const delay = calculateRetryDelay(nodeExecution.retry_count);
+      const delay = calculateRetryDelay(DEFAULT_RETRY_POLICY, nodeExecution.retry_count + 1);
       await supabase.from('wf_node_executions').update({ 
         status: 'RETRY_WAIT', 
         error_details: errorDetails,
@@ -384,7 +405,10 @@ async function executeNode(params: {
         tenantId,
         workflowRunId,
         nodeExecutionId: nodeExecution.id,
-        error: errorDetails
+        nodeType: nodeExecution.node_type,
+        error: errorDetails,
+        executionContext: { nodeId: nodeExecution.node_id, retryCount: nodeExecution.retry_count },
+        attemptHistory: [],
       });
     }
   }
@@ -400,7 +424,7 @@ async function activateDownstreamNodes(params: {
   edges: Array<{ sourceNodeId: string; targetNodeId: string; condition?: string }>;
   nodeOutputs: Record<string, unknown>;
 }): Promise<void> {
-  const { tenantId, workflowRunId, completedNodeId, edges, nodeOutputs } = params;
+  const { workflowRunId, completedNodeId, edges, nodeOutputs } = params;
   
   const outgoing = edges.filter(e => e.sourceNodeId === completedNodeId);
   const contextForEval = { outputs: { [completedNodeId]: nodeOutputs } };

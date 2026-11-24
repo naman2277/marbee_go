@@ -1,20 +1,9 @@
 import { useState } from 'react';
 import {
-  ArrowRight,
-  Bot,
-  Check,
-  CheckCircle2,
-  Cpu,
-  Flame,
-  Lightbulb,
-  MessageSquare,
   RefreshCw,
   Send,
-  ShieldCheck,
   Sparkles,
-  User,
   Wand2,
-  Zap,
 } from 'lucide-react';
 import { Button } from '@/components/ui';
 import type { TableHealthProfile } from '@/lib/data-health-engine';

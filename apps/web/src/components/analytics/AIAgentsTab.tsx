@@ -3,16 +3,7 @@ import {
   Bot,
   Sparkles,
   Zap,
-  CheckCircle2,
-  Cpu,
-  Activity,
   ArrowRight,
-  ShieldCheck,
-  Search,
-  Layers,
-  Gauge,
-  HelpCircle,
-  TrendingUp,
 } from 'lucide-react';
 import { Card, Button } from '@/components/ui';
 import type { AIAgentProfile, AIAgentAnalyticsMetrics, BehavioralSession, WebAnalyticsMetrics } from '@/lib/web-analytics-types';

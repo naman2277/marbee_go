@@ -4,8 +4,6 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   CheckCircle2,
   Database,
-  Filter,
-  Layers,
   Plus,
   RefreshCw,
   Search,
@@ -15,7 +13,7 @@ import {
   Users,
   Zap,
 } from 'lucide-react';
-import { PageHeader, Card, Button } from '@/components/ui';
+import { Button } from '@/components/ui';
 import { BulkActionBar } from '@/components/bulk/BulkActionBar';
 import { BulkDeleteDialog } from '@/components/bulk/BulkDeleteDialog';
 import { SelectCheckbox } from '@/components/bulk/SelectCheckbox';
@@ -84,7 +82,7 @@ const TAB_LABELS: Record<Tab, { label: string; icon: typeof Target }> = {
 
 export function AudiencePage() {
   const { tenantId, environment } = useAuth();
-  const { canDelete, deleteDeniedReason } = useModuleDeleteAccess('customers.audiences');
+  const { canDelete } = useModuleDeleteAccess('customers.audiences');
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();

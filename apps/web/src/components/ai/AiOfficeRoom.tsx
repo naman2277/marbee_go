@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Sparkles, Moon, Sun, Volume2, VolumeX, Eye, Coffee, Zap, MessageSquare, Laptop, Bell } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Sparkles, Moon, Sun, Volume2, VolumeX, Eye, MessageSquare, Bell } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export type CharacterState =
@@ -72,8 +72,6 @@ export function AiOfficeRoom({
   const isThinking = characterState === 'THINK' || characterState === 'IDLE_THINKING' || (isAiProcessing && isForeground);
   const isSleeping = characterState === 'IDLE_SLEEPING';
   const isDrinking = characterState === 'IDLE_DRINKING';
-  const isPhone = characterState === 'IDLE_PHONE';
-  const isTyping = characterState === 'IDLE_TYPING' || characterState === 'IDLE_WORKING';
   const isExplaining = characterState === 'EXPLAIN';
   const isSuccess = characterState === 'SUCCESS' || characterState === 'EXCITED';
 

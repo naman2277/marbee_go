@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import {
   ThumbsUp,
   MessageSquare,
@@ -9,15 +9,11 @@ import {
   Share2,
   Globe,
   MoreHorizontal,
-  ExternalLink,
   MessageCircle,
   BarChart2,
   Sparkles,
-  CheckCircle2,
   Vote,
   MapPin,
-  Music,
-  Layers,
   ChevronLeft,
   ChevronRight,
   Film,

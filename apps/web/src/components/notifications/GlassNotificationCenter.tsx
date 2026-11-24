@@ -24,7 +24,6 @@ import {
   deleteNotification as deleteNotifApi,
   clearAllNotifications as clearNotifsApi,
   subscribeNotifications,
-  type AppNotification,
 } from '@/lib/notifications';
 
 function formatTimeAgo(isoString: string): string {
@@ -86,7 +85,7 @@ export function GlassNotificationCenter({
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<FilterCategory>('all');
 
-  const { data: notifications = [], refetch } = useQuery({
+  const { data: notifications = [] } = useQuery({
     queryKey: ['notifications', tenantId, environment, userId],
     queryFn: () => fetchNotifications(tenantId, environment, userId),
     enabled: Boolean(tenantId),

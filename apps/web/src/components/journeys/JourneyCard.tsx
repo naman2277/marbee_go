@@ -2,14 +2,11 @@ import { Link } from 'react-router-dom';
 import {
   BarChart3,
   Calendar,
-  Clock,
   GitBranch,
   GripVertical,
   Megaphone,
   Pencil,
-  Sparkles,
   Trash2,
-  TrendingUp,
 } from 'lucide-react';
 import { JourneyChannelIcons } from '@/components/journeys/JourneyChannelIcons';
 import { JourneyStatusBadge } from '@/components/journeys/JourneyStatusBadge';

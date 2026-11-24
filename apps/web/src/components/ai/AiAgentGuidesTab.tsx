@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { BookOpen, Search, ArrowRight, Code2 } from 'lucide-react';
+import { useState } from 'react';
+import { BookOpen, Search, ArrowRight } from 'lucide-react';
 import { KNOWLEDGE_BASE } from './knowledgeBase';
 
 interface AiAgentGuidesTabProps {

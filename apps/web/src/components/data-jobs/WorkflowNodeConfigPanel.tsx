@@ -14,6 +14,7 @@ import { supabase } from '@/lib/supabase';
 import { ExpressionField } from '@/components/data/ExpressionField';
 import type { Node } from 'reactflow';
 import { SendEmailActivityConfigurator } from '@/components/channels/SendEmailActivityConfigurator';
+import { FilterConditionsEditor, FieldMappingEditor } from '@/components/data-jobs/TransformBuilders';
 
 type Props = {
   node: Node<WorkflowNodeData>;

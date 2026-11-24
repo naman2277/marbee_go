@@ -1,4 +1,3 @@
-import React from 'react';
 
 type MarbeeLogoProps = {
   size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';

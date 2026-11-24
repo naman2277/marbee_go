@@ -83,7 +83,7 @@ function formatOpenAiError(status: number, raw: string): string {
       );
     }
     if (code === 'invalid_api_key' || status === 401) {
-      return 'Invalid OpenAI API key. Update OPENAI_API_KEY in Supabase secrets or VITE_OPENAI_API_KEY in .env.local.';
+      return 'Invalid OpenAI API key. Update OPENAI_API_KEY in Supabase → Edge Functions → Secrets.';
     }
     if (message) return message;
   } catch {
@@ -93,7 +93,7 @@ function formatOpenAiError(status: number, raw: string): string {
 }
 
 async function openAiFetch<T>(apiKey: string, path: string, body: unknown): Promise<T> {
-  const useDevProxy = import.meta.env.DEV && Boolean(import.meta.env.VITE_OPENAI_API_KEY);
+  const useDevProxy = false /* SEC-06: no AI keys in the browser */;
   const url = useDevProxy ? `/openai-api${path.replace('/v1', '')}` : `https://api.openai.com/v1${path.replace('/v1', '')}`;
 
   const res = await fetch(url, {

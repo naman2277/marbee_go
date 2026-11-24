@@ -5,10 +5,10 @@ import {
   ArrowLeft, ArrowRight, Play, Pause, Square, Save, Plus, Trash2, X, Zap,
   CheckCircle2, XCircle, Loader2,
   Maximize2, Minimize2, Search,
-  ToggleLeft, ToggleRight, Rocket, FlaskConical,
-  ChevronDown, Calendar, History, GitBranch, UploadCloud,
+  Rocket, FlaskConical,
+  ChevronDown, History, GitBranch, UploadCloud,
   AlertTriangle, RotateCcw, Clock, Table2, Filter as FilterIcon,
-  Circle, StopCircle, Activity, Copy, FileSpreadsheet, Pause as PauseIcon,
+  Circle, Activity, Copy, FileSpreadsheet, Pause as PauseIcon,
   Sliders, Terminal, Info, Folder, FolderOpen, ChevronRight,
 } from 'lucide-react';
 import type { Node, Edge } from 'reactflow';
@@ -18,12 +18,12 @@ import {
   NODE_PALETTE, NODE_ICONS, NODE_CATEGORIES, NODE_CONFIG_FIELDS,
   defaultConfigForType, configSummary, paletteItem, categoryAccent, validateNodeConfig,
 } from '@/lib/data-job-nodes';
-import type { NodePaletteItem, NodeCategory, ConfigFieldExt } from '@/lib/data-job-nodes';
+import type { NodePaletteItem, NodeCategory } from '@/lib/data-job-nodes';
 import {
   parseWorkflowGraph, serializeWorkflowGraph, JOB_TYPES,
 } from '@/lib/data-jobs';
 import type { WorkflowNodeData } from '@/lib/data-jobs';
-import { useStartPipelineRun, usePublishPipelineVersion, usePipelineVersions } from '@/lib/pipeline-runs';
+import { useStartPipelineRun, usePublishPipelineVersion, usePipelineVersions, type PipelineVersion } from '@/lib/pipeline-runs';
 import type { PipelineRunMode } from '@/lib/pipeline-runs';
 import { diffPipelineSnapshots, useRestorePipelineVersion } from '@/lib/pipeline-versions';
 import { PipelineDiffView } from '@/components/data/PipelineDiffView';
@@ -34,7 +34,7 @@ import type { PipelineIssue } from '@/lib/pipeline-validation';
 import { cronNext } from '@/lib/cron';
 import { CronEditor } from '@/components/data/CronEditor';
 import { cn } from '@/lib/utils';
-import { Badge, Button, Card } from '@/components/ui';
+import { Badge, Button } from '@/components/ui';
 import { executeNode, resetSeed } from '@/lib/pipeline-engine';
 import type { DataRow, PipelineContext } from '@/lib/pipeline-engine';
 import { ReadSchemaInspector } from '@/components/data/ReadSchemaInspector';
@@ -135,33 +135,6 @@ function buildBezierPath(from: { x: number; y: number }, to: { x: number; y: num
   return `M ${from.x} ${from.y} C ${from.x + dx} ${from.y}, ${to.x - dx} ${to.y}, ${to.x} ${to.y}`;
 }
 
-function autoLayoutNodes(nodes: CanvasNode[], edges: CanvasEdge[]): CanvasNode[] {
-  if (nodes.length === 0) return nodes;
-  const byId = new Map(nodes.map((n) => [n.id, n]));
-  const incoming = new Map<string, number>();
-  nodes.forEach((n) => incoming.set(n.id, 0));
-  edges.forEach((e) => incoming.set(e.toId, (incoming.get(e.toId) ?? 0) + 1));
-  const queue = nodes.filter((n) => (incoming.get(n.id) ?? 0) === 0);
-  const ordered: CanvasNode[] = [];
-  while (queue.length) {
-    const node = queue.shift()!;
-    ordered.push(node);
-    edges.filter((e) => e.fromId === node.id).forEach((e) => {
-      const next = (incoming.get(e.toId) ?? 1) - 1;
-      incoming.set(e.toId, next);
-      if (next === 0) {
-        const t = byId.get(e.toId);
-        if (t) queue.push(t);
-      }
-    });
-  }
-  const seen = new Set(ordered.map((n) => n.id));
-  nodes.filter((n) => !seen.has(n.id)).forEach((n) => ordered.push(n));
-  return nodes.map((n) => {
-    const idx = ordered.findIndex((o) => o.id === n.id);
-    return { ...n, x: 60 + idx * 320, y: 200 + (idx % 3) * 120 };
-  });
-}
 
 // ─── Blink CSS (shared with automations) ──────────────────────────────────
 
@@ -187,15 +160,7 @@ function ensureBlinkStyles() {
 
 // ─── Color helpers ────────────────────────────────────────────────────────
 
-function catBg(cat: NodeCategory): string {
-  const map: Record<string, string> = { Triggers: 'bg-fuchsia-500/10', Sources: 'bg-emerald-500/10', Transform: 'bg-violet-500/10', Decisioning: 'bg-amber-500/10', 'AI & Personalization': 'bg-pink-500/10', Actions: 'bg-blue-500/10', 'Control Flow': 'bg-cyan-500/10', Monitoring: 'bg-orange-500/10' };
-  return map[cat] || 'bg-slate-100';
-}
 
-function catBorder(cat: NodeCategory): string {
-  const map: Record<string, string> = { Triggers: 'border-fuchsia-300', Sources: 'border-emerald-300', Transform: 'border-violet-300', Decisioning: 'border-amber-300', 'AI & Personalization': 'border-pink-300', Actions: 'border-blue-300', 'Control Flow': 'border-cyan-300', Monitoring: 'border-orange-300' };
-  return map[cat] || 'border-slate-200';
-}
 
 function catFill(cat: NodeCategory): string {
   return categoryAccent(cat);
@@ -409,7 +374,7 @@ async function persistExecutionRunAndPurgeLogs(
   status: 'succeeded' | 'failed' | 'partial',
   logs: { nodeId: string; title: string; status: string; ms: number; output: unknown }[],
   triggeredBy: string = 'Naman',
-  triggerSource: 'manual' | 'schedule' | 'webhook' = 'manual'
+  triggerSource: 'manual' | 'schedule' | 'webhook' | 'event' = 'manual'
 ) {
   try {
     await purge7DayLogs(jobId);
@@ -484,7 +449,7 @@ export function DataJobDetailPage() {
   // Pan/zoom
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
-  const [isPanning, setIsPanning] = useState(false);
+  const [, setIsPanning] = useState(false);
   const isPanningRef = useRef(false);
   const panStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
 
@@ -562,7 +527,7 @@ export function DataJobDetailPage() {
     });
   }, [id]);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
+  const [, setLastSavedAt] = useState<string | null>(null);
   const [scheduleTriggered, setScheduleTriggered] = useState(false);
 
   // Canvas is read-only while pipeline is running or paused
@@ -588,7 +553,6 @@ export function DataJobDetailPage() {
   // Save / run messages
   const [saveMsg, setSaveMsg] = useState('');
   const [runMsg, setRunMsg] = useState('');
-  const [runMenuOpen, setRunMenuOpen] = useState(false);
 
   // Schedule
   const [scheduleCron, setScheduleCron] = useState('');
@@ -829,16 +793,6 @@ export function DataJobDetailPage() {
     },
   });
 
-  const publishJob = useMutation({
-    mutationFn: async () => {
-      await saveWorkflow.mutateAsync();
-      return publishVersion.mutateAsync(undefined);
-    },
-    onSuccess: (version) => {
-      setSaveMsg(`Published v${version}`);
-      setTimeout(() => setSaveMsg(''), 3000);
-    },
-  });
 
   // ─── Canvas pan ─────────────────────────────────────────────────────
 
@@ -1380,7 +1334,8 @@ export function DataJobDetailPage() {
       runStatus,
       accumulatedLogs,
       userTriggeredBy,
-      schedFiringRef.current ? 'schedule' : triggerPayloadRef.current ? 'trigger' : 'manual'
+      // TD-11: was 'trigger', which data_job_runs' CHECK rejects (sql/72) — the run was never saved.
+      schedFiringRef.current ? 'schedule' : triggerPayloadRef.current ? 'event' : 'manual'
     );
   };
 
@@ -1510,7 +1465,6 @@ export function DataJobDetailPage() {
 
   // ─── Layout helpers ─────────────────────────────────────────────────
 
-  const autoLayout = () => setNodes((prev) => autoLayoutNodes(prev, edges));
 
   const fitView = () => {
     if (nodes.length === 0) return;
@@ -2249,7 +2203,7 @@ export function DataJobDetailPage() {
                           </div>
                           {triggerIsWaiting && (
                             <button
-                              onClick={(e) => { e.stopPropagation(); executeTrigger(node.id); }}
+                              onClick={(e) => { e.stopPropagation(); executeTrigger({ triggered_node_id: node.id }); }}
                               className="flex-shrink-0 text-[8px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-bold hover:bg-emerald-200 transition-colors"
                               title="Simulate trigger event">
                               Fire
@@ -2810,7 +2764,7 @@ export function DataJobDetailPage() {
                           <TriggerFileUploader
                             node={selectedNodeData}
                             jobId={id!}
-                            onTrigger={(nodeId) => executeTrigger(nodeId)}
+                            onTrigger={(nodeId) => executeTrigger({ triggered_node_id: nodeId })}
                             onUpdateConfig={(key, value) => setNodes((prev) => prev.map((n) => n.id === selectedNodeData.id ? { ...n, config: { ...n.config, [key]: value } } : n))}
                           />
                         )}
@@ -2925,7 +2879,7 @@ export function DataJobDetailPage() {
                               <p className="text-xl font-bold text-rose-800 mt-0.5">{String(out.rows_error)}</p>
                             </div>
                           )}
-                          {out.summary && (
+                          {Boolean(out.summary) && (
                             <div className="bg-white rounded-xl p-3.5 border border-slate-200/80 shadow-xs">
                               <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Summary</p>
                               <p className="text-xs text-slate-700 leading-relaxed">{String(out.summary ?? '')}</p>
@@ -2937,7 +2891,7 @@ export function DataJobDetailPage() {
                               <span>Executed in {selectedNodeData.lastExecutionTimeMs}ms</span>
                             </div>
                           )}
-                          {out.error && (
+                          {Boolean(out.error) && (
                             <div className="bg-rose-50/90 rounded-xl p-3.5 border border-rose-200/80 shadow-xs">
                               <p className="text-[10px] text-rose-700 font-bold uppercase tracking-wider mb-1">Execution Error</p>
                               <p className="text-xs text-rose-800 font-mono break-all">{String(out.error)}</p>
@@ -3076,12 +3030,12 @@ export function DataJobDetailPage() {
                           </span>
                         </td>
                         <td className="px-4 py-1.5 text-gray-500 font-mono text-[11px]">{log.ms}ms</td>
-                        <td className="px-4 py-1.5 text-gray-500 font-mono text-[11px]">{(log.output as Record<string, unknown>)?.rows_in ?? '—'}</td>
-                        <td className="px-4 py-1.5 text-gray-500 font-mono text-[11px]">{(log.output as Record<string, unknown>)?.rows_out ?? '—'}</td>
+                        <td className="px-4 py-1.5 text-gray-500 font-mono text-[11px]">{String((log.output as Record<string, unknown>)?.rows_in ?? '—')}</td>
+                        <td className="px-4 py-1.5 text-gray-500 font-mono text-[11px]">{String((log.output as Record<string, unknown>)?.rows_out ?? '—')}</td>
                         <td className="px-4 py-1.5 font-mono text-[11px]">{((log.output as Record<string, unknown>)?.rows_error as number) > 0 ? <span className="text-red-600 font-semibold">{String((log.output as Record<string, unknown>).rows_error)}</span> : <span className="text-gray-400">0</span>}</td>
                         <td className="px-4 py-1.5 text-gray-600 truncate max-w-[300px]">
                           {String((log.output as Record<string, unknown>)?.summary ?? '')}
-                          {(log.output as Record<string, unknown>)?.error_category && (
+                          {Boolean((log.output as Record<string, unknown>)?.error_category) && (
                             <span className={cn('ml-1.5 text-[9px] px-1 py-0.5 rounded font-medium',
                               (log.output as Record<string, unknown>).error_category === 'transient' ? 'bg-amber-50 text-amber-600' :
                               (log.output as Record<string, unknown>).error_category === 'configuration' ? 'bg-blue-50 text-blue-600' :
@@ -3240,7 +3194,6 @@ function TriggerFileUploader({ node, jobId, onTrigger, onUpdateConfig }: {
 
   const config = node.config as Record<string, string>;
   const expectedFormat = config.format || 'csv';
-  const watchFolder = config.watch_folder || '';
   const fileNamePattern = config.file_name_pattern || '';
 
   const fileIcon = (name: string) => {
@@ -3478,7 +3431,7 @@ function TriggerFileUploader({ node, jobId, onTrigger, onUpdateConfig }: {
   );
 }
 
-function TriggerFormPicker({ node, tenantId, environment, jobId, onChange }: {
+function TriggerFormPicker({ node, tenantId, environment, onChange }: {
   node: CanvasNode; tenantId: string; environment: string; jobId: string;
   onChange: (n: CanvasNode) => void;
 }) {

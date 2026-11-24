@@ -11,6 +11,6 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 });
 
-export const DEMO_TENANT_ID = import.meta.env.VITE_DEMO_TENANT_ID ?? '00000000-0000-0000-0000-000000000001';
+// DEMO_TENANT_ID removed (TD-20): the app never falls back to a workspace the user isn't in.
 
 export { supabaseAnonKey };

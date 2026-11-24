@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { MessageSquare, Clock, Trash2, Plus, Sparkles, ChevronRight, ShieldAlert, Timer } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { MessageSquare, Clock, Trash2, Plus, Sparkles, ChevronRight, Timer } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { fetchChatSessions, clearAllChatSessions, deleteSingleChatSession } from '@/lib/ai-engine-config';
 

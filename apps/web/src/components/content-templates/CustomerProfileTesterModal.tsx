@@ -1,19 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Check,
-  CheckCircle2,
-  Filter,
-  Mail,
-  Phone,
-  Plus,
   Search,
   Send,
   Sparkles,
-  User,
   UserCheck,
-  Users,
   X,
-  Zap,
 } from 'lucide-react';
 import { Button, Badge } from '@/components/ui';
 import type { ContentChannel, TemplateContent } from '@/lib/content-templates';
@@ -86,8 +78,9 @@ export function CustomerProfileTesterModal({
 
   const filteredProfiles = useMemo(() => {
     let list = testers;
-    if (filterRule === 'vip') list = list.filter((p) => p.status === 'vip');
-    if (filterRule === 'lead') list = list.filter((p) => p.status === 'lead');
+    // TD-11: status is only active/inactive, so these filters matched nothing. Derive from loyalty data.
+    if (filterRule === 'vip') list = list.filter((p) => p.loyalty_member && /vip|platinum|gold/i.test(`${p.loyalty_tier_slug ?? ''} ${p.loyalty_tier_name}`));
+    if (filterRule === 'lead') list = list.filter((p) => !p.loyalty_member);
     if (filterRule === 'active') list = list.filter((p) => p.status === 'active');
 
     const q = search.trim().toLowerCase();
@@ -98,8 +91,8 @@ export function CustomerProfileTesterModal({
           p.first_name.toLowerCase().includes(q) ||
           p.last_name.toLowerCase().includes(q) ||
           p.email.toLowerCase().includes(q) ||
-          p.company.toLowerCase().includes(q) ||
-          p.loyalty_tier.toLowerCase().includes(q),
+          (p.company ?? '').toLowerCase().includes(q) ||
+          (p.loyalty_tier_name ?? '').toLowerCase().includes(q),
       );
     }
     return list;
@@ -165,10 +158,10 @@ export function CustomerProfileTesterModal({
                 <strong>Delivered to:</strong> {channel === 'email' ? testerEmail : testerPhone}
               </p>
               <p>
-                <strong>Tester Profile Data Used:</strong> {selectedProfile.first_name} {selectedProfile.last_name} ({selectedProfile.company})
+                <strong>Tester Profile Data Used:</strong> {selectedProfile.first_name} {selectedProfile.last_name}{selectedProfile.company ? ` (${selectedProfile.company})` : ''}
               </p>
               <p>
-                <strong>Loyalty Tier & Points:</strong> {selectedProfile.loyalty_tier} ({selectedProfile.loyalty_points} pts)
+                <strong>Loyalty Tier & Points:</strong> {selectedProfile.loyalty_tier_name} ({selectedProfile.loyalty_points_balance} pts)
               </p>
             </div>
             <Button
@@ -330,9 +323,9 @@ export function CustomerProfileTesterModal({
                 <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-100">
                   <span><code>{'{{first_name}}'}</code> → <strong>{selectedProfile.first_name}</strong></span>
                   <span><code>{'{{last_name}}'}</code> → <strong>{selectedProfile.last_name}</strong></span>
-                  <span><code>{'{{company}}'}</code> → <strong>{selectedProfile.company}</strong></span>
-                  <span><code>{'{{loyalty_tier}}'}</code> → <strong>{selectedProfile.loyalty_tier}</strong></span>
-                  <span><code>{'{{loyalty_points}}'}</code> → <strong>{selectedProfile.loyalty_points}</strong></span>
+                  <span><code>{'{{company}}'}</code> → <strong>{selectedProfile.company ?? '—'}</strong></span>
+                  <span><code>{'{{loyalty_tier}}'}</code> → <strong>{selectedProfile.loyalty_tier_name}</strong></span>
+                  <span><code>{'{{loyalty_points}}'}</code> → <strong>{selectedProfile.loyalty_points_balance}</strong></span>
                   <span><code>{'{{order_id}}'}</code> → <strong>{selectedProfile.order_id}</strong></span>
                   <span><code>{'{{discount_code}}'}</code> → <strong>{selectedProfile.discount_code}</strong></span>
                   <span><code>{'{{city}}'}</code> → <strong>{selectedProfile.city}</strong></span>

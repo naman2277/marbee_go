@@ -2,7 +2,6 @@ import { useState } from 'react';
 import {
   Sparkles,
   AlertTriangle,
-  TrendingDown,
   TrendingUp,
   ArrowRight,
   Send,
@@ -11,12 +10,7 @@ import {
   Users,
   Target,
   DollarSign,
-  ShieldAlert,
-  Flame,
-  MousePointerClick,
-  Smartphone,
   ChevronRight,
-  Layers,
   BarChart2,
 } from 'lucide-react';
 import { Card, Button } from '@/components/ui';
@@ -42,7 +36,6 @@ export function AIBrainTab({
   briefing,
   opportunities,
   sessions,
-  metrics,
   onExecuteAction,
 }: AIBrainTabProps) {
   const [isExecuting, setIsExecuting] = useState(false);

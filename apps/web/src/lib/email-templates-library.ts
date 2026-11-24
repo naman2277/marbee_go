@@ -1,5 +1,4 @@
 import type { EmailBlock, EmailGlobalTheme } from './email-builder-types';
-import { DEFAULT_EMAIL_THEME } from './email-builder-types';
 
 export type PrebuiltEmailTemplate = {
   id: string;

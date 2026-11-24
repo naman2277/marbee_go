@@ -1,35 +1,22 @@
 import { useState, useRef, useEffect } from 'react';
 import {
-  ArrowRight,
   Check,
   ChevronDown,
   ChevronRight,
-  Code,
-  Copy,
-  CornerDownLeft,
   Database,
   Eraser,
-  FileCode,
   FunctionSquare,
   HelpCircle,
-  Layers,
-  Play,
   RotateCcw,
   RotateCw,
-  Scissors,
   Search,
-  Sparkles,
-  Tag,
-  Wand2,
   X,
 } from 'lucide-react';
 import { Button } from '@/components/ui';
 import {
   FUNCTION_CATALOG,
-  FUNCTION_MAP,
   fieldExpr,
   formatExpr,
-  funcExpr,
   literalExpr,
   parseExpression,
   evaluateExpr,
@@ -70,7 +57,6 @@ export function AdobeExpressionBuilderModal({
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(0);
   const [fieldSearch, setFieldSearch] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('string');
   const [selectedFn, setSelectedFn] = useState<FunctionDef | null>(null);
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({
     string: true,

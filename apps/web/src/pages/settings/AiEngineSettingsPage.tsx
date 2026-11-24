@@ -1,15 +1,12 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import {
-  Bot,
   Brain,
   Check,
   CheckCircle2,
-  Cpu,
   Eye,
   EyeOff,
   Key,
-  Mic,
   PhoneCall,
   Play,
   RotateCcw,
@@ -18,21 +15,14 @@ import {
   Terminal,
   Trash2,
   Zap,
-  Activity,
   Radio,
   Sliders,
   AlertTriangle,
   Video,
   ExternalLink,
-  BookOpen,
-  Copy,
-  ArrowRight,
-  Code2,
-  Layers,
   RefreshCw,
   UserPlus,
   Edit3,
-  UserCheck,
   Plus,
   X,
   Users,
@@ -40,13 +30,12 @@ import {
   AlertCircle,
   ChevronRight,
 } from 'lucide-react';
-import { Button, Card } from '@/components/ui';
+import { Button } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   fetchAiModelsConfig,
   saveAiModelsConfig,
   fetchVoiceAgentsConfig,
-  saveVoiceAgentsConfig,
   fetchBuddyAgentsConfig,
   saveBuddyAgentsConfig,
   fetchVoiceAvatarAdapters,
@@ -56,11 +45,9 @@ import {
   testVoiceAvatarConnection,
   runAiModelTestPrompt,
   type AiModelConfig,
-  type VoiceAgentConfig,
   type BuddyCustomAgentConfig,
   type VoiceAvatarAiAdapter,
   type CustomVoiceConfig,
-  INITIAL_CUSTOM_VOICE_CONFIGS,
 } from '@/lib/ai-engine-config';
 import { AiBrandIcon, VoicePlatformIcon } from '@/components/ai/AiBrandLogos';
 import { getSavedAiApiKey } from '@/lib/ai-crm-context';
@@ -70,10 +57,7 @@ import {
   stopBuddySpeech,
   previewVoiceById,
   testElevenLabsVoice,
-  GEMINI_OFFICIAL_VOICES,
   ELEVENLABS_OFFICIAL_VOICES,
-  NEURAL_VOICE_PROFILES,
-  type VoiceOption,
 } from '@/lib/ai-voice-engine';
 import { cn } from '@/lib/utils';
 
@@ -123,15 +107,13 @@ export function AiEngineSettingsPage() {
     contextScope: '',
     isSystem: false,
   });
-  const [expandedGuideId, setExpandedGuideId] = useState<string | null>(null);
   const [testingAdapterId, setTestingAdapterId] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, { success: boolean; latencyMs: number; message: string }>>({});
-  const [copiedCodeId, setCopiedCodeId] = useState<string | null>(null);
   const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
 
   // Custom Voice Configurations state & modal
   const [isCustomVoiceModalOpen, setIsCustomVoiceModalOpen] = useState(false);
-  const [editingCustomVoice, setEditingCustomVoice] = useState<CustomVoiceConfig | null>(null);
+  const [, setEditingCustomVoice] = useState<CustomVoiceConfig | null>(null);
   const [customVoiceFormData, setCustomVoiceFormData] = useState<Partial<CustomVoiceConfig>>({
     name: '',
     voiceId: '',
@@ -157,7 +139,6 @@ export function AiEngineSettingsPage() {
 
   const [dirtyCustomVoices, setDirtyCustomVoices] = useState<Record<string, boolean>>({});
   const [dirtyElevenLabsAdapter, setDirtyElevenLabsAdapter] = useState(false);
-  const [localElevenLabsDraft, setLocalElevenLabsDraft] = useState<Partial<VoiceAvatarAiAdapter> | null>(null);
 
   // Inline card test state (per model ID)
   const [testingCardId, setTestingCardId] = useState<string | null>(null);
@@ -214,15 +195,15 @@ export function AiEngineSettingsPage() {
   });
 
   // ONLY show configured and setup voices in Buddy Agent selection
-  const availableBuddyVoices = useMemo(
-    () => getAvailableBuddyVoices(voiceAvatarAdapters, voiceAgents, customVoiceConfigs, true),
-    [voiceAvatarAdapters, voiceAgents, customVoiceConfigs]
-  );
 
   const saveModelsMutation = useMutation({
     mutationFn: (updated: AiModelConfig[]) => saveAiModelsConfig(tenantId, environment, updated),
     onSuccess: () => {
       showToast('Saved AI Provider settings');
+      refetchModels();
+    },
+    onError: (err) => {
+      showToast(err instanceof Error ? err.message : 'Could not save AI Provider settings');
       refetchModels();
     },
   });
@@ -243,13 +224,6 @@ export function AiEngineSettingsPage() {
     },
   });
 
-  const saveVoiceMutation = useMutation({
-    mutationFn: (updated: VoiceAgentConfig[]) => saveVoiceAgentsConfig(tenantId, environment, updated),
-    onSuccess: () => {
-      showToast('Updated Voice Agent parameters');
-      refetchVoice();
-    },
-  });
 
   const saveBuddyMutation = useMutation({
     mutationFn: (updated: BuddyCustomAgentConfig[]) => saveBuddyAgentsConfig(tenantId, environment, updated),
@@ -389,17 +363,6 @@ export function AiEngineSettingsPage() {
     saveModelsMutation.mutate(updated);
   };
 
-  const handleUpdateModelName = (modelId: string, modelName: string) => {
-    const updated = models.map((m) =>
-      m.id === modelId
-        ? {
-            ...m,
-            modelName: modelName.trim(),
-          }
-        : m
-    );
-    saveModelsMutation.mutate(updated);
-  };
 
   const handleOpenCreateModel = () => {
     setEditingModel(null);
@@ -627,7 +590,7 @@ export function AiEngineSettingsPage() {
     saveVoiceAvatarsMutation.mutate(updated);
   };
 
-  const handleSaveElevenLabsMaster = (adapter: VoiceAvatarAiAdapter) => {
+  const handleSaveElevenLabsMaster = (_adapter: VoiceAvatarAiAdapter) => {
     saveVoiceAvatarsMutation.mutate(voiceAvatarAdapters);
     setDirtyElevenLabsAdapter(false);
     showToast('Saved ElevenLabs Studio configuration & active voice engine!');
@@ -708,7 +671,7 @@ export function AiEngineSettingsPage() {
       () => {
         setIsPlayingCustomVoiceTest(false);
       },
-      (err) => {
+      (_err) => {
         setIsPlayingCustomVoiceTest(false);
       }
     );
@@ -787,7 +750,7 @@ export function AiEngineSettingsPage() {
     id: string,
     voiceName: string,
     voiceId?: string,
-    provider?: string,
+    _provider?: string,
     gender?: 'female' | 'male',
     apiKey?: string
   ) => {
@@ -797,6 +760,10 @@ export function AiEngineSettingsPage() {
       return;
     }
     stopBuddySpeech();
+    if (!voiceId) {
+      showToast('This voice has no voice ID configured yet.');
+      return;
+    }
     setPlayingVoiceId(id);
 
     const elevenLabsAdapter = voiceAvatarAdapters.find((a) => a.provider === 'elevenlabs');
@@ -824,11 +791,6 @@ export function AiEngineSettingsPage() {
     }
   };
 
-  const handleCopyCode = (code: string, id: string) => {
-    navigator.clipboard.writeText(code);
-    setCopiedCodeId(id);
-    setTimeout(() => setCopiedCodeId(null), 2000);
-  };
 
   const handleResetAllAiSettings = () => {
     try {
@@ -958,7 +920,6 @@ export function AiEngineSettingsPage() {
     }
   };
 
-  const formatNumber = (num: number) => new Intl.NumberFormat('en-IN').format(num);
 
   return (
     <div className="space-y-6 font-sans">

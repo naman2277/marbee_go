@@ -672,7 +672,7 @@ function checkGuardrail(g: Guardrail, ctx: DecisionRequest['context'], channel: 
         : { pass: true, reason: '' };
     }
     case 'fatigue_threshold': {
-      const pressure = (ctx.messages_today ?? 0) * 25 + (ctx.messages_this_week ?? 0) * 5;
+      const pressure = Number(ctx.messages_today ?? 0) * 25 + Number(ctx.messages_this_week ?? 0) * 5;
       const max = (cfg.max_pressure_score as number) ?? 80;
       return pressure >= max
         ? { pass: false, reason: `Fatigue score ${pressure} >= ${max}` }
@@ -760,7 +760,7 @@ export function evaluateDecision(
         const results = group.conditions.map(c => checkCondition(c, request.context));
         const pass = group.logic === 'and' ? results.every(Boolean) : results.some(Boolean);
         if (!pass) {
-          const failedCond = group.conditions.find((c, i) => !results[i]);
+          const failedCond = group.conditions.find((_c, i) => !results[i]);
           eligibleFiltered.push({
             item_name: item.name,
             reason: failedCond ? `${failedCond.field} ${failedCond.operator} ${JSON.stringify(failedCond.value)}` : 'Eligibility rule failed',
@@ -955,9 +955,9 @@ export function calculateFatigueScore(ctx: DecisionRequest['context']): {
   level: 'low' | 'moderate' | 'high' | 'critical';
   recommendation: string;
 } {
-  const msgToday = ctx.messages_today ?? 0;
-  const msgWeek = ctx.messages_this_week ?? 0;
-  const lastHours = ctx.last_contacted_hours_ago ?? 999;
+  const msgToday = Number(ctx.messages_today ?? 0);
+  const msgWeek = Number(ctx.messages_this_week ?? 0);
+  const lastHours = Number(ctx.last_contacted_hours_ago ?? 999);
 
   const score = Math.min(100, msgToday * 25 + msgWeek * 5 + (lastHours < 2 ? 20 : lastHours < 6 ? 10 : 0));
 

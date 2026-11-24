@@ -1,21 +1,13 @@
 import { useState } from 'react';
 import {
-  AlertTriangle,
   ArrowRight,
   Check,
   CheckCircle2,
-  Code,
   Copy,
-  Cpu,
-  Database,
   KeyRound,
   Layers,
-  Play,
-  ShieldCheck,
   Sparkles,
   Stethoscope,
-  Terminal,
-  Zap,
 } from 'lucide-react';
 import { Button } from '@/components/ui';
 import type { TableHealthProfile } from '@/lib/data-health-engine';

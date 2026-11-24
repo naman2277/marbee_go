@@ -2,22 +2,18 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Check,
   CheckCircle2,
-  Database,
   Filter,
   Layers,
   Sparkles,
-  Tag,
-  Users,
   X,
-  Zap,
 } from 'lucide-react';
 import { Button } from '@/components/ui';
-import { IconField } from '@/components/ui/IconField';
 import { SchemaFilterEditor } from '@/components/schemas/SchemaFilterEditor';
 import { buildQuerySummary } from '@/lib/query-activity';
 import {
   createFilterRoot,
   formatFilterRoot,
+  type FilterOperator,
   type FilterRoot,
   type SchemaFilterField,
 } from '@/lib/schema-filters';
@@ -32,7 +28,7 @@ type Props = {
   onSave: (filter: FilterRoot, quickSearch: string, summaryLabel: string) => void;
 };
 
-const PRESETS = [
+const PRESETS: Array<{ name: string; field: string; op: FilterOperator; val: string | number | null; [k: string]: unknown }> = [
   {
     name: 'All Active Profiles',
     field: 'status',
@@ -42,13 +38,13 @@ const PRESETS = [
   {
     name: 'High Value Customers',
     field: 'total_spent',
-    op: 'greater_than_or_equal',
+    op: 'gte',
     val: '500',
   },
   {
     name: 'Has Valid Email',
     field: 'email',
-    op: 'is_not_null',
+    op: 'is_not_empty',
     val: '',
   },
 ];
@@ -77,23 +73,27 @@ export function QueryFilterModal({
   );
 
   const filterPreview = formatFilterRoot(draftRoot, fields);
-  const conditionsCount = draftRoot.conditions?.length || 0;
+  // TD-11: filter groups hold `children` now (the old `conditions` read always gave 0).
+  const conditionsCount = draftRoot.children?.length || 0;
 
   if (!open) return null;
 
   const applyPreset = (preset: (typeof PRESETS)[0]) => {
-    const targetField = fields.find((f) => f.name === preset.field || f.label.toLowerCase().includes(preset.field));
+    // TD-11: used the old filter shape (prev.conditions / field.name) and crashed.
+    const targetField = fields.find((f) => f.key === preset.field || f.label.toLowerCase().includes(preset.field));
     if (!targetField) return;
 
     setDraftRoot((prev) => ({
       ...prev,
-      conditions: [
-        ...prev.conditions,
+      children: [
+        ...(prev.children ?? []),
         {
+          type: 'condition',
           id: `cond_${Date.now()}`,
-          field: targetField.name,
-          operator: preset.op as any,
-          value: preset.val,
+          join: 'and',
+          left: { kind: 'field', field: targetField.key },
+          operator: preset.op,
+          right: { kind: 'literal', value: String(preset.val ?? '') },
         },
       ],
     }));

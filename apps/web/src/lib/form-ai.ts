@@ -26,10 +26,10 @@ type GenerateOptions = {
 
 const AI_SETUP_HELP =
   'To enable AI form generation, set OPENAI_API_KEY in Supabase Edge Function secrets and deploy form-ai. ' +
-  'For local dev without Edge Functions, add VITE_OPENAI_API_KEY to apps/web/.env.local.';
+  'Deploy the form-ai Edge Function and set OPENAI_API_KEY in Supabase → Edge Functions → Secrets.';
 
 function getClientOpenAiKey(): string | undefined {
-  const key = import.meta.env.VITE_OPENAI_API_KEY as string | undefined;
+  const key = undefined as string | undefined /* SEC-06: AI keys never in the browser — edge functions / ai-gateway only */;
   return key?.trim() || undefined;
 }
 
@@ -102,7 +102,7 @@ export async function generateFormWithAi(
   const fromEdge = await generateViaEdge(trimmed, options);
   if (fromEdge) return fromEdge;
 
-  // 2) Direct OpenAI from browser (local dev with VITE_OPENAI_API_KEY)
+  // 2) (disabled — SEC-06) direct browser OpenAI calls; AI keys never ship to the browser
   const fromClient = await generateViaClientKey(trimmed, options);
 
   // 3) Generate banner client-side if edge didn't upload one

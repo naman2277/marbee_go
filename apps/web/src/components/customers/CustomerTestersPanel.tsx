@@ -1,33 +1,22 @@
 import { useState } from 'react';
 import {
-  Calendar,
-  Check,
-  CheckCircle2,
   Edit2,
-  Globe,
-  Mail,
   MapPin,
-  Phone,
   Plus,
   RotateCcw,
   Send,
-  Shield,
   Sparkles,
-  Tag,
   Trash2,
   User,
   UserCheck,
-  Users,
   X,
-  Zap,
 } from 'lucide-react';
-import { Button, Card, Badge } from '@/components/ui';
+import { Button, Badge } from '@/components/ui';
 import {
   getCustomerTesterProfiles,
   saveCustomerTesterProfiles,
   resetCustomerTesterProfiles,
   type CustomerTesterProfile,
-  DEFAULT_CUSTOMER_TESTERS,
 } from '@/lib/customer-testers';
 import { useAuth } from '@/contexts/AuthContext';
 

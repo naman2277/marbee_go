@@ -5,8 +5,6 @@ import { toSchemaSlug } from './schema-slug';
 import { logAudit } from './audit';
 import type { EmailBlock, EmailGlobalTheme } from './email-builder-types';
 import { DEFAULT_EMAIL_THEME } from './email-builder-types';
-import { renderBlocksToHtml, renderBlocksToPlainText } from './email-renderer';
-import { PREBUILT_EMAIL_TEMPLATES } from './email-templates-library';
 import {
   CONTENT_TEMPLATE_LIBRARY,
   CONTENT_TEMPLATE_LIBRARY_CATEGORIES,
@@ -30,6 +28,12 @@ export type EmailContent = {
   preheader?: string;
   html_body: string;
   text_body?: string;
+  /** Plain-text version written by the studio (TD-11: type had fallen behind). */
+  plain_text?: string;
+  /** Sender details the email studio keeps alongside the content. */
+  from_name?: string;
+  from_email?: string;
+  reply_to?: string;
   amp_html?: string;
   amp_enabled?: boolean;
   enabled_versions?: Array<'html' | 'amp' | 'text'>;
@@ -37,6 +41,8 @@ export type EmailContent = {
   builder_state?: {
     theme?: EmailGlobalTheme;
     blocks?: EmailBlock[];
+    /** Review state written by the email studio. */
+    approval_status?: string;
   };
   blocks?: EmailBlock[];
   theme?: EmailGlobalTheme;
@@ -648,6 +654,6 @@ export async function duplicateContentTemplate(
   return createContentTemplate(tenantId, environment, copyName, original.channel, {
     content: structuredClone(original.content),
     settings: structuredClone(original.settings),
-    library_template_id: original.library_template_id,
+    library_template_id: original.library_template_id ?? undefined,
   });
 }

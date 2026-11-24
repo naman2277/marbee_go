@@ -32,6 +32,24 @@ CREATE TRIGGER trg_schema_table_name_lock
   FOR EACH ROW
   EXECUTE FUNCTION public.prevent_schema_table_name_change();
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_schema_definitions_table_name_unique
+-- Uniqueness applies to CUSTOM tables (cs_*) only: built-in (system) schemas exist once per
+-- tenant/environment and legitimately share physical tables such as real_time_triggers.
+-- (Fixed 2026-11-20: the original index covered every table_name and failed on any database
+-- with more than one tenant/environment.) Each cs_* table must have exactly one owning schema —
+-- schema-records relies on that for tenant isolation (SEC-01).
+DROP INDEX IF EXISTS public.idx_schema_definitions_table_name_unique;
+
+DO $$
+DECLARE v_dupes TEXT;
+BEGIN
+  SELECT string_agg(table_name || ' (' || n || ' schemas)', ', ') INTO v_dupes
+  FROM (SELECT table_name, count(*) AS n FROM public.schema_definitions
+        WHERE table_name ~ '^cs_' GROUP BY table_name HAVING count(*) > 1) d;
+  IF v_dupes IS NOT NULL THEN
+    RAISE EXCEPTION 'Custom tables claimed by more than one schema: % — resolve before re-running 12.', v_dupes;
+  END IF;
+END $$;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_schema_definitions_custom_table_unique
   ON public.schema_definitions (table_name)
-  WHERE table_name IS NOT NULL;
+  WHERE table_name ~ '^cs_';

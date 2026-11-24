@@ -6,10 +6,19 @@
 //
 // The <path-uuid> matches the `path` config field on a trigger_webhook node
 // inside an active data_job's workflow_json.
+//
+// Phase 0 (SEC-18 / TD-12b): auth modes now really verify — api_key/bearer use a
+// Marbee API key (verify_api_key, same workspace + environment, scope
+// custom_api:invoke); hmac verifies the signature over the raw body; basic, oauth2
+// and unknown modes are refused. Credential headers are never stored with the run.
+// Suspended workspaces are refused.
 
 import { serve } from 'https://deno.land/std@0.208.0/http/server.ts';
 import { getServiceClient, corsHeaders } from '../_shared/supabase.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { AuthError } from '../_shared/auth.ts';
+import { authenticateApiKey } from '../_shared/ingest-auth.ts';
+import { assertTenantActive } from '../_shared/tenant-guard.ts';
+import { verifyHmacSignature } from '../_shared/webhook-sig.ts';
 
 const json = (d: unknown, s = 200, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(d), {
@@ -19,6 +28,14 @@ const json = (d: unknown, s = 200, headers: Record<string, string> = {}) =>
 
 const text = (body: string, s = 200, ct = 'text/plain', headers: Record<string, string> = {}) =>
   new Response(body, { status: s, headers: { ...corsHeaders(), 'Content-Type': ct, ...headers } });
+
+// Never persist credentials that arrive with the request.
+const SENSITIVE_HEADERS = /^(authorization|cookie|x-api-key|apikey|proxy-authorization|x-signature|x-hub-signature(-256)?)$/i;
+const MAX_BODY_BYTES = 5 * 1024 * 1024;
+// Query-string credentials (no longer accepted for auth) must not be stored either.
+const SENSITIVE_PARAMS = /^(api_?key|key|token|access_token|secret|signature|sig|password)$/i;
+const safeQuery = (params: URLSearchParams) =>
+  Object.fromEntries([...params.entries()].filter(([k]) => !SENSITIVE_PARAMS.test(k)));
 
 const BOT_PATTERNS = /bot|crawler|spider|slurp|mediapartners|facebookexternalhit|bingpreview|linkedinbot/i;
 
@@ -63,6 +80,13 @@ serve(async (req) => {
 
   if (!matchedJob) {
     return json({ error: 'No active pipeline found for this webhook path' }, 404);
+  }
+
+  try {
+    await assertTenantActive(supabase, matchedJob.tenant_id);
+  } catch (e) {
+    const status = e instanceof AuthError ? e.status : 503;
+    return json({ error: e instanceof Error ? e.message : 'Workspace check failed' }, status);
   }
 
   // --- CORS preflight ---
@@ -110,12 +134,25 @@ serve(async (req) => {
     }
   }
 
+  // --- Raw body (read once: HMAC must be computed over the exact bytes received) ---
+  const configuredMax = Number(webhookConfig.max_payload_size) || 1024 * 1024;
+  const maxBytes = Math.min(Math.max(configuredMax, 1024), MAX_BODY_BYTES);
+  if (Number(req.headers.get('content-length') ?? 0) > maxBytes) return json({ error: 'Payload too large' }, 413);
+  const hasBody = req.method !== 'GET' && req.method !== 'HEAD';
+  const rawBytes = hasBody ? new Uint8Array(await req.arrayBuffer()) : new Uint8Array();
+  if (rawBytes.byteLength > maxBytes) return json({ error: 'Payload too large' }, 413);
+  const bodyReq = new Request(req.url, {
+    method: req.method,
+    headers: req.headers,
+    body: hasBody && rawBytes.byteLength ? rawBytes : undefined,
+  });
+
   // --- Authentication ---
   const authMode = String(webhookConfig.auth ?? 'none');
   if (authMode !== 'none') {
-    const authResult = await validateAuth(req, supabase, matchedJob.tenant_id, authMode);
+    const authResult = await validateAuth(req, supabase, matchedJob, authMode, webhookConfig, rawBytes);
     if (!authResult.ok) {
-      return json({ error: authResult.error ?? 'Authentication failed' }, 401);
+      return json({ error: authResult.error ?? 'Authentication failed' }, authResult.status ?? 401);
     }
   }
 
@@ -132,18 +169,18 @@ serve(async (req) => {
 
   try {
     if (req.method === 'GET') {
-      payload = Object.fromEntries(url.searchParams.entries());
+      payload = safeQuery(url.searchParams);
     } else if (webhookConfig.raw_body === true) {
-      payload = { body: await req.text(), _raw: true };
+      payload = { body: new TextDecoder().decode(rawBytes), _raw: true };
     } else if (contentType === 'json' || req.headers.get('content-type')?.includes('json')) {
-      payload = await req.json();
+      payload = await bodyReq.json();
     } else if (contentType === 'form' || req.headers.get('content-type')?.includes('form-urlencoded')) {
-      const form = await req.formData();
+      const form = await bodyReq.formData();
       form.forEach((v, k) => { payload[k] = String(v); });
     } else if (contentType === 'xml' || req.headers.get('content-type')?.includes('xml')) {
-      payload = { body: await req.text(), _content_type: 'xml' };
+      payload = { body: new TextDecoder().decode(rawBytes), _content_type: 'xml' };
     } else if (contentType === 'multipart' || req.headers.get('content-type')?.includes('multipart')) {
-      const form = await req.formData();
+      const form = await bodyReq.formData();
       const binaryField = String(webhookConfig.binary_field ?? 'file');
       form.forEach((v, k) => {
         if (v instanceof File) {
@@ -153,7 +190,7 @@ serve(async (req) => {
         }
       });
     } else {
-      payload = { body: await req.text() };
+      payload = { body: new TextDecoder().decode(rawBytes) };
     }
   } catch {
     return json({ error: 'Failed to parse request body' }, 400);
@@ -166,8 +203,8 @@ serve(async (req) => {
       path: webhookPath,
       method: req.method,
       received_at: new Date().toISOString(),
-      headers: Object.fromEntries(req.headers.entries()),
-      query: Object.fromEntries(url.searchParams.entries()),
+      headers: Object.fromEntries([...req.headers.entries()].filter(([k]) => !SENSITIVE_HEADERS.test(k))),
+      query: safeQuery(url.searchParams),
       ip: req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? req.headers.get('x-real-ip') ?? null,
     },
   };
@@ -311,50 +348,56 @@ function buildResponse(
   return json(defaultBody, responseCode, extraHeaders);
 }
 
+type MatchedJob = { id: string; tenant_id: string; environment: string };
+
 async function validateAuth(
   req: Request,
   supabase: ReturnType<typeof getServiceClient>,
-  tenantId: string,
+  job: MatchedJob,
   mode: string,
-): Promise<{ ok: boolean; error?: string }> {
-  const authHeader = req.headers.get('authorization') ?? '';
-
+  config: Record<string, unknown>,
+  rawBody: Uint8Array,
+): Promise<{ ok: boolean; error?: string; status?: number }> {
   switch (mode) {
-    case 'bearer': {
-      if (!authHeader.startsWith('Bearer ')) return { ok: false, error: 'Missing Bearer token' };
-      const token = authHeader.slice(7);
-      const { data } = await supabase
-        .from('api_keys')
-        .select('id')
-        .eq('tenant_id', tenantId)
-        .eq('key_hash', token)
-        .eq('status', 'active')
-        .limit(1);
-      return data?.length ? { ok: true } : { ok: false, error: 'Invalid token' };
-    }
-    case 'basic': {
-      if (!authHeader.startsWith('Basic ')) return { ok: false, error: 'Missing Basic auth' };
-      return { ok: true };
-    }
+    case 'bearer':
     case 'api_key': {
-      const key = req.headers.get('x-api-key') ?? new URL(req.url).searchParams.get('api_key') ?? '';
-      if (!key) return { ok: false, error: 'Missing API key' };
-      const { data } = await supabase
-        .from('api_keys')
-        .select('id')
-        .eq('tenant_id', tenantId)
-        .eq('key_hash', key)
-        .eq('status', 'active')
-        .limit(1);
-      return data?.length ? { ok: true } : { ok: false, error: 'Invalid API key' };
+      const authHeader = req.headers.get('authorization') ?? '';
+      const raw = mode === 'bearer'
+        ? (authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '')
+        : (req.headers.get('x-api-key') ?? '').trim(); // never from the URL: URLs end up in logs
+      if (!raw) return { ok: false, error: mode === 'bearer' ? 'Missing Bearer token' : 'Missing x-api-key header' };
+      try {
+        const key = await authenticateApiKey(supabase, raw, 'custom_api:invoke');
+        if (key.tenantId !== job.tenant_id || key.environment !== job.environment) {
+          return { ok: false, error: 'API key is not valid for this webhook' };
+        }
+        return { ok: true };
+      } catch (e) {
+        return {
+          ok: false,
+          error: e instanceof Error ? e.message : 'Invalid API key',
+          status: e instanceof AuthError ? e.status : 401,
+        };
+      }
     }
     case 'hmac': {
-      const sig = req.headers.get('x-signature') ?? req.headers.get('x-hub-signature-256') ?? '';
-      if (!sig) return { ok: false, error: 'Missing HMAC signature' };
-      return { ok: true };
+      const secret = String(config.hmac_secret ?? '');
+      if (!secret) return { ok: false, error: 'Webhook HMAC secret is not configured', status: 500 };
+      const headerName = String(config.hmac_header || 'X-Signature');
+      const sig = req.headers.get(headerName) ?? req.headers.get('x-hub-signature-256') ?? '';
+      if (!sig) return { ok: false, error: `Missing ${headerName} signature` };
+      const valid = await verifyHmacSignature(secret, rawBody, String(config.hmac_algorithm || 'SHA256'), sig);
+      return valid ? { ok: true } : { ok: false, error: 'Invalid signature' };
     }
+    case 'basic':
+    case 'oauth2':
+      return {
+        ok: false,
+        error: `"${mode}" authentication is not supported for webhooks — use API key, Bearer token or HMAC`,
+        status: 400,
+      };
     default:
-      return { ok: true };
+      return { ok: false, error: `Unknown authentication mode "${mode}"`, status: 400 };
   }
 }
 

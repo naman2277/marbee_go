@@ -484,8 +484,9 @@ function marbeeApiPlugin(): Plugin {
 }
 
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), '');
-  const openAiKey = env.VITE_OPENAI_API_KEY;
+  // AI providers are reached only through the ai-gateway / *-ai edge functions (SEC-06):
+  // no OpenAI dev proxy, and no AI keys in VITE_* variables (those are inlined into the bundle).
+  void loadEnv(mode, process.cwd(), '');
 
   return {
     plugins: [marbeeApiPlugin(), react(), tailwindcss()],
@@ -508,16 +509,6 @@ export default defineConfig(({ mode }) => {
         ],
       },
       proxy: {
-        ...(openAiKey
-          ? {
-              '/openai-api': {
-                target: 'https://api.openai.com',
-                changeOrigin: true,
-                rewrite: (p) => p.replace(/^\/openai-api/, '/v1'),
-                headers: { Authorization: `Bearer ${openAiKey}` },
-              },
-            }
-          : {}),
         '/mailjet-api': {
           target: 'https://api.mailjet.com',
           changeOrigin: true,

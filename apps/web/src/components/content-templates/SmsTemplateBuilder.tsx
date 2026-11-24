@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { Sparkles, MessageSquare, Smartphone, Zap } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 import { TemplateBuilderSection } from '@/components/content-templates/TemplateBuilderSection';
 import { PersonalizedTextarea } from '@/components/content-templates/PersonalizedField';
 import type { SmsContent } from '@/lib/content-templates';
@@ -37,7 +36,7 @@ function segmentInfo(message: string) {
 }
 
 export function SmsTemplateBuilder({ content, onChange }: Props) {
-  const { len, segments, encoding, maxPerSegment, percentOfSingle } = segmentInfo(content.message);
+  const { len, segments, encoding, maxPerSegment } = segmentInfo(content.message);
 
   return (
     <div className="space-y-5 text-xs">

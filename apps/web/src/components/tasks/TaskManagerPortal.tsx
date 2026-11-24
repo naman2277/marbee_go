@@ -18,7 +18,6 @@ import {
   Trash2,
   Filter,
   Check,
-  LayoutGrid,
   Clock,
   Send,
   Maximize2,
@@ -30,7 +29,6 @@ import {
   ArrowRight,
   CheckCircle2,
   Layers,
-  Sparkles,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
@@ -51,7 +49,6 @@ import {
   type TaskPriority,
   type TaskStatus,
   type ProjectItem,
-  type TaskComment,
 } from '@/lib/tasks';
 
 // 3D & Colorful Square Icon Badges

@@ -2,24 +2,14 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   AlertCircle,
-  BarChart3,
   Check,
   ChevronDown,
   ChevronRight,
   Clock,
   Database,
-  Eye,
-  Filter,
-  KeyRound,
-  Lock,
   Search,
-  Shield,
   Sparkles,
-  Tag,
-  User,
-  Users,
 } from 'lucide-react';
-import { Button } from '@/components/ui';
 import type { ColumnClassification, TableHealthProfile } from '@/lib/data-health-engine';
 
 type Props = {

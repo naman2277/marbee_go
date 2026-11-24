@@ -12,6 +12,7 @@ import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supa
 import { serve } from 'https://deno.land/std@0.208.0/http/server.ts';
 import { processMessage } from '../_shared/rtm-process.ts';
 import { nowIso } from '../_shared/rtm.ts';
+import { tenantIsActive } from '../_shared/tenant-guard.ts';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -54,10 +55,16 @@ serve(async (req) => {
     const { data: msg } = await supabase.from('rtm_messages')
       .select('id, tenant_id, status, state_history').eq('message_id', messageId).maybeSingle();
     if (!msg) { results.push({ message_id: messageId, status: 'not_found' }); continue; }
+    if (!(await tenantIsActive(supabase, msg.tenant_id as string))) {
+      results.push({ message_id: messageId, status: 'workspace_suspended' });
+      continue;
+    }
 
     if (userId) {
       const { data: member } = await supabase.from('tenant_users')
-        .select('tenant_id').eq('user_id', userId).eq('tenant_id', msg.tenant_id).maybeSingle();
+        .select('tenant_id').eq('user_id', userId).eq('tenant_id', msg.tenant_id)
+        .eq('status', 'active') // disabled members must not replay
+        .maybeSingle();
       if (!member) { results.push({ message_id: messageId, status: 'forbidden' }); continue; }
     }
 

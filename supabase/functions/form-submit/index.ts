@@ -15,6 +15,9 @@ import {
   verifyHostedCaptcha,
   type FormSecurityConfig,
 } from '../_shared/form-security.ts';
+import { loadVariablePlaintext } from '../_shared/global-vars.ts';
+import { encryptFieldsWithKey } from '../_shared/field-crypto.ts';
+import { tenantIsActive } from '../_shared/tenant-guard.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -207,7 +210,7 @@ serve(async (req) => {
 
     const { data: form, error: formErr } = await supabase
       .from('forms')
-      .select('id, tenant_id, environment, status, fields, schema_mapping, settings')
+      .select('id, name, tenant_id, environment, status, fields, schema_mapping, settings')
       .eq('id', formId)
       .eq('tenant_id', tenantId)
       .eq('environment', environment)
@@ -216,6 +219,7 @@ serve(async (req) => {
 
     if (formErr) return errorResponse(formErr.message, 500);
     if (!form) return errorResponse('Form not found or not published', 404);
+    if (!(await tenantIsActive(supabase, tenantId))) return errorResponse('This form is not available', 403);
 
     const fields = (form.fields ?? []) as FormField[];
     const settings = (form.settings ?? {}) as Record<string, unknown>;
@@ -334,15 +338,10 @@ serve(async (req) => {
         const secretVar = captcha.secret_variable;
         if (!secretVar) return errorResponse('CAPTCHA secret is not configured.', 500);
 
-        const { data: varRow } = await supabase
-          .from('global_variables')
-          .select('value, kind')
-          .eq('tenant_id', tenantId)
-          .eq('environment', environment)
-          .eq('name', secretVar)
-          .maybeSingle();
-
-        const secret = varRow?.value ? String(varRow.value) : Deno.env.get(secretVar);
+        // Secret variables are sealed with MARBEE_SECRETS_KEY (SEC-05); open them server-side.
+        // (Before, the sealed envelope itself was sent to the CAPTCHA provider and always failed.)
+        const varRow = await loadVariablePlaintext(supabase, tenantId, environment, secretVar, 'forms');
+        const secret = varRow?.plaintext ?? Deno.env.get(secretVar);
         if (!secret) return errorResponse('CAPTCHA secret could not be resolved.', 500);
 
         const verified = await verifyHostedCaptcha(
@@ -462,7 +461,7 @@ serve(async (req) => {
             .select('id')
             .eq('tenant_id', tenantId)
             .eq('environment', environment)
-            .eq('email', email)
+            .eq('email', email.trim().toLowerCase()) // TD-17: stored emails are lower-case (sql/92), so look up the same way.
             .is('deleted_at', null)
             .order('created_at', { ascending: true })
             .limit(1)
@@ -528,6 +527,23 @@ serve(async (req) => {
       }
     }
 
+    // Field-level encryption of the stored submission (SEC-05). Before, public submissions
+    // were stored in plaintext because the key lived only in an admin's browser.
+    let storedData: Record<string, unknown> = cleanData;
+    const encryption = (settings.encryption ?? {}) as { enabled?: boolean; key_variable?: string; encrypt_all?: boolean; fields?: string[] };
+    if (encryption.enabled && encryption.key_variable) {
+      const keyVar = await loadVariablePlaintext(supabase, tenantId, environment, encryption.key_variable, 'forms');
+      if (!keyVar || keyVar.kind !== 'encryption_key') {
+        // Refuse rather than silently storing personal data unencrypted.
+        return errorResponse('This form cannot accept responses right now (encryption key unavailable).', 503);
+      }
+      const formFields = (Array.isArray(form.fields) ? form.fields : []) as Array<{ name?: string; field_type?: string }>;
+      const targets = encryption.encrypt_all
+        ? formFields.filter((f) => f.name && !['heading', 'divider'].includes(String(f.field_type))).map((f) => String(f.name))
+        : (encryption.fields ?? []);
+      storedData = await encryptFieldsWithKey(cleanData, targets, keyVar.plaintext);
+    }
+
     const { data: submission, error: subErr } = await supabase
       .from('form_submissions')
       .insert({
@@ -535,7 +551,7 @@ serve(async (req) => {
         tenant_id: tenantId,
         environment,
         customer_id: customerId,
-        data: cleanData,
+        data: storedData,
       })
       .select('id')
       .single();

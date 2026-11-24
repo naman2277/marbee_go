@@ -9,7 +9,9 @@
 // resolved from Edge Function secrets — never from the browser.
 import { serve } from 'https://deno.land/std@0.208.0/http/server.ts';
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { callLlm, resolveProviderApiKey, type LlmProvider } from './llm.ts';
+import { callLlm, resolveProviderApiKey, type LlmProvider } from '../_shared/llm.ts';
+import { openSecret } from '../_shared/secret-box.ts';
+import { isServiceCaller, tenantIsActive } from '../_shared/tenant-guard.ts';
 
 type Mode = 'live' | 'test';
 
@@ -450,7 +452,7 @@ async function assertTenantAdmin(req: Request, tenantId: string): Promise<boolea
       .eq('tenant_id', tenantId)
       .eq('status', 'active')
       .maybeSingle();
-    return Boolean(data);
+    return Boolean(data) && (await tenantIsActive(service, tenantId));
   } catch (e) {
     console.error('[chatbot-runtime] assertTenantAdmin error:', e);
     return false;
@@ -499,6 +501,7 @@ serve(async (req) => {
         }
 
         if (!bot) return errorResponse(friendlyError('Chat bot not found.'), 404);
+        if (!(await tenantIsActive(supabase, bot.tenant_id as string))) return errorResponse(friendlyError('This assistant is not currently available.'), 403);
         if (mode === 'live' && bot.status !== 'published') {
           return errorResponse(friendlyError('This assistant is not currently available.'), 403);
         }
@@ -520,6 +523,7 @@ serve(async (req) => {
           .eq('id', botId)
           .maybeSingle();
         if (!bot) return errorResponse(friendlyError('Chat bot not found.'), 404);
+        if (!(await tenantIsActive(supabase, bot.tenant_id as string))) return errorResponse(friendlyError('This assistant is not currently available.'), 403);
         if (mode === 'live' && bot.status !== 'published') {
           return errorResponse(friendlyError('This assistant is not currently available.'), 403);
         }
@@ -578,6 +582,7 @@ serve(async (req) => {
           .eq('id', conversationId)
           .maybeSingle();
         if (!conv) return errorResponse('Conversation not found', 404);
+        if (!(await tenantIsActive(supabase, conv.tenant_id as string))) return errorResponse(friendlyError('This assistant is not currently available.'), 403);
 
         const { data: cta } = await supabase
           .from('mb_chatbot_ctas')
@@ -659,6 +664,7 @@ async function handleIdleFollowup(supabase: ReturnType<typeof getServiceClient>,
     supabase.from('mb_chatbot_conversations').select('id, status, message_count, idle_followup_sent_at').eq('id', conversationId).maybeSingle(),
   ]);
   if (!bot) return errorResponse('Bot not found', 404);
+  if (!(await tenantIsActive(supabase, bot.tenant_id as string))) return errorResponse(friendlyError('This assistant is not currently available.'), 403);
   if (mode === 'test' && !(await assertTenantAdmin(req, bot.tenant_id))) return errorResponse('Not authorized', 403);
   if (!conversation || conversation.status !== 'active') return jsonResponse({ skipped: true, reason: 'conversation not active' });
   if (conversation.idle_followup_sent_at) return jsonResponse({ skipped: true, reason: 'followup already sent' });
@@ -706,6 +712,7 @@ async function handleCloseSession(supabase: ReturnType<typeof getServiceClient>,
     supabase.from('mb_chatbot_sessions').select('*').eq('id', sessionId).maybeSingle(),
   ]);
   if (!bot) return errorResponse('Bot not found', 404);
+  if (!(await tenantIsActive(supabase, bot.tenant_id as string))) return errorResponse(friendlyError('This assistant is not currently available.'), 403);
   if (mode === 'test' && !(await assertTenantAdmin(req, bot.tenant_id))) return errorResponse('Not authorized', 403);
   if (!conversation) return errorResponse('Conversation not found', 404);
   if (conversation.status === 'completed' || conversation.status === 'closed') {
@@ -737,11 +744,13 @@ async function handleCloseSession(supabase: ReturnType<typeof getServiceClient>,
     // Try to use the LLM for a natural summary
     let providerRow: Json | null = null;
     if (bot.llm_provider_id) {
-      const { data } = await supabase.from('ai_engine_providers').select('*').eq('id', bot.llm_provider_id).maybeSingle();
+      // Scoped to the bot's own tenant: a bot must never use another tenant's provider/key.
+      const { data } = await supabase.from('ai_engine_providers').select('*')
+        .eq('id', bot.llm_provider_id).eq('tenant_id', bot.tenant_id).maybeSingle();
       providerRow = data;
     }
     const provider = (providerRow?.provider as string) || 'openai';
-    const apiKey = resolveProviderApiKey(provider as 'openai' | 'anthropic' | 'google' | 'mistral', providerRow?.api_key_encrypted as string | undefined);
+    const apiKey = resolveProviderApiKey(provider, await openSecret(providerRow?.api_key_encrypted as string | undefined));
 
     if (apiKey && transcript) {
       try {
@@ -750,7 +759,7 @@ async function handleCloseSession(supabase: ReturnType<typeof getServiceClient>,
           'any information collected, and the outcome. Be factual and brief.\n\nConversation:\n' + transcript.slice(0, 3000);
 
         const result = await callLlm({
-          provider: provider as 'openai' | 'anthropic' | 'google' | 'mistral',
+          provider: provider as LlmProvider,
           model: (providerRow?.model_name as string) || 'gpt-4o-mini',
           apiKey,
           systemPrompt: `You are a conversation summarizer for ${bot.name || 'a chat bot'}. Output only the summary text, no JSON.`,
@@ -902,10 +911,11 @@ async function handleSubmitFeedback(supabase: ReturnType<typeof getServiceClient
 
   const { data: conversation } = await supabase
     .from('mb_chatbot_conversations')
-    .select('id, feedback_rating')
+    .select('id, tenant_id, feedback_rating')
     .eq('id', conversationId)
     .maybeSingle();
   if (!conversation) return errorResponse('Conversation not found', 404);
+  if (!(await tenantIsActive(supabase, conversation.tenant_id as string))) return errorResponse(friendlyError('This assistant is not currently available.'), 403);
   if (conversation.feedback_rating) return jsonResponse({ skipped: true, reason: 'feedback already submitted' });
 
   await supabase.from('mb_chatbot_conversations').update({
@@ -946,6 +956,7 @@ async function handleSendMessage(supabase: ReturnType<typeof getServiceClient>, 
   ]);
 
   if (!bot) return errorResponse(friendlyError('Chat bot not found.'), 404);
+  if (!(await tenantIsActive(supabase, bot.tenant_id as string))) return errorResponse(friendlyError('This assistant is not currently available.'), 403);
   if (mode === 'live' && bot.status !== 'published') {
     return errorResponse(friendlyError('This assistant is not currently available.'), 403);
   }
@@ -1081,11 +1092,13 @@ async function handleSendMessage(supabase: ReturnType<typeof getServiceClient>, 
   // 9. Resolve LLM provider + key
   let providerRow: Json | null = null;
   if (bot.llm_provider_id) {
-    const { data } = await supabase.from('ai_engine_providers').select('*').eq('id', bot.llm_provider_id).maybeSingle();
+    // Scoped to the bot's own tenant: a bot must never use another tenant's provider/key.
+    const { data } = await supabase.from('ai_engine_providers').select('*')
+      .eq('id', bot.llm_provider_id).eq('tenant_id', bot.tenant_id).maybeSingle();
     providerRow = data;
   }
   const provider = (providerRow?.provider as LlmProvider) || 'openai';
-  const rawKey = resolveProviderApiKey(provider, providerRow?.api_key_encrypted as string | undefined);
+  const rawKey = resolveProviderApiKey(provider, await openSecret(providerRow?.api_key_encrypted as string | undefined));
   const apiKey = rawKey && rawKey.trim() ? rawKey.trim() : null;
 
   const ctaKeys = (ctas || []).map((c) => c.cta_key as string);
@@ -1443,6 +1456,12 @@ async function handleSendMessage(supabase: ReturnType<typeof getServiceClient>, 
 
 async function handleProcessQueue(supabase: ReturnType<typeof getServiceClient>, req: Request, body: Json, mode: Mode) {
   const botId = body.bot_id ? String(body.bot_id) : null;
+  // Phase 0: was callable by anyone and processed every workspace's queue.
+  if (!isServiceCaller(req)) {
+    if (!botId) return errorResponse('bot_id is required', 400);
+    const { data: owner } = await supabase.from('mb_chatbots').select('tenant_id').eq('id', botId).maybeSingle();
+    if (!owner || !(await assertTenantAdmin(req, owner.tenant_id as string))) return errorResponse('Not authorized', 403);
+  }
   const conversationId = body.conversation_id ? String(body.conversation_id) : null;
   const limit = Math.min(Number(body.limit || 50), 100);
 

@@ -5,19 +5,11 @@ import { DataMonitorTabs } from '@/components/data/DataMonitorTabs';
 import {
   AlertCircle,
   AlertTriangle,
-  ArrowRight,
-  Calendar,
   Check,
   CheckCircle2,
-  Clock,
-  Code,
   Copy,
   Database,
-  ExternalLink,
-  Filter,
-  GitMerge,
   KeyRound,
-  Layers,
   Mail,
   Merge,
   Phone,
@@ -25,11 +17,8 @@ import {
   Search,
   ShieldCheck,
   SlidersHorizontal,
-  Sparkles,
   Trash2,
-  User,
   Users,
-  Wand2,
   X,
   Zap,
 } from 'lucide-react';
@@ -60,6 +49,14 @@ import {
   dismissHealthWorker,
   type HealthWorkerState,
 } from '@/lib/data-health-worker';
+
+/** Impact shown on a join-index card: explicit value, else derived from the issue status. */
+function joinImpact(item: JoinIndexIssue): 'critical' | 'high' | 'medium' | 'low' {
+  if (item.impact) return item.impact;
+  if (item.status === 'orphan_warning') return 'critical';
+  if (item.status === 'missing_index') return 'high';
+  return 'low';
+}
 
 function playSuccessPingSound() {
   try {
@@ -560,21 +557,21 @@ export function DataQualityPage() {
               >
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    <h4 className="text-xs font-bold text-slate-900">{item.title}</h4>
+                    <h4 className="text-xs font-bold text-slate-900">{item.title ?? `${item.sourceTable}.${item.sourceColumn} → ${item.targetTable}`}</h4>
                     <p className="text-[11px] font-mono text-slate-500 mt-0.5">
                       {item.sourceTable}.{item.sourceColumn} → {item.targetTable}.{item.targetColumn}
                     </p>
                   </div>
                   <span
                     className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                      item.impact === 'critical'
+                      joinImpact(item) === 'critical'
                         ? 'bg-rose-100 text-rose-800'
-                        : item.impact === 'high'
+                        : joinImpact(item) === 'high'
                         ? 'bg-amber-100 text-amber-800'
                         : 'bg-slate-100 text-slate-700'
                     }`}
                   >
-                    {item.impact} impact
+                    {joinImpact(item)} impact
                   </span>
                 </div>
 
@@ -582,11 +579,11 @@ export function DataQualityPage() {
 
                 <div className="rounded-xl bg-slate-900 p-3 relative group">
                   <pre className="font-mono text-[11px] text-emerald-400 overflow-x-auto whitespace-pre-wrap">
-                    {item.recommendedSql}
+                    {item.recommendedSql ?? item.recommendedIndexSql ?? '-- no change needed'}
                   </pre>
                   <button
                     type="button"
-                    onClick={() => handleCopySql(item.id, item.recommendedSql)}
+                    onClick={() => handleCopySql(item.id, item.recommendedSql ?? item.recommendedIndexSql ?? '')}
                     className="absolute right-2 top-2 rounded-lg bg-slate-800 p-1.5 text-slate-300 opacity-80 hover:opacity-100 hover:text-white transition"
                     title="Copy SQL Migration"
                   >

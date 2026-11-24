@@ -7,12 +7,6 @@ import { RoleEditorModal, canManageRoles, type RoleEditorValues } from '@/compon
 import { useAuth } from '@/contexts/AuthContext';
 import { PERMISSIONS, PERMISSION_CATALOG, PERMISSION_CATEGORY_LABELS } from '@/lib/permissions';
 import {
-  PASSWORD_REQUIREMENTS,
-  passwordStrengthLabel,
-  passwordsMatch,
-  validatePassword,
-} from '@/lib/password-policy';
-import {
   disableMember,
   createTenantUser,
   createTenantRole,
@@ -50,12 +44,9 @@ export function AccessManagementPage() {
   const [inviteRoleId, setInviteRoleId] = useState('');
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [createSuccess, setCreateSuccess] = useState<string | null>(null);
-  const [createDelivery, setCreateDelivery] = useState<CreateDelivery>('password');
-  const [createPassword, setCreatePassword] = useState('');
-  const [createPasswordConfirm, setCreatePasswordConfirm] = useState('');
+  // SEC-12: admins never set or know a member's password — new members get a setup link.
+  const createDelivery = 'setup_link' as CreateDelivery;
   const [resetTarget, setResetTarget] = useState<ResetTarget | null>(null);
-  const [resetPassword, setResetPassword] = useState('');
-  const [resetPasswordConfirm, setResetPasswordConfirm] = useState('');
   const [resetSuccess, setResetSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [roleEditorOpen, setRoleEditorOpen] = useState(false);
@@ -90,21 +81,8 @@ export function AccessManagementPage() {
   const members = membersQuery.data ?? [];
   const resolvedRoleId = inviteRoleId || roles[0]?.roleId || '';
 
-  const createPasswordValidation = useMemo(
-    () => validatePassword(createPassword, inviteEmail.trim() || undefined),
-    [createPassword, inviteEmail],
-  );
-
-  const resetPasswordValidation = useMemo(
-    () => validatePassword(resetPassword, resetTarget?.email),
-    [resetPassword, resetTarget?.email],
-  );
-
   const clearPasswordFields = () => {
-    setCreatePassword('');
-    setCreatePasswordConfirm('');
-    setResetPassword('');
-    setResetPasswordConfirm('');
+    /* no password fields any more (SEC-12) */
   };
 
   const createUserMutation = useMutation({
@@ -113,7 +91,7 @@ export function AccessManagementPage() {
         email: inviteEmail,
         fullName: createFullName,
         roleId: resolvedRoleId,
-        password: createDelivery === 'password' ? createPassword : undefined,
+        password: undefined,
       }),
     onSuccess: (result) => {
       setCreateSuccess(result.message);
@@ -132,7 +110,6 @@ export function AccessManagementPage() {
       return resetTenantUserPassword(tenantId, environment, {
         userId: resetTarget.userId,
         memberEmail: resetTarget.email,
-        password: resetPassword,
       });
     },
     onSuccess: (result) => {
@@ -276,7 +253,6 @@ export function AccessManagementPage() {
               <Button onClick={() => {
                 setInviteOpen(true);
                 setAddMode('create');
-                setCreateDelivery(canManage ? 'password' : 'setup_link');
                 setInviteLink(null);
                 setCreateSuccess(null);
                 setInviteEmail('');
@@ -411,7 +387,7 @@ export function AccessManagementPage() {
                                 }}
                               >
                                 <KeyRound className="mr-1 h-4 w-4" />
-                                Reset password
+                                Send reset link
                               </Button>
                             )}
                             {member.userId !== user?.id && member.status === 'active' && (
@@ -642,78 +618,9 @@ export function AccessManagementPage() {
                         ))}
                       </select>
                     </div>
-                    {addMode === 'create' && canManage && (
-                      <div className="flex gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1">
-                        <button
-                          type="button"
-                          onClick={() => { setCreateDelivery('password'); setError(null); }}
-                          className={`flex-1 rounded-md px-3 py-2 text-sm font-medium ${
-                            createDelivery === 'password' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500'
-                          }`}
-                        >
-                          Set password now
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => { setCreateDelivery('setup_link'); setError(null); }}
-                          className={`flex-1 rounded-md px-3 py-2 text-sm font-medium ${
-                            createDelivery === 'setup_link' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500'
-                          }`}
-                        >
-                          Setup link / email
-                        </button>
-                      </div>
-                    )}
-                    {addMode === 'create' && createDelivery === 'password' && canManage && (
-                      <>
-                        <div>
-                          <label className="text-xs font-medium text-slate-600">Password</label>
-                          <input
-                            type="password"
-                            autoComplete="new-password"
-                            className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                            value={createPassword}
-                            onChange={(e) => setCreatePassword(e.target.value)}
-                            placeholder="Minimum 12 characters"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-xs font-medium text-slate-600">Confirm password</label>
-                          <input
-                            type="password"
-                            autoComplete="new-password"
-                            className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                            value={createPasswordConfirm}
-                            onChange={(e) => setCreatePasswordConfirm(e.target.value)}
-                          />
-                        </div>
-                        {createPassword.length > 0 && (
-                          <div className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                            <p className={`font-medium ${passwordStrengthLabel(createPasswordValidation.score).color}`}>
-                              Strength: {passwordStrengthLabel(createPasswordValidation.score).label}
-                            </p>
-                            <ul className="mt-2 space-y-0.5">
-                              {PASSWORD_REQUIREMENTS.map((req) => (
-                                <li key={req}>{req}</li>
-                              ))}
-                            </ul>
-                            {createPasswordValidation.errors.map((msg) => (
-                              <p key={msg} className="mt-1 text-red-600">{msg}</p>
-                            ))}
-                            {createPasswordConfirm && !passwordsMatch(createPassword, createPasswordConfirm) && (
-                              <p className="mt-1 text-red-600">Passwords do not match</p>
-                            )}
-                          </div>
-                        )}
-                        <p className="text-xs text-slate-500">
-                          The password is set once and cannot be viewed again. Share it securely with the user so they
-                          can sign in immediately.
-                        </p>
-                      </>
-                    )}
                     {addMode === 'create' && createDelivery === 'setup_link' && (
                       <p className="text-xs text-slate-500">
-                        User receives a setup link (or email when SMTP is configured) to choose their own password.
+                        The new member receives a setup link by email and chooses their own password. Admins never set or see member passwords.
                       </p>
                     )}
                     {error && <p className="text-sm text-red-600">{error}</p>}
@@ -726,10 +633,6 @@ export function AccessManagementPage() {
                             || !createFullName.trim()
                             || !resolvedRoleId
                             || createUserMutation.isPending
-                            || (createDelivery === 'password' && (
-                              !createPasswordValidation.valid
-                              || !passwordsMatch(createPassword, createPasswordConfirm)
-                            ))
                           }
                           onClick={() => createUserMutation.mutate()}
                         >
@@ -798,62 +701,23 @@ export function AccessManagementPage() {
         {resetTarget && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
             <Card className="w-full max-w-lg p-6">
-              <h2 className="text-lg font-semibold text-slate-900">Reset password</h2>
+              <h2 className="text-lg font-semibold text-slate-900">Send password reset link</h2>
               <p className="mt-1 text-sm text-slate-500">
-                Set a new password for {resetTarget.name ?? resetTarget.email}. It cannot be viewed again after you save.
+                {resetTarget.name ?? resetTarget.email} will get an email with a one-time link to choose a new password. Only they can use it — you never see or set their password.
               </p>
 
               {!resetSuccess ? (
                 <div className="mt-6 space-y-4">
-                  {resetTarget.status === 'invited' && (
-                    <p className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-900">
-                      This member has not finished setup. Saving a password will activate their account.
-                    </p>
-                  )}
-                  <div>
-                    <label className="text-xs font-medium text-slate-600">New password</label>
-                    <input
-                      type="password"
-                      autoComplete="new-password"
-                      className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                      value={resetPassword}
-                      onChange={(e) => setResetPassword(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-slate-600">Confirm password</label>
-                    <input
-                      type="password"
-                      autoComplete="new-password"
-                      className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                      value={resetPasswordConfirm}
-                      onChange={(e) => setResetPasswordConfirm(e.target.value)}
-                    />
-                  </div>
-                  {resetPassword.length > 0 && (
-                    <div className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                      {resetPasswordValidation.errors.map((msg) => (
-                        <p key={msg} className="text-red-600">{msg}</p>
-                      ))}
-                      {resetPasswordConfirm && !passwordsMatch(resetPassword, resetPasswordConfirm) && (
-                        <p className="text-red-600">Passwords do not match</p>
-                      )}
-                    </div>
-                  )}
                   {error && <p className="text-sm text-red-600">{error}</p>}
                   <div className="flex justify-end gap-2">
                     <Button variant="secondary" onClick={() => { setResetTarget(null); clearPasswordFields(); setError(null); }}>
                       Cancel
                     </Button>
                     <Button
-                      disabled={
-                        resetPasswordMutation.isPending
-                        || !resetPasswordValidation.valid
-                        || !passwordsMatch(resetPassword, resetPasswordConfirm)
-                      }
+                      disabled={resetPasswordMutation.isPending}
                       onClick={() => resetPasswordMutation.mutate()}
                     >
-                      Save new password
+                      {resetPasswordMutation.isPending ? 'Sending…' : 'Send reset link'}
                     </Button>
                   </div>
                 </div>

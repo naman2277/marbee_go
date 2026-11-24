@@ -128,7 +128,7 @@ DO $$
 BEGIN
   EXECUTE 'CREATE OR REPLACE FUNCTION auth.tenant_id() RETURNS uuid LANGUAGE sql STABLE AS $f$ SELECT public.jwt_tenant_id() $f$';
   EXECUTE 'GRANT EXECUTE ON FUNCTION auth.tenant_id() TO authenticated, anon, service_role';
-EXCEPTION WHEN insufficient_privilege OR undefined_schema THEN
+EXCEPTION WHEN insufficient_privilege OR invalid_schema_name THEN
   RAISE NOTICE 'auth.tenant_id() alias not created (auth schema not writable) — use public.jwt_tenant_id().';
 END$$;
 
@@ -139,6 +139,21 @@ END$$;
 --       enabled = true
 --       uri = "pg-functions://postgres/public/custom_access_token_hook"
 -- -----------------------------------------------------------------------------
+-- TD-12: suspended workspaces get no access (same definition as sql/91).
+CREATE OR REPLACE FUNCTION public.tenant_is_active(p_tenant_id uuid)
+RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public
+AS $$
+  SELECT coalesce((SELECT t.status <> 'suspended' FROM public.tenants t WHERE t.id = p_tenant_id), false);
+$$;
+REVOKE ALL ON FUNCTION public.tenant_is_active(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.tenant_is_active(uuid) TO service_role;
+DO $$
+BEGIN
+  EXECUTE 'GRANT EXECUTE ON FUNCTION public.tenant_is_active(uuid) TO supabase_auth_admin';
+EXCEPTION WHEN undefined_object THEN NULL;
+END$$;
+
 CREATE OR REPLACE FUNCTION public.custom_access_token_hook(event jsonb)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -163,6 +178,7 @@ BEGIN
   JOIN public.roles r ON r.id = tu.role_id
   WHERE tu.user_id = v_uid
     AND tu.status = 'active'
+    AND public.tenant_is_active(tu.tenant_id)
   ORDER BY
     (coalesce(tu.settings ->> 'active_tenant_id', '') ~*
        '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
@@ -210,14 +226,15 @@ AS $$
 DECLARE
   v_claim text := public.jwt_claims() ->> 'tenant_id';
 BEGIN
-  IF v_claim IS NOT NULL AND v_claim <> '' THEN
+  IF v_claim IS NOT NULL AND v_claim <> '' AND public.tenant_is_active(v_claim::uuid) THEN
     RETURN NEXT v_claim::uuid;
     RETURN;
   END IF;
   RETURN QUERY
     SELECT tu.tenant_id
     FROM public.tenant_users tu
-    WHERE tu.user_id = auth.uid() AND tu.status = 'active';
+    WHERE tu.user_id = auth.uid() AND tu.status = 'active'
+      AND public.tenant_is_active(tu.tenant_id);
 END;
 $$;
 
@@ -242,6 +259,9 @@ AS $$
 DECLARE
   v_claims jsonb := public.jwt_claims();
 BEGIN
+  IF NOT public.tenant_is_active(p_tenant_id) THEN
+    RETURN false;
+  END IF;
   IF (v_claims ->> 'tenant_id')::uuid IS NOT DISTINCT FROM p_tenant_id
      AND v_claims ? 'perms' THEN
     RETURN (v_claims -> 'perms') ? p_permission
@@ -276,6 +296,9 @@ AS $$
 DECLARE
   v_claims jsonb := public.jwt_claims();
 BEGIN
+  IF NOT public.tenant_is_active(p_tenant_id) THEN
+    RETURN false;
+  END IF;
   IF (v_claims ->> 'tenant_id')::uuid IS NOT DISTINCT FROM p_tenant_id THEN
     RETURN coalesce(v_claims ->> 'app_role', '') = 'tenant_admin';
   END IF;

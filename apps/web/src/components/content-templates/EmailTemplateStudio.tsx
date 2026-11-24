@@ -16,10 +16,8 @@ import {
   Clock,
   Code,
   Copy,
-  Download,
   ExternalLink,
   Eye,
-  FileCode,
   FileText,
   Folder,
   Forward,
@@ -34,7 +32,6 @@ import {
   LayoutGrid,
   List,
   Mail,
-  Maximize2,
   Menu,
   MessageSquare,
   Minus,
@@ -44,19 +41,14 @@ import {
   MoveHorizontal,
   Palette,
   SlidersHorizontal,
-  PanelLeftClose,
   Pencil,
-  Plane,
-  PlaySquare,
   Plus,
   Printer,
-  Redo2,
   Reply,
   RotateCcw,
   Search,
   Send,
   Settings,
-  Share2,
   Shield,
   ShieldCheck,
   Smile,
@@ -72,17 +64,10 @@ import {
   User,
   Users,
   Video,
-  Wand2,
   X,
   Zap,
   ArrowUp,
   ArrowDown,
-  Bold,
-  Italic,
-  Underline,
-  Strikethrough,
-  Superscript,
-  Subscript,
   Unlink,
   Highlighter,
   Link,
@@ -90,13 +75,11 @@ import {
   AlertTriangle,
   RefreshCw,
   Wifi,
-  Battery,
   Lock,
   Unlock,
   type LucideIcon,
 } from 'lucide-react';
-import { Button } from '@/components/ui';
-import type { EmailBlock, EmailBlockType, EmailGlobalTheme } from '@/lib/email-builder-types';
+import type { EmailBlock } from '@/lib/email-builder-types';
 import { DEFAULT_EMAIL_THEME } from '@/lib/email-builder-types';
 import { renderBlocksToAmpHtml, renderBlocksToHtml, renderBlocksToPlainText } from '@/lib/email-renderer';
 import type { EmailContent } from '@/lib/content-templates';
@@ -179,29 +162,6 @@ export const CUSTOMER_MERGE_TAGS = [
   },
 ];
 
-const LANDING_PAGES_LIST = [
-  {
-    group: '🌟 Active Campaign Landing Pages',
-    items: [
-      { label: 'Summer Mega Flash Sale 2026', url: 'https://store.marbee.com/promo/summer-sale', defaultText: 'Shop Summer Flash Sale' },
-      { label: 'VIP Customer Loyalty Rewards Portal', url: 'https://rewards.marbee.com/vip-portal', defaultText: 'Claim Your VIP Rewards' },
-      { label: 'New Product Line Early Access Launch', url: 'https://launch.marbee.com/early-access', defaultText: 'Get Early Access' },
-      { label: '1-on-1 Consultation & Demo Booking', url: 'https://booking.marbee.com/demo', defaultText: 'Book Free Demo' },
-      { label: 'Customer Satisfaction Survey & Feedback', url: 'https://feedback.marbee.com/survey', defaultText: 'Take 2-Min Survey' },
-      { label: 'Exclusive Members Coupon Code', url: 'https://store.marbee.com/coupon/{{discount_code}}', defaultText: 'Apply Exclusive Coupon' },
-    ],
-  },
-  {
-    group: '⚙️ System & Email Compliance Links',
-    items: [
-      { label: '1-Click Instant Unsubscribe', url: '{{unsubscribe_url}}', defaultText: 'Unsubscribe' },
-      { label: 'View Email in Web Browser', url: '{{view_in_browser}}', defaultText: 'View in Browser' },
-      { label: 'Manage Email & SMS Preferences', url: '{{preferences_url}}', defaultText: 'Update Preferences' },
-      { label: 'Forward Email to a Friend', url: '{{forward_url}}', defaultText: 'Forward to a friend' },
-      { label: 'Terms of Service & Privacy Policy', url: 'https://marbee.com/privacy', defaultText: 'Privacy Policy' },
-    ],
-  },
-];
 
 /**
  * Collapsible section for the right inspector panel. Keeps the panel tidy by
@@ -548,13 +508,10 @@ const PANEL_FONTS = [
 ];
 
 export function EmailTemplateStudio({
-  templateId,
   content,
   initialStatus,
   onChange,
-  personalizationSample,
   templateName = 'New email',
-  createdDate = 'March 27, 2023',
   onSave,
   onBack,
 }: Props) {
@@ -610,9 +567,6 @@ export function EmailTemplateStudio({
   const [mergeTagMenu, setMergeTagMenu] = useState<'body' | 'slot' | 'title' | null>(null);
 
   // Inline Rich-Text Formatting States & Refs (Link, Bold, Italic, Underline, Font, Color)
-  const titleInputRef = useRef<HTMLInputElement>(null);
-  const paraTextareaRef = useRef<HTMLTextAreaElement>(null);
-  const slotTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   const [linkModal, setLinkModal] = useState<{
     open: boolean;
@@ -628,21 +582,8 @@ export function EmailTemplateStudio({
     hadSelection?: boolean;
   } | null>(null);
 
-  const [activeInlinePicker, setActiveInlinePicker] = useState<{
-    type: 'color' | 'font' | 'merge';
-    blockId: string;
-    fieldKey: string;
-  } | null>(null);
 
   // Floating Inline Editing Toolbar State
-  const [floatingToolbar, setFloatingToolbar] = useState<{
-    open: boolean;
-    x: number;
-    y: number;
-    blockId: string;
-    fieldKey: string;
-    selectedText: string;
-  } | null>(null);
 
   const [activeFloatingDropdown, setActiveFloatingDropdown] = useState<
     'color' | 'font' | 'special_links' | 'merge_tags' | 'symbols' | 'emojis' | null
@@ -713,7 +654,7 @@ export function EmailTemplateStudio({
     return [];
   });
 
-  const [doubleClickedBlockId, setDoubleClickedBlockId] = useState<string | null>(null);
+  const [, setDoubleClickedBlockId] = useState<string | null>(null);
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(() => {
     if (Array.isArray(content?.builder_state?.blocks) && content.builder_state.blocks.length > 0) {
       return content.builder_state.blocks[0].id;
@@ -1073,49 +1014,7 @@ export function EmailTemplateStudio({
     setMergeTagMenu(null);
   };
 
-  const handleOpenFloatingToolbar = (
-    blockId: string,
-    fieldKey: string,
-    targetEl?: HTMLElement | null
-  ) => {
-    const selection = window.getSelection();
-    const hasSelection = selection && !selection.isCollapsed && selection.rangeCount > 0;
-    const selectedText = hasSelection ? selection.toString().trim() : '';
 
-    let x = window.innerWidth / 2;
-    let y = 200;
-
-    if (hasSelection) {
-      try {
-        const range = selection.getRangeAt(0);
-        const rect = range.getBoundingClientRect();
-        if (rect && rect.width > 0) {
-          x = rect.left + rect.width / 2;
-          y = rect.top - 12;
-        }
-      } catch (err) {
-        // fallback
-      }
-    } else if (targetEl) {
-      const rect = targetEl.getBoundingClientRect();
-      x = rect.left + rect.width / 2;
-      y = rect.top - 12;
-    }
-
-    setFloatingToolbar({
-      open: true,
-      x: Math.max(200, Math.min(window.innerWidth - 220, x)),
-      y: Math.max(70, y),
-      blockId,
-      fieldKey,
-      selectedText,
-    });
-    setSelectedBlockId(blockId);
-  };
-
-  const handleCanvasTextSelection = (blockId: string, fieldKey: string, targetEl?: HTMLElement | null) => {
-    handleOpenFloatingToolbar(blockId, fieldKey, targetEl);
-  };
 
   const handleDropReorder = (sourceId: string | null, targetId: string) => {
     if (!sourceId || sourceId === targetId) return;
@@ -1408,86 +1307,6 @@ export function EmailTemplateStudio({
     setActiveFloatingDropdown(null);
   };
 
-  const applyInlineFormat = (
-    blockId: string,
-    fieldKey: string,
-    formatType: 'bold' | 'italic' | 'underline' | 'strikethrough' | 'superscript' | 'subscript' | 'link' | 'unlink' | 'color' | 'font' | 'highlight' | 'clear' | 'insert',
-    extraValue?: string,
-    targetInput?: HTMLInputElement | HTMLTextAreaElement | null,
-    explicitSelectedText?: string
-  ) => {
-    // If the user hasn't explicitly selected text in the sidebar textarea, it means they are likely interacting via canvas selection
-    if (!targetInput || (targetInput.selectionStart === 0 && targetInput.selectionEnd === 0 && document.activeElement !== targetInput)) {
-        return handleToolbarFormat(blockId, fieldKey, formatType, extraValue);
-    }
-
-    const block = blocks.find((b) => b.id === blockId);
-    if (!block) return;
-
-    let currentText = '';
-    if (fieldKey === 'slot' && typeof selectedSlotIndex === 'number') {
-      const cols = (block.content as any).columns;
-      currentText = cols?.[selectedSlotIndex]?.content?.text || '';
-    } else {
-      currentText = (block.content as any)[fieldKey] ?? (block.content as any).text ?? (block.content as any).body ?? '';
-    }
-
-    let start = 0;
-    let end = currentText.length;
-
-    if (targetInput && typeof targetInput.selectionStart === 'number' && typeof targetInput.selectionEnd === 'number') {
-      start = targetInput.selectionStart;
-      end = targetInput.selectionEnd;
-    }
-
-    const selectedText = explicitSelectedText || (start !== end ? currentText.substring(start, end) : currentText);
-
-    let formatted = selectedText;
-    if (formatType === 'bold') formatted = `<strong>${selectedText}</strong>`;
-    else if (formatType === 'italic') formatted = `<em>${selectedText}</em>`;
-    else if (formatType === 'underline') formatted = `<u>${selectedText}</u>`;
-    else if (formatType === 'strikethrough') formatted = `<s>${selectedText}</s>`;
-    else if (formatType === 'superscript') formatted = `<sup>${selectedText}</sup>`;
-    else if (formatType === 'subscript') formatted = `<sub>${selectedText}</sub>`;
-    else if (formatType === 'link') formatted = `<a href="${extraValue || 'https://'}" style="color: #6366f1; text-decoration: underline;" target="_blank">${selectedText || 'Click here'}</a>`;
-    else if (formatType === 'unlink') formatted = selectedText.replace(/<\/?a[^>]*>/gi, '');
-    else if (formatType === 'color') formatted = `<span style="color: ${extraValue || '#6366f1'};">${selectedText}</span>`;
-    else if (formatType === 'font') formatted = `<span style="font-family: ${extraValue || 'Georgia, serif'};">${selectedText}</span>`;
-    else if (formatType === 'highlight') formatted = `<span style="background-color: ${extraValue || '#fef08a'}; padding: 1px 3px; border-radius: 2px;">${selectedText}</span>`;
-    else if (formatType === 'clear') formatted = selectedText.replace(/<[^>]*>?/gm, '');
-    else if (formatType === 'insert') formatted = extraValue || '';
-
-    let newText = '';
-    if (explicitSelectedText && currentText.includes(explicitSelectedText)) {
-      newText = currentText.replace(explicitSelectedText, formatted);
-    } else if (start !== end) {
-      newText = currentText.substring(0, start) + formatted + currentText.substring(end);
-    } else {
-      newText = currentText ? `${currentText} ${formatted}` : formatted;
-    }
-
-    if (fieldKey === 'slot' && typeof selectedSlotIndex === 'number') {
-      const cols = [...((block.content as any).columns || [])];
-      cols[selectedSlotIndex] = {
-        ...cols[selectedSlotIndex],
-        content: { ...cols[selectedSlotIndex]?.content, text: newText },
-      };
-      handleUpdateBlockContent(blockId, { columns: cols });
-    } else {
-      const updated: Record<string, any> = { [fieldKey]: newText };
-      if (fieldKey === 'text' || fieldKey === 'body') {
-        updated.title = newText;
-        updated.heading = newText;
-        updated.text = newText;
-        updated.body = newText;
-      }
-      handleUpdateBlockContent(blockId, updated);
-    }
-
-    setActiveInlinePicker(null);
-    setActiveFloatingDropdown(null);
-    showToast(`Applied ${formatType} formatting`);
-  };
 
   const handleSwitchViewMode = (mode: ViewMode) => {
     const wasHtmlToVisual = viewMode === 'html' && mode === 'visual';
@@ -2803,23 +2622,6 @@ export function EmailTemplateStudio({
   };
 
   // 15 CONTENT TILES (Matching Image 2: media_1787167517837.png)
-  const CONTENT_TILES = [
-    { id: 'TITLE', label: 'TITLE', icon: Type },
-    { id: 'PARAGRAPH', label: 'PARAGRAPH', icon: FileText },
-    { id: 'LIST', label: 'LIST', icon: List },
-    { id: 'IMAGE', label: 'IMAGE', icon: ImageIcon },
-    { id: 'BUTTON', label: 'BUTTON', icon: Zap },
-    { id: 'TABLE', label: 'TABLE', icon: Table },
-    { id: 'DIVIDER', label: 'DIVIDER', icon: Minus },
-    { id: 'SPACER', label: 'SPACER', icon: Move },
-    { id: 'SOCIAL', label: 'SOCIAL', icon: Plus },
-    { id: 'HTML', label: 'HTML', icon: Code },
-    { id: 'VIDEO', label: 'VIDEO', icon: Video },
-    { id: 'ICONS', label: 'ICONS', icon: Star },
-    { id: 'MENU', label: 'MENU', icon: Menu },
-    { id: 'STICKER', label: 'STICKER', icon: Smile },
-    { id: 'GIF', label: 'GIF', icon: PlaySquare },
-  ];
 
   // Helper to build iframe srcDoc for preview (shared between desktop & mobile)
   const buildIframeSrc = (isMobile: boolean): string => {

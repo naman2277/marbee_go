@@ -15,8 +15,6 @@ import {
   Share2,
   Trash2,
   Webhook,
-  Video,
-  Sparkles,
   Globe,
 } from 'lucide-react';
 import { PageHeader, Card, Button, Badge, EmptyState } from '@/components/ui';
