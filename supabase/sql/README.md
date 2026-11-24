@@ -1,5 +1,8 @@
 # Marbee — Supabase SQL Setup
 
+> **Staging / production:** don't paste these scripts by hand — use the setup pipeline (D-021):
+> [`docs/cpo/runbooks/environment-setup.md`](../../docs/cpo/runbooks/environment-setup.md).
+
 Run these scripts **in order** in your Supabase project:
 
 **Dashboard → SQL Editor → New query → paste → Run**

@@ -1,5 +1,8 @@
 # Deploy Edge Functions via Supabase Web Dashboard
 
+> **Staging / production:** don't paste these functions by hand — use the setup pipeline (D-021):
+> [`docs/cpo/runbooks/environment-setup.md`](../../docs/cpo/runbooks/environment-setup.md).
+
 Your **Failed to fetch** error happens because Edge Functions are **not deployed yet** (returns 404).
 
 Go to: **https://supabase.com/dashboard/project/uqffhyaftlwetqigfenp/functions**

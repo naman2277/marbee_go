@@ -1,0 +1,24 @@
+{
+  "$comment": "Order and exclusions for scripts/db (D-021). Scripts run in filename order within each phase. Add a new numbered script and it is picked up automatically — only list it here if it must NOT run in the pipeline.",
+  "phases": [
+    {
+      "name": "core",
+      "dir": "supabase/sql",
+      "pattern": "^\\d{2}_.*\\.sql$",
+      "exclude": {
+        "00_cleanup.sql": "Recovery tool: drops ~39 tables. Never part of a normal run.",
+        "03_link_your_user.sql": "Links one real person's email to the demo workspace — dev only, by hand."
+      }
+    },
+    {
+      "name": "v2",
+      "dir": "supabase/sql/v2",
+      "pattern": "^\\d{2}_.*\\.sql$",
+      "requires": "core",
+      "freshPreamble": "SELECT set_config('marbee.copy_legacy', 'false', false);",
+      "exclude": {
+        "59_loadtest_seed.sql": "Load-test data generator — dev/staging benchmarks only, by hand."
+      }
+    }
+  ]
+}
