@@ -1,0 +1,32 @@
+{
+  "$comment": "Every deployable edge function and its gateway JWT setting (D-021). verifyJwt=true: Supabase rejects calls without a valid user session before the code runs (extra layer for functions only ever called by signed-in users). verifyJwt=false: called anonymously (public pages, SDKs), with API/site keys, or server-to-server (pg_net/cron/other functions) — these authenticate the caller themselves (Phase 0). A new function must be added here before it can be deployed.",
+  "functions": {
+    "ai-gateway":                 { "verifyJwt": true,  "why": "signed-in users only (AI calls from the app)" },
+    "asset-gate":                 { "verifyJwt": false, "why": "public asset links" },
+    "audience-ai":                { "verifyJwt": true,  "why": "signed-in users only" },
+    "channel-send":               { "verifyJwt": false, "why": "engine calls with the service key; members checked in code" },
+    "chatbot-runtime":            { "verifyJwt": false, "why": "public chat widget" },
+    "connector-test":             { "verifyJwt": true,  "why": "signed-in users only" },
+    "create-tenant-user":         { "verifyJwt": false, "why": "auth checked in code (existing setting)" },
+    "email-domains":              { "verifyJwt": false, "why": "cron re-check calls it server-to-server" },
+    "events-ingest":              { "verifyJwt": false, "why": "website SDK / API keys" },
+    "events-worker":              { "verifyJwt": false, "why": "queue worker, service key" },
+    "form-ai":                    { "verifyJwt": true,  "why": "signed-in users only" },
+    "form-submit":                { "verifyJwt": false, "why": "public form submissions" },
+    "global-variables":           { "verifyJwt": true,  "why": "signed-in users only" },
+    "jev-ai":                     { "verifyJwt": true,  "why": "signed-in users only" },
+    "landing-ai":                 { "verifyJwt": true,  "why": "signed-in users only" },
+    "pipeline-run-worker":        { "verifyJwt": false, "why": "pg_net sweep calls it with a key; users checked in code" },
+    "platform-admin":             { "verifyJwt": true,  "why": "signed-in platform admins only (console)" },
+    "push-engage":                { "verifyJwt": false, "why": "push open/click tracking from devices" },
+    "push-subscribe":             { "verifyJwt": false, "why": "website SDK" },
+    "reset-tenant-user-password": { "verifyJwt": false, "why": "auth checked in code (existing setting)" },
+    "rtm-ingest":                 { "verifyJwt": false, "why": "API keys" },
+    "rtm-worker":                 { "verifyJwt": false, "why": "engine calls with the service key; users checked in code" },
+    "schema-records":             { "verifyJwt": true,  "why": "signed-in users only" },
+    "social-publish":             { "verifyJwt": true,  "why": "signed-in users only" },
+    "tenant-api":                 { "verifyJwt": false, "why": "public API with API keys" },
+    "web-analytics-ingest":       { "verifyJwt": false, "why": "website tracking snippet" },
+    "webhook-trigger":            { "verifyJwt": false, "why": "external webhooks (HMAC / API key / path secret)" }
+  }
+}
