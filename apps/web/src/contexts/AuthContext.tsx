@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import type { Environment } from '@marbee/shared';
 import { supabase } from '@/lib/supabase';
@@ -80,7 +80,7 @@ const NO_WORKSPACE: ResolvedWorkspace = { tenantId: '', tenantName: null, status
  * memberships of ACTIVE workspaces — sql/91). There is deliberately no fallback
  * workspace (TD-20): no membership means the "no workspace" / "suspended" screen.
  */
-async function resolveTenant(session: Session | null): Promise<ResolvedWorkspace> {
+async function resolveTenant(session: Session | null): Promise<ResolvedWorkspace | null> {
   const userId = session?.user?.id;
   if (!userId) return NO_WORKSPACE;
 
@@ -93,10 +93,12 @@ async function resolveTenant(session: Session | null): Promise<ResolvedWorkspace
     .eq('status', 'active')
     .order('created_at', { ascending: true });
 
-  let { data } = claimTenantId
+  let { data, error } = claimTenantId
     ? await query().eq('tenant_id', claimTenantId).limit(1).maybeSingle()
     : await query().limit(1).maybeSingle();
-  if (!data && claimTenantId) ({ data } = await query().limit(1).maybeSingle());
+  if (!error && !data && claimTenantId) ({ data, error } = await query().limit(1).maybeSingle());
+  // A failed lookup is "unknown", not "no workspace" (a network blip must not hide the app).
+  if (error) return null;
 
   if (data?.tenant_id) {
     const tenant = data.tenants as { name: string } | { name: string }[] | null;
@@ -105,8 +107,8 @@ async function resolveTenant(session: Session | null): Promise<ResolvedWorkspace
   }
 
   // No active workspace: find out whether it's because theirs is suspended (sql/93).
-  const { data: status, error } = await supabase.rpc('my_workspace_status');
-  if (error) return NO_WORKSPACE; // script 93 not run yet → plain "no workspace" screen
+  const { data: status, error: statusError } = await supabase.rpc('my_workspace_status');
+  if (statusError) return NO_WORKSPACE; // script 93 not run yet → plain "no workspace" screen
   const suspended = Array.isArray((status as { suspended?: unknown })?.suspended)
     ? ((status as { suspended: unknown[] }).suspended.map(String))
     : [];
@@ -183,30 +185,57 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     else setAccess(EMPTY_ACCESS);
   }, [session?.user, tenantId, refreshAccess]);
 
+  /** User id whose workspace is currently shown (null = nothing resolved yet). */
+  const resolvedUserRef = useRef<string | null>(null);
+
+  /**
+   * Resolve the workspace for `current`.
+   * - New user (sign-in): show 'loading' immediately — never flash "No workspace yet" —
+   *   and retry a failed lookup a few times before giving up.
+   * - Same user (token refresh, Check again): keep what's on screen if the lookup fails.
+   */
+  const syncWorkspace = useCallback(async (current: Session | null) => {
+    if (!current?.user) {
+      resolvedUserRef.current = null;
+      applyWorkspace(NO_WORKSPACE);
+      return;
+    }
+    const sameUser = resolvedUserRef.current === current.user.id;
+    if (!sameUser) setWorkspaceStatus('loading');
+    for (let attempt = 0; attempt < (sameUser ? 1 : 3); attempt += 1) {
+      if (attempt > 0) await new Promise((r) => setTimeout(r, 1000 * attempt));
+      const w = await resolveTenant(current);
+      if (w) {
+        resolvedUserRef.current = current.user.id;
+        applyWorkspace(w);
+        return;
+      }
+    }
+    if (!sameUser) applyWorkspace(NO_WORKSPACE); // still unknown after retries; "Check again" retries
+  }, [applyWorkspace]);
+
   const refreshWorkspace = useCallback(async () => {
     const { data: { session: current } } = await supabase.auth.getSession();
-    applyWorkspace(current?.user ? await resolveTenant(current) : NO_WORKSPACE);
-  }, [applyWorkspace]);
+    await syncWorkspace(current);
+  }, [syncWorkspace]);
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       setSession(session);
-      if (session?.user) {
-        applyWorkspace(await resolveTenant(session));
-        void supabase.rpc('touch_last_login').then(() => undefined);
-      } else {
-        applyWorkspace(NO_WORKSPACE);
-      }
+      await syncWorkspace(session);
+      if (session?.user) void supabase.rpc('touch_last_login').then(() => undefined);
       setLoading(false);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      // Set the loading state in the same update as the session (see syncWorkspace).
+      if (session?.user && resolvedUserRef.current !== session.user.id) setWorkspaceStatus('loading');
       setSession(session);
-      applyWorkspace(session?.user ? await resolveTenant(session) : NO_WORKSPACE);
+      await syncWorkspace(session);
     });
 
     return () => subscription.unsubscribe();
-  }, [applyWorkspace]);
+  }, [syncWorkspace]);
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });

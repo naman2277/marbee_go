@@ -65,6 +65,11 @@ type CreateUserBody = {
   password?: unknown;
 };
 
+/** Escape LIKE/ILIKE wildcards (\, %, _) so the pattern matches the text literally. */
+function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, (c) => '\\' + c);
+}
+
 function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
@@ -163,7 +168,8 @@ serve(async (req) => {
     const { data: profileRow } = await service
       .from('profiles')
       .select('id')
-      .ilike('email', email)
+      // Case-insensitive but EXACT: escape LIKE wildcards so 'a_ice@x.com' can't match 'alice@x.com'.
+      .ilike('email', escapeLike(email))
       .maybeSingle();
 
     const existingUserId = profileRow?.id as string | undefined;

@@ -32,6 +32,10 @@ const text = (body: string, s = 200, ct = 'text/plain', headers: Record<string, 
 // Never persist credentials that arrive with the request.
 const SENSITIVE_HEADERS = /^(authorization|cookie|x-api-key|apikey|proxy-authorization|x-signature|x-hub-signature(-256)?)$/i;
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
+// Query-string credentials (no longer accepted for auth) must not be stored either.
+const SENSITIVE_PARAMS = /^(api_?key|key|token|access_token|secret|signature|sig|password)$/i;
+const safeQuery = (params: URLSearchParams) =>
+  Object.fromEntries([...params.entries()].filter(([k]) => !SENSITIVE_PARAMS.test(k)));
 
 const BOT_PATTERNS = /bot|crawler|spider|slurp|mediapartners|facebookexternalhit|bingpreview|linkedinbot/i;
 
@@ -165,7 +169,7 @@ serve(async (req) => {
 
   try {
     if (req.method === 'GET') {
-      payload = Object.fromEntries(url.searchParams.entries());
+      payload = safeQuery(url.searchParams);
     } else if (webhookConfig.raw_body === true) {
       payload = { body: new TextDecoder().decode(rawBytes), _raw: true };
     } else if (contentType === 'json' || req.headers.get('content-type')?.includes('json')) {
@@ -200,7 +204,7 @@ serve(async (req) => {
       method: req.method,
       received_at: new Date().toISOString(),
       headers: Object.fromEntries([...req.headers.entries()].filter(([k]) => !SENSITIVE_HEADERS.test(k))),
-      query: Object.fromEntries(url.searchParams.entries()),
+      query: safeQuery(url.searchParams),
       ip: req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? req.headers.get('x-real-ip') ?? null,
     },
   };

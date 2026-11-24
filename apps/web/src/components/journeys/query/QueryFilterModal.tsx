@@ -28,7 +28,7 @@ type Props = {
   onSave: (filter: FilterRoot, quickSearch: string, summaryLabel: string) => void;
 };
 
-const PRESETS = [
+const PRESETS: Array<{ name: string; field: string; op: FilterOperator; val: string | number | null; [k: string]: unknown }> = [
   {
     name: 'All Active Profiles',
     field: 'status',
@@ -38,13 +38,13 @@ const PRESETS = [
   {
     name: 'High Value Customers',
     field: 'total_spent',
-    op: 'greater_than_or_equal',
+    op: 'gte',
     val: '500',
   },
   {
     name: 'Has Valid Email',
     field: 'email',
-    op: 'is_not_null',
+    op: 'is_not_empty',
     val: '',
   },
 ];
@@ -92,7 +92,7 @@ export function QueryFilterModal({
           id: `cond_${Date.now()}`,
           join: 'and',
           left: { kind: 'field', field: targetField.key },
-          operator: preset.op as FilterOperator,
+          operator: preset.op,
           right: { kind: 'literal', value: String(preset.val ?? '') },
         },
       ],
