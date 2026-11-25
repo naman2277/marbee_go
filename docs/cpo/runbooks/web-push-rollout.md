@@ -28,9 +28,16 @@ It asks for the dev database password (hidden) and applies only `95_web_push_pro
 
 ## 3. Let the database call the worker (SQL editor, once per project)
 
-Paste into the SQL editor. Replace `PASTE_SERVICE_ROLE_KEY` with the project's
-**service_role** key (Settings → API Keys → *Legacy API keys* tab → `service_role`) yourself.
-Never paste it in chat.
+First create a random worker secret and copy it to the clipboard (it is never shown on screen):
+
+```powershell
+$b = New-Object byte[] 32; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b); -join ($b | ForEach-Object { $_.ToString('x2') }) | Set-Clipboard
+```
+
+Save it as an Edge Function secret named `PUSH_WORKER_SECRET` (Edge Functions → Secrets).
+Then paste the SQL below, replacing `PASTE_PUSH_WORKER_SECRET` with the same value. Never
+paste it in chat. (The service-role key is not used here: on projects with the new API keys,
+the value a function sees differs from the one in the dashboard.)
 
 ```sql
 select vault.create_secret('https://uqffhyaftlwetqigfenp.supabase.co/functions/v1/push-worker', 'push_worker_url');

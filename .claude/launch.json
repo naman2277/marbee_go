@@ -4,33 +4,82 @@
     {
       "name": "marbee-web",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "apps/web", "--", "--port", "5173", "--strictPort"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--prefix",
+        "apps/web",
+        "--",
+        "--port",
+        "5173",
+        "--strictPort"
+      ],
       "port": 5173,
       "autoPort": false
     },
     {
       "name": "web-landing",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "apps/web", "--", "--port", "5199", "--strictPort"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--prefix",
+        "apps/web",
+        "--",
+        "--port",
+        "5199",
+        "--strictPort"
+      ],
       "port": 5199
     },
     {
       "name": "marbee-console",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "apps/console", "--", "--port", "5174", "--strictPort"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--prefix",
+        "apps/console",
+        "--",
+        "--port",
+        "5174",
+        "--strictPort"
+      ],
       "port": 5174
     },
     {
       "name": "marbee-console-mock",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev:mock", "--prefix", "apps/console"],
+      "runtimeArgs": [
+        "run",
+        "dev:mock",
+        "--prefix",
+        "apps/console"
+      ],
       "port": 5175
     },
     {
       "name": "marbee-web-journeys",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "apps/web", "--", "--port", "63158", "--strictPort"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--prefix",
+        "apps/web",
+        "--",
+        "--port",
+        "63158",
+        "--strictPort"
+      ],
       "port": 63158
+    },
+    {
+      "name": "push-test-site",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "tools/push-test-site/serve.mjs"
+      ],
+      "port": 5500
     }
   ]
 }
