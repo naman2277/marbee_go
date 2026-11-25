@@ -38,11 +38,11 @@ $env:MARBEE_DB_URL = "<paste the Session pooler connection string>"
 npm run db:status -- --target staging
 ```
 
-Expected on a new project: `State: fresh · applied 0 · pending core 87 · pending v2 7`.
+Expected on a new project: `State: fresh · applied 0 · pending core 88 · pending v2 7`.
 
 ```powershell
-npm run db:apply -- --target staging --dry-run     # lists the 87 core scripts it will run
-npm run db:apply -- --target staging --yes         # builds 01 … 93 (a few minutes)
+npm run db:apply -- --target staging --dry-run     # lists the 88 core scripts it will run
+npm run db:apply -- --target staging --yes         # builds 01 … 94 (a few minutes)
 npm run db:status -- --target staging              # expect: pending core 0
 ```
 

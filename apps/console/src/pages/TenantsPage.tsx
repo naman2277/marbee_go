@@ -1,13 +1,17 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { RefreshCw, Search } from 'lucide-react';
+import { Plus, RefreshCw, Search } from 'lucide-react';
 import { api } from '@/lib/api';
+import { useAdmin } from '@/auth/AuthGate';
+import { CreateTenantModal } from '@/pages/CreateTenantModal';
 import { PageHeader } from '@/components/Layout';
 import { Badge, Button, Empty, ErrorBox, Input, Loading, Select, Stat, Table, td, useLoad } from '@/components/ui';
 import { credits, date, n, REGION_LABEL } from '@/lib/format';
 
 export function TenantsPage() {
   const nav = useNavigate();
+  const { admin } = useAdmin();
+  const [creating, setCreating] = useState(false);
   const { data, error, loading, reload } = useLoad(() => api.listTenants(), []);
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('');
@@ -50,9 +54,16 @@ export function TenantsPage() {
         title="Tenants"
         description="Every Marbee customer workspace. Counts refresh nightly; refresh now for the latest."
         action={
-          <Button variant="secondary" onClick={refreshAll} busy={refreshing}>
-            <RefreshCw className="h-4 w-4" aria-hidden /> Refresh stats
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={refreshAll} busy={refreshing}>
+              <RefreshCw className="h-4 w-4" aria-hidden /> Refresh stats
+            </Button>
+            {admin.role === 'owner' && (
+              <Button onClick={() => setCreating(true)}>
+                <Plus className="h-4 w-4" aria-hidden /> New workspace
+              </Button>
+            )}
+          </div>
         }
       />
 
@@ -79,7 +90,7 @@ export function TenantsPage() {
       {refreshError && <div className="mb-4"><ErrorBox message={refreshError} /></div>}
       {loading && !data && <Loading />}
       {error && <ErrorBox message={error} onRetry={reload} />}
-      {data && rows.length === 0 && <Empty title="No tenants match" description={q || status ? 'Clear the search or filter.' : 'Tenants appear here once created.'} />}
+      {data && rows.length === 0 && <Empty title="No tenants match" description={q || status ? 'Clear the search or filter.' : admin.role === 'owner' ? 'Create the first one with "New workspace".' : 'Tenants appear here once created.'} />}
 
       {data && rows.length > 0 && (
         <Table head={['Tenant', 'Plan', 'Status', 'Region', 'Users', 'Profiles', 'Credits', 'Deliveries 30d', 'Created']}>
@@ -105,6 +116,12 @@ export function TenantsPage() {
             );
           })}
         </Table>
+      )}
+      {creating && (
+        <CreateTenantModal
+          onClose={() => setCreating(false)}
+          onCreated={(id) => { setCreating(false); void reload(); nav(`/tenants/${id}`); }}
+        />
       )}
     </>
   );

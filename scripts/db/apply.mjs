@@ -2,7 +2,7 @@
 // Environment setup pipeline — CLI (D-021). Runbook: docs/cpo/runbooks/environment-setup.md
 //
 //   npm run db:status   -- --target staging
-//   npm run db:apply    -- --target staging --yes                 (core phase: 01 … 93)
+//   npm run db:apply    -- --target staging --yes                 (core phase: 01 … 94)
 //   npm run db:apply    -- --target staging --phase v2 --yes      (scale layer, after core)
 //   npm run db:baseline -- --target dev --yes                     (record an existing DB)
 //

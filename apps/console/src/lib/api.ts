@@ -163,7 +163,29 @@ export async function call<T>(op: string, params: Record<string, unknown> = {}):
   return body.data as T;
 }
 
+export type NewTenant = {
+  name: string;
+  slug: string;
+  plan: Plan;
+  status: 'trial' | 'active';
+  region: Region;
+  owner_name: string;
+  owner_email: string;
+};
+
+export type InviteResult = { sent: boolean; existing_account?: boolean; error?: string };
+
+export type CreateTenantResult = {
+  tenant_id: string;
+  slug: string;
+  provisioned: { roles: number; schemas: number; fields: number };
+  invite: InviteResult;
+};
+
 export const api = {
+  createTenant: (p: NewTenant) => call<CreateTenantResult>('create_tenant', p),
+  inviteOwner: (tenant_id: string, owner_name: string, owner_email: string) =>
+    call<InviteResult>('invite_owner', { tenant_id, owner_name, owner_email }),
   me: () => call<{ admin: Admin }>('me'),
   listTenants: () => call<{ tenants: TenantRow[] }>('list_tenants'),
   getTenant: (tenant_id: string) => call<TenantDetail>('get_tenant', { tenant_id }),
