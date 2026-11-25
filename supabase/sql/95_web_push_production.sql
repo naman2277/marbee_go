@@ -78,7 +78,8 @@ BEGIN
   IF v_facts IS NOT NULL THEN
     INSERT INTO public.channel_provider_secrets (provider_id, tenant_id, secret, updated_at)
     VALUES (NEW.id, NEW.tenant_id, btrim(NEW.credentials_encrypted), NOW())
-    ON CONFLICT (provider_id) DO UPDATE SET secret = EXCLUDED.secret, tenant_id = EXCLUDED.tenant_id, updated_at = NOW();
+    ON CONFLICT (provider_id) DO UPDATE SET secret = EXCLUDED.secret, updated_at = NOW()
+      WHERE channel_provider_secrets.tenant_id = EXCLUDED.tenant_id;  -- never across workspaces
     NEW.config := coalesce(NEW.config, '{}'::jsonb) || v_facts;
   END IF;
   -- Never keep anything secret-looking in the member-readable column.

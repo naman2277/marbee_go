@@ -5,7 +5,7 @@
 import { serve } from 'https://deno.land/std@0.208.0/http/server.ts';
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 
-// ---- _shared/supabase.ts ---------------------------------------------------------------------
+// ---- _shared/supabase.ts -------------------------------------
 function getServiceClient(): SupabaseClient {
   return createClient(
     Deno.env.get('SUPABASE_URL') ?? '',
@@ -52,7 +52,7 @@ function errorResponse(message: string, status = 400) {
 // removed in Phase 0 (SEC-02 / SEC-04). Use _shared/auth.ts for signed-in users, or
 // _shared/ingest-auth.ts (API keys via verify_api_key, site keys via resolve_ingest_site).
 
-// ---- _shared/auth.ts ---------------------------------
+// ---- _shared/auth.ts -----------------------------------------
 // Shared caller authentication for edge functions (Phase 0, SEC-01).
 //
 // Rule (docs/cpo/09-security-baseline.md §2): a function derives tenant access
@@ -134,7 +134,7 @@ async function requirePermission(user: AuthedUser, tenantId: string, permission:
   if (data !== true) throw new AuthError(403, `You need the "${label ?? permission}" permission for this`);
 }
 
-// ---- _shared/webhook-sig.ts ------------------------------------------------------------------
+// ---- _shared/webhook-sig.ts ----------------------------------
 // Constant-time compare + HMAC signature verification (Phase 0 · SEC-18).
 // No imports, so it is easy to test and safe to share.
 
@@ -170,7 +170,7 @@ async function verifyHmacSignature(secret: string, body: string | Uint8Array, al
   return constantTimeEqual(value.toLowerCase(), hex) || constantTimeEqual(value, b64);
 }
 
-// ---- _shared/tenant-guard.ts -----------------------------------------------------------------
+// ---- _shared/tenant-guard.ts ---------------------------------
 // Workspace guards for edge functions that act with the service role
 // (Phase 0 · TD-12b, SEC-18).
 //
@@ -232,7 +232,123 @@ async function requireMemberWithPermission(
   throw new AuthError(403, 'You do not have permission for this in this workspace');
 }
 
-// ---- push-engage/index.ts --------------------------------------------------------------------
+// ---- _shared/ingest-auth.ts ----------------------------------
+// Authentication for PUBLIC ingest endpoints (Phase 0, SEC-02).
+//
+// Two credential types — tenant/environment always come from the credential, never the request:
+//   • Secret API key (server-to-server): `x-api-key: mk_…` or `Authorization: Bearer mk_…`.
+//     Verified by public.verify_api_key() (bcrypt). Must carry the required scope.
+//   • Site key (browser SDKs): body `site_id` + `write_key` (public by design, like a
+//     Segment write key). Verified by public.resolve_ingest_site(): key, site status and
+//     the browser Origin against the site's domain / allowed_origins.
+//
+// Because a site key is public, it can be copied and replayed from a script. Defences:
+// per-site + per-IP rate limits here (per isolate — a backstop), frequency caps at send
+// time (Wave 1 guardrails), and identity verification for identified users (SEC-13).
+
+
+type IngestContext = {
+  tenantId: string;
+  environment: string;
+  via: 'api_key' | 'site_key';
+  siteId?: string;
+  siteUuid?: string;
+};
+
+/** Read the secret API key if one was sent. JWTs (anon/user tokens) are ignored here. */
+function readApiKey(req: Request): string | null {
+  const header = req.headers.get('x-api-key')?.trim();
+  if (header) return header;
+  const auth = req.headers.get('authorization') ?? '';
+  const bearer = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+  // Supabase JWTs have three dot-separated parts; Marbee API keys don't.
+  if (bearer && bearer.split('.').length !== 3) return bearer;
+  return null;
+}
+
+async function authenticateApiKey(db: SupabaseClient, rawKey: string, scope: string): Promise<IngestContext> {
+  const { data, error } = await db.rpc('verify_api_key', { p_raw_key: rawKey });
+  if (error) {
+    console.error('verify_api_key failed', error.message);
+    throw new AuthError(500, 'Could not verify API key');
+  }
+  const row = Array.isArray(data) ? data[0] : null;
+  if (!row) throw new AuthError(401, 'Invalid or revoked API key');
+  const scopes: string[] = row.scopes ?? [];
+  if (!scopes.includes(scope) && !scopes.includes('*')) throw new AuthError(403, `API key is missing the ${scope} scope`);
+  return { tenantId: row.tenant_id, environment: row.environment ?? 'production', via: 'api_key' };
+}
+
+async function authenticateSiteKey(
+  db: SupabaseClient,
+  siteId: unknown,
+  writeKey: unknown,
+  origin: string | null,
+): Promise<IngestContext> {
+  if (typeof siteId !== 'string' || typeof writeKey !== 'string') {
+    throw new AuthError(401, 'site_id and write_key are required');
+  }
+  const { data, error } = await db.rpc('resolve_ingest_site', {
+    p_site_id: siteId, p_write_key: writeKey, p_origin: origin,
+  });
+  if (error) {
+    console.error('resolve_ingest_site failed', error.message);
+    throw new AuthError(500, 'Could not verify site key');
+  }
+  const r = data as { ok: boolean; reason?: string; tenant_id?: string; environment?: string; site_id?: string; site_uuid?: string };
+  if (!r?.ok) {
+    const status = r?.reason === 'invalid_key' ? 401 : 403;
+    const message = r?.reason === 'origin_not_allowed'
+      ? 'This website is not allowed to use this site key'
+      : r?.reason === 'tenant_suspended' ? 'This workspace is suspended'
+      : r?.reason?.startsWith('site_') ? 'Site is not active' : 'Invalid site key';
+    throw new AuthError(status, message);
+  }
+  return { tenantId: r.tenant_id!, environment: r.environment ?? 'production', via: 'site_key', siteId: r.site_id, siteUuid: r.site_uuid };
+}
+
+/** API key if present, otherwise site key from the parsed body. */
+async function authenticateIngest(
+  req: Request,
+  db: SupabaseClient,
+  body: Record<string, unknown> | null,
+  scope: string,
+): Promise<IngestContext> {
+  const apiKey = readApiKey(req);
+  if (apiKey) return authenticateApiKey(db, apiKey, scope);
+  return authenticateSiteKey(db, body?.site_id, body?.write_key, req.headers.get('origin'));
+}
+
+// --------------------------------------------------------------------------------------
+// Rate limit — fixed window per isolate. A backstop against floods, not a billing meter.
+// --------------------------------------------------------------------------------------
+const windows = new Map<string, { start: number; count: number }>();
+
+function rateLimited(key: string, max: number, windowMs = 60_000): boolean {
+  const now = Date.now();
+  const w = windows.get(key);
+  if (!w || now - w.start >= windowMs) {
+    windows.set(key, { start: now, count: 1 });
+    if (windows.size > 10_000) windows.clear(); // bound memory
+    return false;
+  }
+  w.count += 1;
+  return w.count > max;
+}
+
+function clientIp(req: Request): string {
+  return req.headers.get('cf-connecting-ip')
+    ?? req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+    ?? 'unknown';
+}
+
+/** Reject oversized bodies before parsing (Content-Length when present). */
+function tooLarge(req: Request, maxBytes: number): boolean {
+  const len = Number(req.headers.get('content-length') ?? 0);
+  return Number.isFinite(len) && len > maxBytes;
+}
+
+// ---- push-engage/index.ts ------------------------------------
 type EngageRequest = {
   tenant_id: string;
   environment?: string;
@@ -256,6 +372,9 @@ serve(async (req) => {
   // Title, body and click_url come ONLY from that stored message — never from the
   // request — so /push/open can't be turned into an open redirect or fake-stats tool.
   if (req.method !== 'POST') return errorResponse('Method not allowed', 405);
+  if (tooLarge(req, 4 * 1024)) return errorResponse('Payload too large', 413);
+  // D-022: public endpoint (service workers on customer sites call it) — per-isolate backstop.
+  if (rateLimited(`push-engage:${clientIp(req)}`, 120)) return errorResponse('Rate limit exceeded', 429);
 
   try {
     const payload = (await req.json().catch(() => null)) as EngageRequest | null;
