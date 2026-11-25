@@ -27,6 +27,10 @@ Free tier is fine for staging (2 free projects per org).
 
 ## 2. Database — check, then build
 
+The connection is encrypted **and** the server is verified against Supabase's root certificate
+(`scripts/db/supabase-ca.crt`, public, valid to 2031). If verification fails, the runner refuses to connect.
+
+
 Copy the connection string from **Connect → Session pooler** (port 5432, *not* 6543).
 
 ```powershell
@@ -105,6 +109,14 @@ workspace → `npm run db:status` shows nothing pending.
 ---
 
 ## Existing databases (dev)
+
+Dev is listed in `scripts/db/targets.json`, so you only run the command — it asks for the database password (hidden, never stored):
+
+```powershell
+node scripts/db/apply.mjs status --target dev
+```
+
+Add staging/production to `targets.json` the same way (Session-pooler user + host from Supabase → Connect; not secret) and the same one-line commands work for them.
 
 Dev was built by hand, so it has no ledger. Record what it has **without running anything**:
 

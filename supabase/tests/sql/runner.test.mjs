@@ -25,6 +25,19 @@ ok(core[0].id === 'core/01_marbee_schema.sql' && core.some((s) => s.id === 'core
 ok(plan.findIndex((s) => s.phase === 'v2') > plan.findIndex((s) => s.id === 'core/93_my_workspace_status.sql'), 'v2 phase comes after all core scripts');
 ok(plan.find((s) => s.file === '68_cleanup_merged_deleted_customers.sql')?.selfTx === true, 'script with its own BEGIN/COMMIT is detected');
 
+// Numbering past 99: picked up and ordered numerically (Codex review on PR #2)
+{
+  const { mkdtempSync, mkdirSync, writeFileSync, copyFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const tmp = mkdtempSync(join(tmpdir(), 'marbee-plan-'));
+  mkdirSync(join(tmp, 'supabase/sql/v2'), { recursive: true });
+  copyFileSync('supabase/sql/manifest.json', join(tmp, 'supabase/sql/manifest.json'));
+  for (const f of ['1000_d.sql', '100_c.sql', '11_a.sql', '99_b.sql', '00_cleanup.sql']) writeFileSync(join(tmp, 'supabase/sql', f), 'SELECT 1;');
+  const order = loadPlan(tmp).plan.map((s) => s.file).join(',');
+  ok(order === '11_a.sql,99_b.sql,100_c.sql,1000_d.sql', `scripts numbered 100+ are included and run in numeric order (${order})`);
+}
+
 // 1) Fresh database
 const A = await newDb();
 let st = await status(A.db, plan);
