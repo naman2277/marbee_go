@@ -73,6 +73,22 @@ ok(ref?.tenant_id === r2.tenant_id && ref.environment === 'staging' && ref.slug 
 const d2 = await one(`SELECT plan, status FROM tenants WHERE id = $1`, [r2.tenant_id]);
 ok(d2.plan === 'starter' && d2.status === 'trial', 'defaults: starter plan, trial status');
 
+// Audit entry in the same transaction
+const A1 = 'adadadad-0000-0000-0000-0000000000ad';
+const r3 = (await one(`SELECT platform_provision_tenant('Gamma Ltd', 'gamma-ltd', 'enterprise', 'active', 'mena', '${DEMO}',
+  jsonb_build_object('actor_id', '${A1}', 'actor_email', 'ceo@marbee.test', 'ip', '203.0.113.9', 'user_agent', 'test', 'details', jsonb_build_object('owner_email', 'o@gamma.test'))) AS r`)).r;
+const al = await one(`SELECT actor_id, actor_email, action, target, details, ip FROM platform_audit_log WHERE tenant_id = $1`, [r3.tenant_id]);
+ok(al?.action === 'tenant.create' && al.actor_id === A1 && al.target === 'gamma-ltd' && al.ip === '203.0.113.9'
+  && al.details.owner_email === 'o@gamma.test' && al.details.plan === 'enterprise' && al.details.provisioned?.schemas === r3.schemas,
+  'audit row written with the workspace (actor, slug, owner, plan, counts)');
+ok((await one(`SELECT count(*)::int n FROM platform_audit_log WHERE tenant_id = $1`, [T])).n === 0, 'no audit row when none is requested');
+// If the audit insert fails, the workspace is not created either
+await db.exec(`CREATE OR REPLACE FUNCTION public.t94_boom() RETURNS trigger LANGUAGE plpgsql AS $fn$ BEGIN RAISE EXCEPTION 'audit down'; END $fn$;
+  CREATE TRIGGER t_boom BEFORE INSERT ON platform_audit_log FOR EACH ROW EXECUTE FUNCTION public.t94_boom();`);
+ok(await throwsWith(db.query(`SELECT platform_provision_tenant('Delta', 'delta-co', 'starter', 'trial', 'in', '${DEMO}', '{"actor_email":"x"}'::jsonb)`), /audit down/)
+  && (await one(`SELECT count(*)::int n FROM tenants WHERE slug = 'delta-co'`)).n === 0, 'audit failure rolls the whole workspace back (nothing half-made)');
+await db.exec(`DROP TRIGGER t_boom ON platform_audit_log; DROP FUNCTION public.t94_boom();`);
+
 // 2) Refusals — and nothing half-made
 const before = (await one(`SELECT count(*)::int n FROM tenants`)).n;
 ok(await throwsWith(db.query(`SELECT platform_provision_tenant('Acme 2', 'acme-retail')`), /already exists/), 'duplicate slug refused');

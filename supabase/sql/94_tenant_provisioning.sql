@@ -19,6 +19,8 @@
 -- dev/staging copies are behind production (later scripts patched production only).
 --
 -- Callable by the service role only (the platform-admin edge function). Re-runnable.
+-- Earlier drafts had a 6-argument signature; drop it if present so only one version exists.
+DROP FUNCTION IF EXISTS public.platform_provision_tenant(TEXT, TEXT, TEXT, TEXT, TEXT, UUID);
 -- =============================================================================
 
 CREATE OR REPLACE FUNCTION public.platform_provision_tenant(
@@ -27,7 +29,11 @@ CREATE OR REPLACE FUNCTION public.platform_provision_tenant(
   p_plan     TEXT DEFAULT 'starter',
   p_status   TEXT DEFAULT 'trial',
   p_region   TEXT DEFAULT 'in',
-  p_template UUID DEFAULT '00000000-0000-0000-0000-000000000001'
+  p_template UUID DEFAULT '00000000-0000-0000-0000-000000000001',
+  -- Optional audit entry, written in the SAME transaction: the workspace never exists
+  -- without its 'tenant.create' record (Codex, PR #4). Keys: actor_id, actor_email, ip,
+  -- user_agent, details.
+  p_audit    JSONB DEFAULT NULL
 )
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -149,6 +155,22 @@ BEGIN
   INSERT INTO public.platform_tenant_accounts (tenant_id, region) VALUES (v_tenant, p_region)
   ON CONFLICT (tenant_id) DO UPDATE SET region = EXCLUDED.region, updated_at = now();
 
+  IF p_audit IS NOT NULL THEN
+    INSERT INTO public.platform_audit_log (actor_id, actor_email, action, tenant_id, target, details, ip, user_agent)
+    VALUES (
+      NULLIF(p_audit->>'actor_id', '')::uuid,
+      p_audit->>'actor_email',
+      'tenant.create',
+      v_tenant,
+      v_slug,
+      coalesce(p_audit->'details', '{}'::jsonb) || jsonb_build_object(
+        'name', v_name, 'plan', p_plan, 'status', p_status, 'region', p_region,
+        'provisioned', jsonb_build_object('roles', n_roles, 'schemas', n_schemas, 'fields', n_fields)),
+      p_audit->>'ip',
+      left(p_audit->>'user_agent', 300)
+    );
+  END IF;
+
   RETURN jsonb_build_object(
     'tenant_id', v_tenant,
     'slug', v_slug,
@@ -160,11 +182,11 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.platform_provision_tenant(TEXT, TEXT, TEXT, TEXT, TEXT, UUID) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.platform_provision_tenant(TEXT, TEXT, TEXT, TEXT, TEXT, UUID, JSONB) FROM PUBLIC;
 DO $$ BEGIN
-  EXECUTE 'REVOKE ALL ON FUNCTION public.platform_provision_tenant(TEXT, TEXT, TEXT, TEXT, TEXT, UUID) FROM anon, authenticated';
-  EXECUTE 'GRANT EXECUTE ON FUNCTION public.platform_provision_tenant(TEXT, TEXT, TEXT, TEXT, TEXT, UUID) TO service_role';
+  EXECUTE 'REVOKE ALL ON FUNCTION public.platform_provision_tenant(TEXT, TEXT, TEXT, TEXT, TEXT, UUID, JSONB) FROM anon, authenticated';
+  EXECUTE 'GRANT EXECUTE ON FUNCTION public.platform_provision_tenant(TEXT, TEXT, TEXT, TEXT, TEXT, UUID, JSONB) TO service_role';
 EXCEPTION WHEN undefined_object THEN NULL; END $$;
 
-COMMENT ON FUNCTION public.platform_provision_tenant(TEXT, TEXT, TEXT, TEXT, TEXT, UUID) IS
+COMMENT ON FUNCTION public.platform_provision_tenant(TEXT, TEXT, TEXT, TEXT, TEXT, UUID, JSONB) IS
   'D-017: create a complete empty workspace (service role / platform-admin only). See supabase/sql/94_tenant_provisioning.sql.';

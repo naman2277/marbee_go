@@ -309,8 +309,14 @@ const ops: Record<string, Handler> = {
     const region = oneOf(p, 'region', ['in', 'mena', 'apac', 'emea', 'na'] as const);
     const owner = ownerContact(p);
 
+    // The 'tenant.create' audit row is written by the SQL function in the same transaction,
+    // so a created workspace always has its audit entry (Codex, PR #4).
     const { data, error } = await ctx.db.rpc('platform_provision_tenant', {
       p_name: name, p_slug: slug, p_plan: plan, p_status: status, p_region: region,
+      p_audit: {
+        actor_id: ctx.admin.user_id, actor_email: ctx.admin.email, ip: ctx.ip, user_agent: ctx.ua,
+        details: { owner_email: owner.email },
+      },
     });
     if (error) {
       // Validation messages from the SQL function are safe and useful; anything else is not shown.
@@ -323,7 +329,6 @@ const ops: Record<string, Handler> = {
       throw new HttpError(known ? 400 : 500, known ? error.message : 'Could not create the workspace');
     }
     const created = data as { tenant_id: string; slug: string; roles: number; schemas: number; fields: number };
-    await audit(ctx, 'tenant.create', created.tenant_id, slug, { name, plan, status, region, owner_email: owner.email, provisioned: created });
 
     let invite: { sent: boolean; existing_account?: boolean; error?: string; audit_failed?: boolean };
     let invited: { user_id: string; existing_account: boolean } | null = null;
