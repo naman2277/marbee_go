@@ -59,6 +59,7 @@ export function CreateTenantModal({ onClose, onCreated }: { onClose: () => void;
               {done.invite.existing_account
                 ? `${f.owner_email} already has a Marbee account — they were added as Tenant Admin and emailed a link to join.`
                 : `Invitation emailed to ${f.owner_email}. They set their own password from the link.`}
+              {done.invite.audit_failed && ' The invitation was sent, but writing it to the audit log failed — do not resend; note it for review.'}
             </Notice>
           ) : (
             <Notice tone="warning">

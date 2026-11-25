@@ -117,9 +117,10 @@ function InviteAdminModal({ tenantId, onClose, onSent }: { tenantId: string; onC
     const addr = email.trim().toLowerCase();
     try {
       const r = await api.inviteOwner(tenantId, name.trim(), addr);
-      onSent(r.existing_account
+      const base = r.existing_account
         ? `${addr} already has a Marbee account — added as Tenant Admin and emailed a link to join.`
-        : `Invitation emailed to ${addr}.`);
+        : `Invitation emailed to ${addr}.`;
+      onSent(base + (r.audit_failed ? ' Writing it to the audit log failed — do not resend; note it for review.' : ''));
       onClose();
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Could not send the invitation');

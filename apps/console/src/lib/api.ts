@@ -173,7 +173,7 @@ export type NewTenant = {
   owner_email: string;
 };
 
-export type InviteResult = { sent: boolean; existing_account?: boolean; error?: string };
+export type InviteResult = { sent: boolean; existing_account?: boolean; error?: string; audit_failed?: boolean };
 
 export type CreateTenantResult = {
   tenant_id: string;

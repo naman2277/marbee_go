@@ -325,13 +325,22 @@ const ops: Record<string, Handler> = {
     const created = data as { tenant_id: string; slug: string; roles: number; schemas: number; fields: number };
     await audit(ctx, 'tenant.create', created.tenant_id, slug, { name, plan, status, region, owner_email: owner.email, provisioned: created });
 
-    let invite: { sent: boolean; existing_account?: boolean; error?: string };
+    let invite: { sent: boolean; existing_account?: boolean; error?: string; audit_failed?: boolean };
+    let invited: { user_id: string; existing_account: boolean } | null = null;
     try {
-      const r = await inviteOwner(ctx, created.tenant_id, owner);
-      invite = { sent: true, existing_account: r.existing_account };
-      await audit(ctx, 'member.invite_owner', created.tenant_id, r.user_id, { email: owner.email, existing_account: r.existing_account });
+      invited = await inviteOwner(ctx, created.tenant_id, owner);
+      invite = { sent: true, existing_account: invited.existing_account };
     } catch (e) {
       invite = { sent: false, error: e instanceof HttpError ? e.message : 'Invitation failed' };
+    }
+    // Audited separately (Codex, PR #4): an audit failure must not read as "invite failed",
+    // which would prompt a resend and a duplicate email.
+    if (invited) {
+      try {
+        await audit(ctx, 'member.invite_owner', created.tenant_id, invited.user_id, { email: owner.email, existing_account: invited.existing_account });
+      } catch {
+        invite.audit_failed = true;
+      }
     }
     return { tenant_id: created.tenant_id, slug: created.slug, provisioned: created, invite };
   },
@@ -343,8 +352,13 @@ const ops: Record<string, Handler> = {
     if (tenant.status === 'suspended') throw new HttpError(409, 'Workspace is suspended — reactivate it first');
     const owner = ownerContact(p);
     const r = await inviteOwner(ctx, tenantId, owner);
-    await audit(ctx, 'member.invite_owner', tenantId, r.user_id, { email: owner.email, existing_account: r.existing_account });
-    return { sent: true, existing_account: r.existing_account };
+    let auditFailed = false;
+    try {
+      await audit(ctx, 'member.invite_owner', tenantId, r.user_id, { email: owner.email, existing_account: r.existing_account });
+    } catch {
+      auditFailed = true; // the email already went out — say so instead of inviting a resend
+    }
+    return { sent: true, existing_account: r.existing_account, audit_failed: auditFailed };
   },
 
   set_tenant_status: async (ctx, p) => {
