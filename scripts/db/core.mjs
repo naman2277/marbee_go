@@ -32,7 +32,10 @@ export function loadPlan(root, manifestPath = 'supabase/sql/manifest.json') {
   const plan = [];
   for (const phase of manifest.phases) {
     const re = new RegExp(phase.pattern);
-    const files = readdirSync(join(root, phase.dir)).filter((f) => re.test(f)).sort();
+    // Numeric order (100_ after 99_, not after 10_), then by name for equal numbers.
+    const num = (f) => Number.parseInt(f, 10);
+    const files = readdirSync(join(root, phase.dir)).filter((f) => re.test(f))
+      .sort((x, y) => num(x) - num(y) || x.localeCompare(y));
     for (const file of files) {
       if (phase.exclude && Object.prototype.hasOwnProperty.call(phase.exclude, file)) continue;
       const sql = readFileSync(join(root, phase.dir, file), 'utf8');

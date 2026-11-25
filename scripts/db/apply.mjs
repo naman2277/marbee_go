@@ -72,11 +72,25 @@ const through = value('through');
 const dryRun = flag('dry-run');
 
 const local = /^(localhost|127\.0\.0\.1|::1)$/.test(host);
+// TLS with full certificate verification (fail closed). Supabase signs its database and
+// pooler certificates with its own root CA, which is not in Node's default store, so we pin
+// it: scripts/db/supabase-ca.crt (public certificate — Supabase → Project Settings →
+// Database → SSL configuration → Download certificate), or MARBEE_DB_CA=<path>.
+let ssl = false;
+if (!local) {
+  const { existsSync, readFileSync } = await import('node:fs');
+  const caPath = process.env.MARBEE_DB_CA || resolve(ROOT, 'scripts/db/supabase-ca.crt');
+  if (!existsSync(caPath)) {
+    console.error(`Refusing to connect without verifying the database's certificate.\n` +
+      `Download Supabase's CA certificate (Supabase → Project Settings → Database → SSL configuration → Download certificate)\n` +
+      `and save it as scripts/db/supabase-ca.crt (it is public; safe to commit), or set MARBEE_DB_CA to its path.`);
+    process.exit(2);
+  }
+  ssl = { ca: readFileSync(caPath, 'utf8'), rejectUnauthorized: true, servername: host };
+}
 const client = new pg.Client({
   connectionString: url,
-  // Supabase requires TLS. Its certificate chain is not in Node's default store, so the
-  // connection is encrypted but the server certificate is not verified unless a CA is given.
-  ssl: local ? false : (process.env.MARBEE_DB_CA ? { ca: (await import('node:fs')).readFileSync(process.env.MARBEE_DB_CA, 'utf8') } : { rejectUnauthorized: false }),
+  ssl,
   application_name: `marbee-db-${command}`,
 });
 const db = {
