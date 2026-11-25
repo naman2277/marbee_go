@@ -127,6 +127,69 @@ async function audit(ctx: Ctx, action: string, tenantId: string | null, target: 
   }
 }
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+/** Escape LIKE wildcards so an ILIKE matches the text exactly (case-insensitively). */
+const escapeLike = (v: string) => v.replace(/[\\%_]/g, (c) => '\\' + c);
+
+function ownerContact(p: Json): { email: string; name: string } {
+  const email = str(p, 'owner_email', 254, true)!.toLowerCase();
+  if (!EMAIL_RE.test(email)) throw new HttpError(400, 'owner_email is not a valid email');
+  const name = str(p, 'owner_name', 120, true)!;
+  if (name.length < 2) throw new HttpError(400, 'owner_name must be at least 2 characters');
+  return { email, name };
+}
+
+/**
+ * Invite (or re-invite) a workspace's owner as Tenant Admin — same rules as create-tenant-user
+ * (SEC-12): new people get Supabase's invite email; existing accounts are linked and emailed a
+ * join link. No link or password is ever returned to the console.
+ */
+async function inviteOwner(ctx: Ctx, tenantId: string, owner: { email: string; name: string }) {
+  if (!APP_URL) throw new HttpError(500, 'APP_URL secret is not set');
+  const role = must(await ctx.db.from('roles').select('id')
+    .eq('tenant_id', tenantId).eq('slug', 'tenant_admin').maybeSingle()) as { id: string } | null;
+  if (!role) throw new HttpError(409, 'This workspace has no Tenant Admin role');
+  const redirectTo = `${APP_URL}/setup-password?tenant=${tenantId}&email=${encodeURIComponent(owner.email)}`;
+
+  const prof = must(await ctx.db.from('profiles').select('id')
+    .ilike('email', escapeLike(owner.email)).maybeSingle()) as { id: string } | null;
+  let userId = prof?.id;
+  let created = false;
+  if (userId) {
+    const member = must(await ctx.db.from('tenant_users').select('status')
+      .eq('tenant_id', tenantId).eq('user_id', userId).maybeSingle()) as { status: string } | null;
+    if (member?.status === 'active') throw new HttpError(409, `${owner.email} is already an active member of this workspace`);
+  } else {
+    const { data, error } = await ctx.db.auth.admin.inviteUserByEmail(owner.email, {
+      data: { name: owner.name, full_name: owner.name }, redirectTo,
+    });
+    if (error || !data?.user) {
+      console.error('owner invite failed', error?.message);
+      throw new HttpError(502, 'Could not send the invitation email — check the project\'s SMTP settings and Redirect URLs');
+    }
+    userId = data.user.id;
+    created = true;
+  }
+
+  const { error: linkErr } = await ctx.db.rpc('link_provisioned_tenant_user', {
+    p_tenant_id: tenantId, p_auth_user_id: userId, p_email: owner.email, p_full_name: owner.name,
+    p_role_id: role.id, p_invited_by: ctx.admin.user_id, p_invite_token: null,
+  });
+  if (linkErr) {
+    console.error('owner link failed', linkErr.message);
+    if (created) await ctx.db.auth.admin.deleteUser(userId).catch(() => undefined);
+    throw new HttpError(500, 'Could not add the owner to the workspace');
+  }
+  if (!created) {
+    const { error } = await ctx.db.auth.resetPasswordForEmail(owner.email, { redirectTo });
+    if (error) {
+      console.error('owner join email failed', error.message);
+      throw new HttpError(502, 'Owner was added but the join email could not be sent — use "Resend invite"');
+    }
+  }
+  return { user_id: userId, existing_account: !created };
+}
+
 async function tenantOr404(ctx: Ctx, tenantId: string) {
   const t = must(await ctx.db.from('tenants').select('id, name, slug, plan, status, created_at, updated_at')
     .eq('id', tenantId).maybeSingle());
@@ -233,6 +296,74 @@ const ops: Record<string, Handler> = {
     }));
     await audit(ctx, 'credits.set_plan', tenantId, null, { before, after: { monthly_allowance: allowance, overdraft_limit: overdraft } });
     return after;
+  },
+
+  // D-017: create a complete empty workspace, then invite its owner as Tenant Admin.
+  // The workspace is kept even if the email fails — the console offers "Resend invite".
+  create_tenant: async (ctx, p) => {
+    ownerOnly(ctx);
+    const name = str(p, 'name', 120, true)!;
+    const slug = str(p, 'slug', 48, true)!.toLowerCase();
+    const plan = oneOf(p, 'plan', ['starter', 'growth', 'enterprise'] as const);
+    const status = oneOf(p, 'status', ['trial', 'active'] as const);
+    const region = oneOf(p, 'region', ['in', 'mena', 'apac', 'emea', 'na'] as const);
+    const owner = ownerContact(p);
+
+    // The 'tenant.create' audit row is written by the SQL function in the same transaction,
+    // so a created workspace always has its audit entry (Codex, PR #4).
+    const { data, error } = await ctx.db.rpc('platform_provision_tenant', {
+      p_name: name, p_slug: slug, p_plan: plan, p_status: status, p_region: region,
+      p_audit: {
+        actor_id: ctx.admin.user_id, actor_email: ctx.admin.email, ip: ctx.ip, user_agent: ctx.ua,
+        details: { owner_email: owner.email },
+      },
+    });
+    if (error) {
+      // Validation messages from the SQL function are safe and useful; anything else is not shown.
+      console.error('provision failed', error.message);
+      // Two simultaneous creates with one slug: the loser hits the unique index, not the check.
+      if (/already exists|tenants_slug_key/.test(error.message)) {
+        throw new HttpError(409, `A workspace with slug "${slug}" already exists`);
+      }
+      const known = /reserved|Slug must be|name must be|Plan must be|trial or active|Region must be/.test(error.message);
+      throw new HttpError(known ? 400 : 500, known ? error.message : 'Could not create the workspace');
+    }
+    const created = data as { tenant_id: string; slug: string; roles: number; schemas: number; fields: number };
+
+    let invite: { sent: boolean; existing_account?: boolean; error?: string; audit_failed?: boolean };
+    let invited: { user_id: string; existing_account: boolean } | null = null;
+    try {
+      invited = await inviteOwner(ctx, created.tenant_id, owner);
+      invite = { sent: true, existing_account: invited.existing_account };
+    } catch (e) {
+      invite = { sent: false, error: e instanceof HttpError ? e.message : 'Invitation failed' };
+    }
+    // Audited separately (Codex, PR #4): an audit failure must not read as "invite failed",
+    // which would prompt a resend and a duplicate email.
+    if (invited) {
+      try {
+        await audit(ctx, 'member.invite_owner', created.tenant_id, invited.user_id, { email: owner.email, existing_account: invited.existing_account });
+      } catch {
+        invite.audit_failed = true;
+      }
+    }
+    return { tenant_id: created.tenant_id, slug: created.slug, provisioned: created, invite };
+  },
+
+  invite_owner: async (ctx, p) => {
+    ownerOnly(ctx);
+    const tenantId = uuid(p, 'tenant_id');
+    const tenant = await tenantOr404(ctx, tenantId);
+    if (tenant.status === 'suspended') throw new HttpError(409, 'Workspace is suspended — reactivate it first');
+    const owner = ownerContact(p);
+    const r = await inviteOwner(ctx, tenantId, owner);
+    let auditFailed = false;
+    try {
+      await audit(ctx, 'member.invite_owner', tenantId, r.user_id, { email: owner.email, existing_account: r.existing_account });
+    } catch {
+      auditFailed = true; // the email already went out — say so instead of inviting a resend
+    }
+    return { sent: true, existing_account: r.existing_account, audit_failed: auditFailed };
   },
 
   set_tenant_status: async (ctx, p) => {

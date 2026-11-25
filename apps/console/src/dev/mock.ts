@@ -40,6 +40,11 @@ const rates = [
   { service: 'ai_generation', unit: 'generation', unit_size: 1, credits_per_unit: 2, description: 'One AI generation — placeholder', updated_at: '2026-11-10T00:00:00Z' },
 ];
 
+class MockError extends Error {
+  status: number;
+  constructor(status: number, message: string) { super(message); this.status = status; }
+}
+
 function answer(op: string, p: Record<string, unknown>): unknown {
   const t = tenants.find((x) => x.id === p.tenant_id) ?? tenants[0];
   switch (op) {
@@ -60,6 +65,19 @@ function answer(op: string, p: Record<string, unknown>): unknown {
       lines: [{ label: `Platform fee — ${t.plan} plan`, amount_inr: t.account?.monthly_fee_inr ?? 0 }, { label: 'Credit top-ups granted this month (1 credit = ₹1)', amount_inr: 10000 }],
       subtotal_inr: (t.account?.monthly_fee_inr ?? 0) + 10000, gst_note: 'GST is added by the invoicing system (Razorpay / Zoho Books).', usage, rate_card: rates };
     case 'rate_card': return { rates };
+    // Try slug "taken" for a 409, or an owner email containing "fail" for a failed invite.
+    case 'create_tenant': {
+      if (p.slug === 'taken' || tenants.some((x) => x.slug === p.slug)) throw new MockError(409, `A workspace with slug "${String(p.slug)}" already exists`);
+      const id = crypto.randomUUID();
+      tenants.unshift({ id, name: String(p.name), slug: String(p.slug), plan: String(p.plan), status: String(p.status), created_at: new Date().toISOString(),
+        account: null, stats: null, wallet: { tenant_id: id, allowance_balance: 0, topup_balance: 0, monthly_allowance: 0, overdraft_limit: 0 } } as unknown as (typeof tenants)[number]);
+      const fail = String(p.owner_email).includes('fail');
+      return { tenant_id: id, slug: p.slug, provisioned: { roles: 4, schemas: 60, fields: 621 },
+        invite: fail ? { sent: false, error: 'Could not send the invitation email — check the project’s SMTP settings and Redirect URLs' } : { sent: true, existing_account: false } };
+    }
+    case 'invite_owner':
+      if (String(p.owner_email).includes('fail')) throw new MockError(502, 'Could not send the invitation email — check the project’s SMTP settings and Redirect URLs');
+      return { sent: true, existing_account: String(p.owner_email).includes('existing') };
     case 'audit_log': return { entries: [
       { id: 'a1', created_at: '2026-11-05T09:00:00Z', actor_email: 'ceo@marbee.test', action: 'credits.grant', tenant_id: T1, target: 'topup', details: { amount: 10000, reason: 'Razorpay pay_Mock123' }, ip: '203.0.113.7' },
     ] };
@@ -73,7 +91,12 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   if (url.includes('/functions/v1/platform-admin')) {
     const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
     await new Promise((r) => setTimeout(r, 150));
-    return new Response(JSON.stringify({ data: answer(String(body.op), body) }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    try {
+      return new Response(JSON.stringify({ data: answer(String(body.op), body) }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    } catch (e) {
+      const status = e instanceof MockError ? e.status : 500;
+      return new Response(JSON.stringify({ error: e instanceof Error ? e.message : 'Mock error' }), { status, headers: { 'Content-Type': 'application/json' } });
+    }
   }
   if (url.includes('/auth/v1/')) {
     return new Response(JSON.stringify({ id: userId, email: 'ceo@marbee.test', factors: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });

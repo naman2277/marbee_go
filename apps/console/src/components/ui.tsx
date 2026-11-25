@@ -180,14 +180,15 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
   }, [onClose]);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" role="dialog" aria-modal="true" aria-label={title}>
-      <div className="w-full max-w-md rounded-2xl bg-white shadow-xl">
-        <header className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
+      {/* Capped to the viewport; the body scrolls so actions stay reachable on short screens. */}
+      <div className="flex max-h-full w-full max-w-md flex-col rounded-2xl bg-white shadow-xl">
+        <header className="flex shrink-0 items-center justify-between border-b border-slate-100 px-5 py-3.5">
           <h2 className="text-sm font-semibold text-slate-900">{title}</h2>
           <button type="button" onClick={onClose} className="rounded p-1 text-slate-500 hover:bg-slate-100" aria-label="Close">
             <X className="h-4 w-4" />
           </button>
         </header>
-        <div className="p-5">{children}</div>
+        <div className="overflow-y-auto p-5">{children}</div>
       </div>
     </div>
   );
