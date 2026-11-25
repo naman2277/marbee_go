@@ -27,6 +27,10 @@ Free tier is fine for staging (2 free projects per org).
 
 ## 2. Database — check, then build
 
+The connection is encrypted **and** the server is verified against Supabase's root certificate
+(`scripts/db/supabase-ca.crt`, public, valid to 2031). If verification fails, the runner refuses to connect.
+
+
 Copy the connection string from **Connect → Session pooler** (port 5432, *not* 6543).
 
 ```powershell
