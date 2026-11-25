@@ -347,7 +347,10 @@ function parseServiceAccount(raw: string): ServiceAccount {
 const httpUrl = (v: unknown): string | undefined => {
   if (typeof v !== 'string' || !v.trim()) return undefined;
   const s = v.trim();
-  if (s.startsWith('/')) return s.slice(0, 2000); // relative to the subscribing site
+  if (s.startsWith('/')) {
+    // Relative to the subscribing site. "//host" and "/\host" would leave it.
+    return s.startsWith('//') || s.startsWith('/\\') ? undefined : s.slice(0, 2000);
+  }
   try {
     const u = new URL(s);
     return u.protocol === 'https:' || u.protocol === 'http:' ? u.toString().slice(0, 2000) : undefined;
@@ -424,7 +427,7 @@ function classifyFcmResponse(status: number, bodyText: string, retryAfter?: stri
   const retryAfterSeconds = Number.isFinite(ra) && ra > 0 ? Math.min(Math.floor(ra), 3600) : undefined;
   const error = `FCM ${status}${codes[0] || st ? ` ${codes[0] || st}` : ''}: ${msg}`.trim();
 
-  if (status === 404 || has('UNREGISTERED')) return { outcome: 'invalid_token', error, httpStatus: status };
+  if (status === 404 || status === 410 || has('UNREGISTERED')) return { outcome: 'invalid_token', error, httpStatus: status };
   if (has('SENDER_ID_MISMATCH')) return { outcome: 'invalid_token', error, httpStatus: status };
   if (status === 400 && /registration token/i.test(msg)) return { outcome: 'invalid_token', error, httpStatus: status };
   if (status === 429 || has('QUOTA_EXCEEDED')) return { outcome: 'retry', error, retryAfterSeconds: retryAfterSeconds ?? 60, httpStatus: status };
