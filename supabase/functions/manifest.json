@@ -20,6 +20,7 @@
     "platform-admin":             { "verifyJwt": true,  "why": "signed-in platform admins only (console)" },
     "push-engage":                { "verifyJwt": false, "why": "push open/click tracking from devices" },
     "push-subscribe":             { "verifyJwt": false, "why": "website SDK" },
+    "push-worker":                { "verifyJwt": false, "why": "Web Push outbox worker: pg_cron/pg_net call it with the service key (checked in code)" },
     "reset-tenant-user-password": { "verifyJwt": false, "why": "auth checked in code (existing setting)" },
     "rtm-ingest":                 { "verifyJwt": false, "why": "API keys" },
     "rtm-worker":                 { "verifyJwt": false, "why": "engine calls with the service key; users checked in code" },
