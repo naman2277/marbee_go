@@ -22,7 +22,8 @@
   if (!window.__marbee_site || !window.__marbee_write_key) log('Add ?site=…&key=… to the URL.');
   var s = document.createElement('script');
   s.src = marbee + '/sdk/v1/marbee-push.js';
-  s.setAttribute('data-prompt', 'manual');
+  // Like a real install: automatic soft prompt on page load. Add &prompt=manual to test the button-only mode.
+  if (q.get('prompt') === 'manual') s.setAttribute('data-prompt', 'manual');
   s.onload = function () { log('SDK loaded from ' + marbee + ' · permission: ' + MarbeePush.permission()); };
   document.head.appendChild(s);
   document.getElementById('sub').onclick = function () { MarbeePush.subscribe().then(function (ok) { log('subscribe → ' + ok); }); };
