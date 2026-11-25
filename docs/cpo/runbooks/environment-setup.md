@@ -106,6 +106,14 @@ workspace → `npm run db:status` shows nothing pending.
 
 ## Existing databases (dev)
 
+Dev is listed in `scripts/db/targets.json`, so you only run the command — it asks for the database password (hidden, never stored):
+
+```powershell
+node scripts/db/apply.mjs status --target dev
+```
+
+Add staging/production to `targets.json` the same way (Session-pooler user + host from Supabase → Connect; not secret) and the same one-line commands work for them.
+
 Dev was built by hand, so it has no ledger. Record what it has **without running anything**:
 
 ```powershell

@@ -28,8 +28,38 @@ const usage = `Usage: node scripts/db/apply.mjs <status|apply|baseline> --target
 if (!['status', 'apply', 'baseline'].includes(command)) { console.error(usage); process.exit(2); }
 const target = value('target');
 if (!target) { console.error('--target <name> is required (e.g. staging, production, dev) — it is printed so you can confirm where you are pointing.\n' + usage); process.exit(2); }
-const url = process.env.MARBEE_DB_URL;
-if (!url) { console.error('MARBEE_DB_URL is not set. In PowerShell:  $env:MARBEE_DB_URL = "<connection string from Supabase → Connect>"'); process.exit(2); }
+/** Ask for the database password without showing it on screen. */
+async function askHidden(question) {
+  const { createInterface } = await import('node:readline');
+  if (!process.stdin.isTTY) {
+    // Piped input (e.g. automation): read one line.
+    const rl = createInterface({ input: process.stdin });
+    for await (const line of rl) { rl.close(); return line; }
+    return '';
+  }
+  return new Promise((resolveAnswer) => {
+    const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true });
+    rl._writeToOutput = (s) => { if (s.includes(question)) process.stdout.write(s); }; // hide typed/pasted characters
+    rl.question(question, (answer) => { rl.close(); process.stdout.write('\n'); resolveAnswer(answer); });
+  });
+}
+
+// Known environments (scripts/db/targets.json) need only the password, asked for here.
+// Anything else uses MARBEE_DB_URL.
+const targets = JSON.parse((await import('node:fs')).readFileSync(resolve(ROOT, 'scripts/db/targets.json'), 'utf8'));
+let url;
+if (targets[target]) {
+  const t = targets[target];
+  const password = (await askHidden(`Database password for "${target}" (input hidden, never stored): `)).trim();
+  if (!password) { console.error('No password entered.'); process.exit(2); }
+  url = `postgresql://${encodeURIComponent(t.user)}:${encodeURIComponent(password)}@${t.host}:${t.port}/${t.database}`;
+} else {
+  url = process.env.MARBEE_DB_URL;
+  if (!url) {
+    console.error(`"${target}" is not in scripts/db/targets.json and MARBEE_DB_URL is not set. Add the environment's Session-pooler user/host to targets.json (not secret), or set MARBEE_DB_URL.`);
+    process.exit(2);
+  }
+}
 
 let host = '?';
 let port = '?';
