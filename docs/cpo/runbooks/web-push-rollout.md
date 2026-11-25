@@ -34,7 +34,7 @@ Never paste it in chat.
 
 ```sql
 select vault.create_secret('https://uqffhyaftlwetqigfenp.supabase.co/functions/v1/push-worker', 'push_worker_url');
-select vault.create_secret('PASTE_SERVICE_ROLE_KEY', 'push_worker_key');
+select vault.create_secret('PASTE_PUSH_WORKER_SECRET', 'push_worker_key');  -- same value as the PUSH_WORKER_SECRET function secret
 select extname from pg_extension where extname in ('pg_cron', 'pg_net');
 ```
 

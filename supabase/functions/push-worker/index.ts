@@ -1,6 +1,6 @@
 // push-worker — drains the Web Push outbox (sql/95, D-022).
 //
-// Called ONLY with the service-role key: by pg_cron every minute (push_worker_tick →
+// Called ONLY with PUSH_WORKER_SECRET (or the service-role key): by pg_cron every minute (push_worker_tick →
 // Vault push_worker_url / push_worker_key) and right after something is queued
 // (enqueue_web_push → push_worker_kick). Claims batches with SKIP LOCKED, so several
 // overlapping runs never send the same row twice. Each row's outcome is recorded by
@@ -13,6 +13,7 @@
 import { serve } from 'https://deno.land/std@0.208.0/http/server.ts';
 import { getServiceClient, jsonResponse, errorResponse } from '../_shared/supabase.ts';
 import { isServiceCaller } from '../_shared/tenant-guard.ts';
+import { constantTimeEqual } from '../_shared/webhook-sig.ts';
 import { isSealed, openSecret, sealSecret } from '../_shared/secret-box.ts';
 import {
   explainFcmError,
@@ -25,6 +26,16 @@ import {
 } from '../_shared/web-push.ts';
 
 const BATCH = 200;
+
+/** Cron / pg_net callers present PUSH_WORKER_SECRET (a dedicated random secret, also stored
+ *  in Vault as push_worker_key). The service-role key is accepted too. */
+function isWorkerCaller(req: Request): boolean {
+  if (isServiceCaller(req)) return true;
+  const secret = Deno.env.get('PUSH_WORKER_SECRET') ?? '';
+  const header = req.headers.get('authorization') ?? '';
+  const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+  return secret.length >= 32 && token.length > 0 && constantTimeEqual(token, secret);
+}
 const CONCURRENCY = 20;
 const BUDGET_MS = 45_000;
 
@@ -47,7 +58,7 @@ async function runPool<T>(items: T[], size: number, fn: (item: T) => Promise<voi
 
 serve(async (req) => {
   if (req.method !== 'POST') return errorResponse('Method not allowed', 405);
-  if (!isServiceCaller(req)) return errorResponse('Unauthorized', 401);
+  if (!isWorkerCaller(req)) return errorResponse('Unauthorized', 401);
 
   const supabase = getServiceClient();
   const engageUrl = `${(Deno.env.get('SUPABASE_URL') ?? '').replace(/\/$/, '')}/functions/v1/push-engage`;
