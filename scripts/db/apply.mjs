@@ -63,7 +63,19 @@ if (targets[target]) {
 
 let host = '?';
 let port = '?';
-try { const u = new URL(url); host = u.hostname; port = u.port || '5432'; } catch { console.error('MARBEE_DB_URL is not a valid postgres:// URL.'); process.exit(2); }
+let conn;
+try {
+  const u = new URL(url);
+  host = u.hostname; port = u.port || '5432';
+  // Pass discrete fields, never the URL itself: node-postgres lets URL parameters such as
+  // ?sslmode=require replace the ssl object below, which would drop the pinned CA (Codex, PR #3).
+  conn = {
+    host, port: Number(port),
+    user: decodeURIComponent(u.username),
+    password: decodeURIComponent(u.password),
+    database: decodeURIComponent(u.pathname.replace(/^\//, '')) || 'postgres',
+  };
+} catch { console.error('MARBEE_DB_URL is not a valid postgres:// URL.'); process.exit(2); }
 if (port === '6543') { console.error('This is the transaction pooler (port 6543). Use the Session pooler or Direct connection string — scripts need a real session.'); process.exit(2); }
 
 const phase = value('phase') ?? 'core';
@@ -89,7 +101,7 @@ if (!local) {
   ssl = { ca: readFileSync(caPath, 'utf8'), rejectUnauthorized: true, servername: host };
 }
 const client = new pg.Client({
-  connectionString: url,
+  ...conn,
   ssl,
   application_name: `marbee-db-${command}`,
 });
