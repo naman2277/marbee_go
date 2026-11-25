@@ -545,10 +545,12 @@ type MinimalClient = {
  */
 async function loadServiceAccountJson(
   supabase: MinimalClient,
-  provider: { id: string; credentials_encrypted?: string | null },
+  provider: { id: string; tenant_id?: string; credentials_encrypted?: string | null },
   box: { openSecret: (s: string) => Promise<string | null>; sealSecret: (s: string) => Promise<string>; isSealed: (s: string) => boolean },
 ): Promise<string | null> {
-  const { data, error } = await supabase.from('channel_provider_secrets').select('secret').eq('provider_id', provider.id).maybeSingle();
+  let q = supabase.from('channel_provider_secrets').select('secret').eq('provider_id', provider.id);
+  if (provider.tenant_id) q = q.eq('tenant_id', provider.tenant_id); // defence in depth
+  const { data, error } = await q.maybeSingle();
   if (!error && data?.secret) {
     const plain = await box.openSecret(data.secret);
     if (plain && !box.isSealed(data.secret)) {
@@ -624,14 +626,14 @@ interface SendRequest {
 type ConnectionCheck = { label: string; ok: boolean; detail?: string };
 
 async function loadProvider(supabase: SupabaseClient, tenantId: string, environment: string, providerId?: string) {
-  let q = supabase.from('channel_providers').select('id, credentials_encrypted, config, status')
+  let q = supabase.from('channel_providers').select('id, tenant_id, credentials_encrypted, config, status')
     .eq('tenant_id', tenantId).eq('environment', environment).eq('channel', 'web_push');
   q = providerId && UUID_RE.test(providerId) ? q.eq('id', providerId) : q.eq('is_default', true);
   const { data } = await q.limit(1).maybeSingle();
-  return data as { id: string; credentials_encrypted: string | null; config: Record<string, unknown>; status: string } | null;
+  return data as { id: string; tenant_id: string; credentials_encrypted: string | null; config: Record<string, unknown>; status: string } | null;
 }
 
-async function loadSa(supabase: SupabaseClient, provider: { id: string; credentials_encrypted: string | null }): Promise<ServiceAccount> {
+async function loadSa(supabase: SupabaseClient, provider: { id: string; tenant_id: string; credentials_encrypted: string | null }): Promise<ServiceAccount> {
   const raw = await loadServiceAccountJson(supabase, provider, { openSecret, sealSecret, isSealed });
   if (!raw) throw new Error('Service account JSON not configured — paste the Firebase service-account key in Channels → Web Push');
   return parseServiceAccount(raw);

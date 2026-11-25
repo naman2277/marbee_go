@@ -275,10 +275,12 @@ type MinimalClient = {
  */
 export async function loadServiceAccountJson(
   supabase: MinimalClient,
-  provider: { id: string; credentials_encrypted?: string | null },
+  provider: { id: string; tenant_id?: string; credentials_encrypted?: string | null },
   box: { openSecret: (s: string) => Promise<string | null>; sealSecret: (s: string) => Promise<string>; isSealed: (s: string) => boolean },
 ): Promise<string | null> {
-  const { data, error } = await supabase.from('channel_provider_secrets').select('secret').eq('provider_id', provider.id).maybeSingle();
+  let q = supabase.from('channel_provider_secrets').select('secret').eq('provider_id', provider.id);
+  if (provider.tenant_id) q = q.eq('tenant_id', provider.tenant_id); // defence in depth
+  const { data, error } = await q.maybeSingle();
   if (!error && data?.secret) {
     const plain = await box.openSecret(data.secret);
     if (plain && !box.isSealed(data.secret)) {

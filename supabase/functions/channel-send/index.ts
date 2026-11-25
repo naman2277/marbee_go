@@ -65,14 +65,14 @@ interface SendRequest {
 type ConnectionCheck = { label: string; ok: boolean; detail?: string };
 
 async function loadProvider(supabase: SupabaseClient, tenantId: string, environment: string, providerId?: string) {
-  let q = supabase.from('channel_providers').select('id, credentials_encrypted, config, status')
+  let q = supabase.from('channel_providers').select('id, tenant_id, credentials_encrypted, config, status')
     .eq('tenant_id', tenantId).eq('environment', environment).eq('channel', 'web_push');
   q = providerId && UUID_RE.test(providerId) ? q.eq('id', providerId) : q.eq('is_default', true);
   const { data } = await q.limit(1).maybeSingle();
-  return data as { id: string; credentials_encrypted: string | null; config: Record<string, unknown>; status: string } | null;
+  return data as { id: string; tenant_id: string; credentials_encrypted: string | null; config: Record<string, unknown>; status: string } | null;
 }
 
-async function loadSa(supabase: SupabaseClient, provider: { id: string; credentials_encrypted: string | null }): Promise<ServiceAccount> {
+async function loadSa(supabase: SupabaseClient, provider: { id: string; tenant_id: string; credentials_encrypted: string | null }): Promise<ServiceAccount> {
   const raw = await loadServiceAccountJson(supabase, provider, { openSecret, sealSecret, isSealed });
   if (!raw) throw new Error('Service account JSON not configured — paste the Firebase service-account key in Channels → Web Push');
   return parseServiceAccount(raw);

@@ -93,6 +93,12 @@ AS $$
 DECLARE v_sa TEXT; v_raw TEXT := nullif(btrim(coalesce(NEW.credentials_encrypted, '')), '');
 BEGIN
   IF NEW.channel <> 'web_push' OR NEW.provider_type <> 'firebase' THEN RETURN NEW; END IF;
+  -- BEFORE triggers also fire for rows an upsert later drops (ON CONFLICT DO NOTHING):
+  -- never touch a secret whose provider id already belongs to another workspace.
+  IF EXISTS (SELECT 1 FROM public.channel_providers p WHERE p.id = NEW.id AND p.tenant_id <> NEW.tenant_id) THEN
+    NEW.credentials_encrypted := NULL;
+    RETURN NEW;
+  END IF;
   v_sa := public.firebase_sa_extract(v_raw);
   IF v_sa IS NOT NULL THEN
     INSERT INTO public.channel_provider_secrets (provider_id, tenant_id, secret, updated_at)
@@ -216,6 +222,8 @@ AS $$
   FROM public.tenants t WHERE t.id = p_tenant_id;
 $$;
 REVOKE ALL ON FUNCTION public.web_push_daily_cap(UUID) FROM PUBLIC;
+DO $$ BEGIN EXECUTE 'REVOKE ALL ON FUNCTION public.web_push_daily_cap(UUID) FROM anon, authenticated';
+EXCEPTION WHEN undefined_object THEN NULL; END $$;
 GRANT EXECUTE ON FUNCTION public.web_push_daily_cap(UUID) TO service_role;
 
 -- Service-role entry point (push-subscribe welcome push, server workers).

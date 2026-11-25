@@ -195,6 +195,14 @@ r = await db.query(`SELECT (SELECT secret FROM channel_provider_secrets WHERE pr
 ok(r.rows[0].s === 'not-json-but-maybe-a-key' && r.rows[0].c === null && !r.rows[0].config.service_account_configured,
   'unrecognised content is kept server-side (not destroyed) and not marked configured');
 
+// A member of B can't plant a key on A's provider via an ignored upsert.
+const PA = 'ffffffff-0000-0000-0000-0000000000fa';
+await db.query(`INSERT INTO channel_providers (id, tenant_id, environment, channel, provider_type, name, config) VALUES ('${PA}','${A}','staging','web_push','firebase','A staging','{}')`);
+await as(UB, `INSERT INTO channel_providers (id, tenant_id, environment, channel, provider_type, name, credentials_encrypted, config)
+  VALUES ('${PA}','${B}','production','web_push','firebase','evil', $1, '{}') ON CONFLICT (id) DO NOTHING`, [SA]);
+ok((await db.query(`SELECT count(*)::int n FROM channel_provider_secrets WHERE provider_id = '${PA}'`)).rows[0].n === 0,
+  'an upsert from another workspace cannot plant a key on this provider');
+
 // Welcome push path: internal enqueue by subscriber id (anonymous device).
 q = (await svc(`SELECT enqueue_web_push_internal('${A}','production','{}'::uuid[],'{d0000000-0000-0000-0000-000000000005}'::uuid[],$1::jsonb,'welcome:d5') AS r`, [content])).rows[0].r;
 ok(q.queued === 1, 'service role can queue a welcome push to one specific device');

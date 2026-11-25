@@ -59,7 +59,7 @@ serve(async (req) => {
     const key = `${row.tenant_id}|${row.environment}|${row.provider_id ?? 'default'}`;
     if (!providers.has(key)) {
       providers.set(key, (async () => {
-        let q = supabase.from('channel_providers').select('id, credentials_encrypted, status')
+        let q = supabase.from('channel_providers').select('id, tenant_id, credentials_encrypted, status')
           .eq('tenant_id', row.tenant_id).eq('environment', row.environment).eq('channel', 'web_push');
         q = row.provider_id ? q.eq('id', row.provider_id) : q.eq('is_default', true);
         const { data, error } = await q.limit(1).maybeSingle();
