@@ -13,6 +13,8 @@
 <script>
   var q = new URLSearchParams(location.search);
   var log = function (m) { document.getElementById('log').textContent += m + '\n'; };
+  var _warn = console.warn;
+  console.warn = function () { log([].slice.call(arguments).join(' ')); _warn.apply(console, arguments); };
   window.__marbee_site = q.get('site');
   window.__marbee_write_key = q.get('key');
   window.__marbee_api = q.get('api') || 'https://uqffhyaftlwetqigfenp.supabase.co/functions/v1';
