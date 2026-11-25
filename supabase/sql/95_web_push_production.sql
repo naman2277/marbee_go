@@ -194,7 +194,7 @@ GRANT EXECUTE ON FUNCTION public.web_push_daily_cap(UUID) TO service_role;
 
 -- Service-role entry point (push-subscribe welcome push, server workers).
 -- Targets = every ACTIVE device of the given customers (linked directly, or through an
--- ecid in customer_identities) plus the given subscriber ids, inside this workspace only.
+-- ecid / website anonymous id in customer_identities) plus the given subscriber ids, inside this workspace only.
 CREATE OR REPLACE FUNCTION public.enqueue_web_push_internal(
   p_tenant_id       UUID,
   p_environment     TEXT,
@@ -248,7 +248,7 @@ BEGIN
   FROM public.web_push_subscribers s
   LEFT JOIN public.customer_identities ci
     ON ci.tenant_id = s.tenant_id AND ci.environment = s.environment
-   AND s.ecid IS NOT NULL AND ci.ecid = s.ecid AND ci.customer_id = ANY (v_customers)
+   AND s.ecid IS NOT NULL AND (ci.ecid = s.ecid OR ci.anonymous_id = s.ecid) AND ci.customer_id = ANY (v_customers)
   WHERE s.tenant_id = p_tenant_id
     AND s.environment = p_environment
     AND s.subscription_status = 'active'

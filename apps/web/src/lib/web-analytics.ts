@@ -1,6 +1,5 @@
 import { supabase } from './supabase';
 import { logAudit } from './audit';
-import { createNotification } from './notifications';
 import type {
   WebAnalyticsSite,
   WebAnalyticsEvent,
@@ -924,180 +923,83 @@ export async function fetchWebAnalyticsMetrics(
   };
 }
 
-const STORAGE_PUSH_SUBS_KEY = 'marbee_web_push_subscribers_v1';
+// ==========================================
+// WEB PUSH SUBSCRIBERS (D-022: database only)
+// ==========================================
+// Subscribers live in web_push_subscribers (RLS: own workspace only). Website visitors
+// subscribe through the push SDK -> push-subscribe; expired tokens are pruned by the
+// push worker. (The old localStorage / dev-API / public ntfy.sh relay is gone.)
 
-function getStoredSubscribers(tenantId: string, environment: string): WebPushSubscriber[] {
-  try {
-    const raw = localStorage.getItem(`${STORAGE_PUSH_SUBS_KEY}_${tenantId}_${environment}`);
-    if (raw) return JSON.parse(raw);
-  } catch (e) {
-    console.warn('Push subscribers storage read error:', e);
-  }
-  return [];
+type SubscriberRow = {
+  id: string;
+  tenant_id: string;
+  environment: string;
+  customer_id: string | null;
+  fcm_token: string;
+  browser: string | null;
+  os: string | null;
+  device: string | null;
+  permission_status: string | null;
+  subscription_status: string;
+  last_seen: string | null;
+  created_at: string;
+};
+
+const SUBSCRIBER_COLUMNS =
+  'id, tenant_id, environment, customer_id, fcm_token, browser, os, device, permission_status, subscription_status, last_seen, created_at';
+
+function mapSubscriber(r: SubscriberRow): WebPushSubscriber {
+  const status = r.subscription_status === 'active' ? 'active' : r.subscription_status === 'invalid' ? 'expired' : 'inactive';
+  return {
+    id: r.id,
+    tenantId: r.tenant_id,
+    environment: r.environment,
+    optinStatus: r.permission_status === 'denied' ? 'denied' : 'yes',
+    fcmToken: r.fcm_token,
+    customerId: r.customer_id,
+    browser: r.browser ?? 'Unknown',
+    os: r.os ?? 'Unknown',
+    device: r.device ?? 'desktop',
+    permissionStatus: r.permission_status ?? 'granted',
+    subscriptionStatus: status,
+    isTestToken: false,
+    lastDeliveryStatus: r.subscription_status === 'invalid' ? 'failed' : 'untested',
+    lastFailureReason: r.subscription_status === 'invalid' ? 'Subscription expired - pruned by the push worker' : null,
+    lastSeen: r.last_seen ?? r.created_at,
+    createdAt: r.created_at,
+  };
 }
 
-function getDeletedTokenKeys(tenantId: string): Set<string> {
-  try {
-    const raw = typeof window !== 'undefined' ? localStorage.getItem(`marbee_deleted_push_tokens_${tenantId}`) : null;
-    return new Set(raw ? JSON.parse(raw) : []);
-  } catch {
-    return new Set();
-  }
-}
-
-function addDeletedTokenKey(tenantId: string, tokenOrId: string) {
-  try {
-    if (typeof window === 'undefined') return;
-    const set = getDeletedTokenKeys(tenantId);
-    set.add(tokenOrId);
-    localStorage.setItem(`marbee_deleted_push_tokens_${tenantId}`, JSON.stringify(Array.from(set)));
-  } catch {}
-}
-
-function saveStoredSubscribers(tenantId: string, environment: string, list: WebPushSubscriber[]) {
-  try {
-    localStorage.setItem(`${STORAGE_PUSH_SUBS_KEY}_${tenantId}_${environment}`, JSON.stringify(list.slice(-500)));
-  } catch (e) {
-    console.warn('Push subscribers storage write error:', e);
-  }
-}
-
-/** Fetch all registered Web Push subscribers for a tenant */
+/** Registered Web Push subscribers for a workspace (newest first, max 500). */
 export async function fetchWebPushSubscribers(
   tenantId: string,
   environment: string,
-  siteId?: string
+  _siteId?: string,
 ): Promise<WebPushSubscriber[]> {
-  let apiSubscribers: WebPushSubscriber[] = [];
-  const safeTopic = `marbee_push_${(tenantId || 'default').replace(/[^a-zA-Z0-9_]/g, '_')}`;
-  const deletedSet = getDeletedTokenKeys(tenantId);
-
-  // 1. Fetch from local Vite API server
-  try {
-    const res = await fetch('/api/v1/web-push/subscribers');
-    if (res.ok) {
-      const body = await res.json();
-      if (body && Array.isArray(body.subscribers)) {
-        apiSubscribers = body.subscribers;
-      }
-    }
-  } catch {}
-
-  // 2. Fetch from cloud HTTPS relay (captures tokens from external HTTPS domains like Netlify)
-  try {
-    const cloudRes = await fetch(`https://ntfy.sh/${safeTopic}/json?poll=1&since=all`);
-    if (cloudRes.ok) {
-      const text = (await cloudRes.text()).trim();
-      if (text) {
-        const lines = text.split('\n').filter(Boolean);
-        const cloudSubs: WebPushSubscriber[] = lines
-          .map((l) => {
-            try { return JSON.parse(l); } catch { return null; }
-          })
-          .filter((m) => m && m.event === 'message')
-          .map((m) => {
-            try {
-              const d = JSON.parse(m.message);
-              const ua = d.browser || '';
-              const isMobile = /Mobile|Android|iPhone|iPad/i.test(ua);
-              const isTablet = /iPad|Tablet/i.test(ua);
-              const browser = /Edg/i.test(ua) ? 'Edge' : /Firefox/i.test(ua) ? 'Firefox' : /Safari/i.test(ua) && !/Chrome/i.test(ua) ? 'Safari' : 'Chrome';
-              const os = /Windows/i.test(ua) ? 'Windows' : /Mac/i.test(ua) ? 'macOS' : /Linux/i.test(ua) ? 'Linux' : /Android/i.test(ua) ? 'Android' : /iOS/i.test(ua) ? 'iOS' : 'Desktop';
-              const device = isTablet ? 'tablet' : isMobile ? 'mobile' : 'desktop';
-
-              const isTest = Boolean(d.is_test_token || d.fcm_token?.startsWith('TEST_TOKEN_') || d.fcm_token?.startsWith('fcm_sim_') || d.fcm_token?.startsWith('live_netlify_'));
-
-              return {
-                id: d.id || `wps_${m.time}_${Math.random().toString(36).substring(2, 6)}`,
-                tenantId: d.tenant_id || tenantId,
-                environment: d.environment || environment,
-                siteId: d.site_id || siteId,
-                websiteDomain: d.website_domain || 'remote-site',
-                optinPage: d.optin_page || '/',
-                optinStatus: d.optin_status || 'yes',
-                fcmToken: d.fcm_token,
-                customerId: d.customer_id || null,
-                browser: d.browser && !d.browser.includes('Mozilla') ? d.browser : browser,
-                os: d.os || os,
-                device: d.device || device,
-                permissionStatus: d.permission_status || 'granted',
-                subscriptionStatus: d.subscription_status || 'active',
-                isTestToken: isTest,
-                deliveryFailures: 0,
-                lastDeliveryStatus: 'untested' as const,
-                lastFailureReason: null,
-                endpoint: d.endpoint,
-                lastSeen: new Date(m.time * 1000).toISOString(),
-                createdAt: new Date(m.time * 1000).toISOString(),
-              };
-            } catch {
-              return null;
-            }
-          })
-          .filter(Boolean) as WebPushSubscriber[];
-
-        apiSubscribers = [...cloudSubs, ...apiSubscribers];
-      }
-    }
-  } catch {}
-
-  const stored = getStoredSubscribers(tenantId, environment);
-  
-  // Merge apiSubscribers + stored
-  const mergedMap = new Map<string, WebPushSubscriber>();
-  apiSubscribers.forEach((s) => {
-    if (!deletedSet.has(s.id) && !deletedSet.has(s.fcmToken)) {
-      mergedMap.set(s.fcmToken, s);
-    }
-  });
-  stored.forEach((s) => {
-    if (!deletedSet.has(s.id) && !deletedSet.has(s.fcmToken) && !mergedMap.has(s.fcmToken)) {
-      mergedMap.set(s.fcmToken, s);
-    }
-  });
-
-  const merged = Array.from(mergedMap.values()).sort(
-    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-  );
-
-  saveStoredSubscribers(tenantId, environment, merged);
-
-  if (siteId) {
-    const cleanId = siteId.toLowerCase();
-    return merged.filter((s) => {
-      if (!s.siteId) return true;
-      if (s.siteId.toLowerCase() === cleanId) return true;
-      if (s.websiteDomain && s.websiteDomain.toLowerCase().includes(cleanId)) return true;
-      return true; // Return all for this tenant if domain belongs to same workspace
-    });
-  }
-  return merged;
+  if (!tenantId) return [];
+  const { data, error } = await supabase
+    .from('web_push_subscribers')
+    .select(SUBSCRIBER_COLUMNS)
+    .eq('tenant_id', tenantId)
+    .eq('environment', environment)
+    .order('created_at', { ascending: false })
+    .limit(500);
+  if (error) throw new Error(`Could not load push subscribers: ${error.message}`);
+  return ((data ?? []) as SubscriberRow[]).map(mapSubscriber);
 }
 
-/** Clear all test / simulated push subscriber tokens */
+/** Remove subscriptions that are no longer reachable (expired or unsubscribed). */
 export async function clearTestPushSubscribers(tenantId: string, environment: string): Promise<void> {
-  const current = getStoredSubscribers(tenantId, environment);
-  const deletedSet = getDeletedTokenKeys(tenantId);
-  current.forEach((s) => {
-    if (s.isTestToken || s.fcmToken.startsWith('TEST_TOKEN_') || s.fcmToken.startsWith('fcm_sim_') || s.fcmToken.startsWith('live_netlify_') || s.fcmToken.startsWith('mb_push_') || s.fcmToken.startsWith('mb_tok_')) {
-      deletedSet.add(s.id);
-      deletedSet.add(s.fcmToken);
-      addDeletedTokenKey(tenantId, s.id);
-      addDeletedTokenKey(tenantId, s.fcmToken);
-    }
-  });
-
-  const realOnly = current.filter(
-    (s) => !deletedSet.has(s.id) && !deletedSet.has(s.fcmToken)
-  );
-  saveStoredSubscribers(tenantId, environment, realOnly);
-
-  try {
-    await fetch('/api/v1/web-push/subscribers/clear-test', { method: 'POST' });
-  } catch {}
+  const { error } = await supabase
+    .from('web_push_subscribers')
+    .delete()
+    .eq('tenant_id', tenantId)
+    .eq('environment', environment)
+    .in('subscription_status', ['invalid', 'inactive']);
+  if (error) throw new Error(error.message);
 }
 
-/** Register a new Web Push token/subscriber with website & page attribution */
+/** Register THIS browser (a signed-in member testing push inside Marbee). */
 export async function registerWebPushSubscriber(payload: {
   tenantId: string;
   environment: string;
@@ -1116,169 +1018,47 @@ export async function registerWebPushSubscriber(payload: {
   p256dh?: string;
   auth?: string;
 }): Promise<WebPushSubscriber> {
-  const { tenantId, environment, siteId, websiteDomain, optinPage, optinStatus, fcmToken, customerId, endpoint, p256dh, auth } = payload;
-  const now = new Date().toISOString();
   const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
-  const isMobile = /Mobile|Android|iPhone|iPad/i.test(ua);
-  const isTablet = /iPad|Tablet/i.test(ua);
-  const browser = payload.browser || (/Edg/i.test(ua) ? 'Edge' : /Firefox/i.test(ua) ? 'Firefox' : /Safari/i.test(ua) && !/Chrome/i.test(ua) ? 'Safari' : 'Chrome');
-  const os = payload.os || (/Windows/i.test(ua) ? 'Windows' : /Mac/i.test(ua) ? 'macOS' : /Linux/i.test(ua) ? 'Linux' : /Android/i.test(ua) ? 'Android' : /iOS/i.test(ua) ? 'iOS' : 'Desktop');
-  const device = payload.device || (isTablet ? 'tablet' : isMobile ? 'mobile' : 'desktop');
-  const isTest = payload.isTestToken ?? (fcmToken.startsWith('TEST_TOKEN_') || fcmToken.startsWith('fcm_sim_') || fcmToken.startsWith('mb_push_'));
-
-  const subscriber: WebPushSubscriber = {
-    id: `wps_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-    tenantId,
-    environment,
-    siteId,
-    websiteDomain: websiteDomain || (typeof window !== 'undefined' ? window.location.hostname : 'example.com'),
-    optinPage: optinPage || (typeof window !== 'undefined' ? window.location.pathname : '/'),
-    optinStatus: optinStatus || (payload.permissionStatus === 'granted' ? 'yes' : 'denied'),
-    fcmToken,
-    customerId: customerId || null,
-    browser,
-    os,
-    device,
-    permissionStatus: payload.permissionStatus || 'granted',
-    subscriptionStatus: 'active',
-    isTestToken: isTest,
-    deliveryFailures: 0,
-    lastDeliveryStatus: 'untested',
-    lastFailureReason: null,
-    endpoint,
-    p256dh,
-    auth,
-    lastSeen: now,
-    createdAt: now,
-  };
-
-  // Attempt database upsert
-  try {
-    await supabase.from('web_push_subscribers').upsert(
+  const { data, error } = await supabase
+    .from('web_push_subscribers')
+    .upsert(
       {
-        tenant_id: tenantId,
-        environment,
-        fcm_token: fcmToken,
-        customer_id: customerId || null,
-        browser,
-        os,
-        device,
+        tenant_id: payload.tenantId,
+        environment: payload.environment,
+        fcm_token: payload.fcmToken,
+        customer_id: payload.customerId || null,
+        browser: payload.browser || (/Edg/i.test(ua) ? 'Edge' : /Firefox/i.test(ua) ? 'Firefox' : /Safari/i.test(ua) && !/Chrome/i.test(ua) ? 'Safari' : 'Chrome'),
+        os: payload.os || null,
+        device: payload.device || (/Mobile|Android|iPhone/i.test(ua) ? 'mobile' : 'desktop'),
         permission_status: payload.permissionStatus || 'granted',
         subscription_status: 'active',
-        last_seen: now,
-      },
-      { onConflict: 'tenant_id,environment,fcm_token' }
-    );
-  } catch {}
-
-  // Update local storage
-  const current = getStoredSubscribers(tenantId, environment);
-  const existingIdx = current.findIndex((s) => s.fcmToken === fcmToken);
-  let updatedList: WebPushSubscriber[];
-  if (existingIdx >= 0) {
-    updatedList = [...current];
-    updatedList[existingIdx] = {
-      ...updatedList[existingIdx],
-      lastSeen: now,
-      subscriptionStatus: 'active',
-      websiteDomain: subscriber.websiteDomain,
-      optinPage: subscriber.optinPage,
-      optinStatus: subscriber.optinStatus,
-    };
-  } else {
-    updatedList = [subscriber, ...current];
-  }
-  saveStoredSubscribers(tenantId, environment, updatedList);
-
-  // Broadcast to other tabs
-  try {
-    if (typeof window !== 'undefined' && window.BroadcastChannel) {
-      new BroadcastChannel('marbee_analytics_stream').postMessage({ type: 'PUSH_SUBSCRIBER_REGISTERED', subscriber });
-    }
-  } catch {}
-
-  // Trigger actual real notification
-  try {
-    void createNotification(
-      {
-        title: 'Live Web Push Subscriber Opted-In',
-        message: `New browser subscriber captured from ${browser} (${device}) on ${subscriber.websiteDomain || 'site'}.`,
-        type: 'web_push',
-        category: 'web_push',
-        actionUrl: '/web-analytics',
-        actionLabel: 'View in Web Push Hub',
-        badge: 'Live Feed',
-      },
-      tenantId,
-      environment
-    );
-  } catch {}
-
-  return subscriber;
-}
-
-/** Mark a subscriber push delivery result — auto-marks inactive on failure */
-export async function markPushSubscriberDeliveryResult(
-  tenantId: string,
-  environment: string,
-  fcmTokenOrId: string,
-  delivered: boolean,
-  failureReason?: string
-): Promise<{ success: boolean; status: WebPushSubscriber['subscriptionStatus'] }> {
-  const current = getStoredSubscribers(tenantId, environment);
-  const idx = current.findIndex((s) => s.fcmToken === fcmTokenOrId || s.id === fcmTokenOrId);
-  const newStatus: WebPushSubscriber['subscriptionStatus'] = delivered ? 'active' : 'inactive';
-
-  if (idx >= 0) {
-    const prev = current[idx];
-    const updated: WebPushSubscriber = {
-      ...prev,
-      subscriptionStatus: newStatus,
-      lastDeliveryStatus: delivered ? 'delivered' : 'failed',
-      lastFailureReason: delivered ? null : (failureReason || 'Push delivery failed — endpoint unreachable or rejected by browser'),
-      deliveryFailures: delivered ? 0 : (prev.deliveryFailures || 0) + 1,
-      lastSeen: new Date().toISOString(),
-    };
-    current[idx] = updated;
-    saveStoredSubscribers(tenantId, environment, current);
-  }
-
-  // Update server persistence file
-  try {
-    await fetch('/api/v1/web-push/subscribers/update-status', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        fcmToken: fcmTokenOrId,
-        delivered,
-        subscriptionStatus: newStatus,
-        failureReason: failureReason || 'Push delivery failed',
-      }),
-    });
-  } catch {}
-
-  // Attempt database update
-  try {
-    await supabase
-      .from('web_push_subscribers')
-      .update({
-        subscription_status: newStatus,
+        token_invalidated_at: null,
         last_seen: new Date().toISOString(),
-      })
-      .or(`fcm_token.eq.${fcmTokenOrId},id.eq.${fcmTokenOrId}`)
-      .eq('tenant_id', tenantId)
-      .eq('environment', environment);
-  } catch {}
-
-  return { success: true, status: newStatus };
+      },
+      { onConflict: 'tenant_id,environment,fcm_token' },
+    )
+    .select(SUBSCRIBER_COLUMNS)
+    .single();
+  if (error) throw new Error(`Could not save subscription: ${error.message}`);
+  return mapSubscriber(data as SubscriberRow);
 }
 
-/** Verify whether Web Push is actually deployed and configured on the live website */
+/** Kept for existing callers: delivery results are recorded server-side now (push worker). */
+export async function markPushSubscriberDeliveryResult(
+  _tenantId: string,
+  _environment: string,
+  _fcmTokenOrId: string,
+  delivered: boolean,
+): Promise<{ success: boolean; status: WebPushSubscriber['subscriptionStatus'] }> {
+  return { success: true, status: delivered ? 'active' : 'inactive' };
+}
+
+/** Is the push service worker reachable on the live website, and has anyone subscribed? */
 export async function verifyRemoteWebPushDeployment(
   tenantId: string,
   environment: string,
   domain: string,
-  siteId?: string
+  _siteId?: string,
 ): Promise<{
   configured: boolean;
   swReachable: boolean;
@@ -1288,92 +1068,56 @@ export async function verifyRemoteWebPushDeployment(
   details?: string;
 }> {
   const cleanDomain = domain.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
-  const swUrl = `https://${cleanDomain}/sw.js`;
+  const swUrl = `https://${cleanDomain}/marbee-push-sw.js`;
   let swReachable = false;
-
-  // 1. Check if live subscribers from this domain exist in database
-  const subscribers = await fetchWebPushSubscribers(tenantId, environment, siteId);
-  const liveFromDomain = subscribers.filter(
-    (s) => s.websiteDomain && s.websiteDomain.toLowerCase().includes(cleanDomain.toLowerCase()) && !s.fcmToken.startsWith('fcm_sim_')
-  );
-
-  // 2. Probe /sw.js on the remote website
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 3500);
     const res = await fetch(swUrl, { method: 'HEAD', mode: 'no-cors', signal: controller.signal });
     clearTimeout(timer);
-    if (res.type === 'opaque' || res.ok) {
-      swReachable = true;
-    }
+    swReachable = res.type === 'opaque' || res.ok;
   } catch {
     swReachable = false;
   }
-
-  if (liveFromDomain.length > 0) {
+  const { count } = await supabase
+    .from('web_push_subscribers')
+    .select('id', { count: 'exact', head: true })
+    .eq('tenant_id', tenantId)
+    .eq('environment', environment)
+    .eq('subscription_status', 'active');
+  const live = count ?? 0;
+  if (live > 0) {
     return {
-      configured: true,
-      swReachable: true,
-      liveSubscribersCount: liveFromDomain.length,
-      checkedUrl: swUrl,
-      message: `✅ Web Push Active: ${liveFromDomain.length} real subscriber token(s) captured from ${cleanDomain}.`,
+      configured: true, swReachable, liveSubscribersCount: live, checkedUrl: swUrl,
+      message: `Web Push is live: ${live} active subscriber(s) in this environment.`,
     };
   }
-
-  if (swReachable) {
-    return {
-      configured: false,
-      swReachable: true,
-      liveSubscribersCount: 0,
-      checkedUrl: swUrl,
-      message: `⚠️ Service worker detected at ${swUrl}, but no real visitor subscribers have opted in yet. Embed the opt-in snippet and visit ${cleanDomain} to opt in.`,
-    };
-  }
-
   return {
-    configured: false,
-    swReachable: false,
-    liveSubscribersCount: 0,
-    checkedUrl: swUrl,
-    message: `❌ Not Connected: /sw.js was not detected at ${swUrl}, and no live subscriber tokens have been received from ${cleanDomain}.`,
-    details: `Please ensure /sw.js is uploaded to your website root and the opt-in script is embedded in your website before testing.`,
+    configured: false, swReachable, liveSubscribersCount: 0, checkedUrl: swUrl,
+    message: swReachable
+      ? `Service worker found at ${swUrl}, but nobody has subscribed yet. Add the script tag and allow notifications on ${cleanDomain}.`
+      : `Could not confirm ${swUrl}. Upload marbee-push-sw.js to your website root and add the script tag.`,
+    details: 'Browsers do not let one site read another site\'s files, so this check is only a hint. The subscriber count is what counts.',
   };
 }
 
-/** Delete / Unregister a Web Push Subscriber */
+/** Remove one subscriber in this workspace. */
 export async function deleteWebPushSubscriber(
   tenantId: string,
   environment: string,
   subscriberId: string,
-  fcmToken?: string
+  _fcmToken?: string,
 ): Promise<void> {
-  addDeletedTokenKey(tenantId, subscriberId);
-  if (fcmToken) addDeletedTokenKey(tenantId, fcmToken);
-
-  // 1. Delete from local storage
-  const current = getStoredSubscribers(tenantId, environment);
-  saveStoredSubscribers(
-    tenantId,
-    environment,
-    current.filter((s) => s.id !== subscriberId && s.fcmToken !== subscriberId && (!fcmToken || s.fcmToken !== fcmToken))
-  );
-
-  // 2. Call Vite API to remove from persisted server JSON
-  try {
-    await fetch('/api/v1/web-push/subscribers/delete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: subscriberId, fcmToken }),
-    });
-  } catch {}
-
-  // 3. Delete from Supabase
-  try {
-    await supabase.from('web_push_subscribers').delete().or(`id.eq.${subscriberId},fcm_token.eq.${subscriberId}`);
-  } catch {}
+  const { error } = await supabase
+    .from('web_push_subscribers')
+    .delete()
+    .eq('tenant_id', tenantId)
+    .eq('environment', environment)
+    .eq('id', subscriberId);
+  if (error) throw new Error(error.message);
 }
 
-/** Send live browser test push notification and auto-track delivery status */
+/** Send a real test push to one subscriber through channel-send (server-side FCM). */
 export async function sendTestWebPushNotification(payload: {
   title: string;
   body: string;
@@ -1384,65 +1128,24 @@ export async function sendTestWebPushNotification(payload: {
   environment?: string;
   fcmToken?: string;
 }): Promise<{ ok: boolean; message: string; autoDeactivated?: boolean }> {
-  const safeTenantId = payload.tenantId || '00000000-0000-0000-0000-000000000001';
-  const safeTopic = `marbee_push_outbound_${safeTenantId.replace(/[^a-zA-Z0-9_]/g, '_')}`;
-
-  let relayDelivered = false;
-
-  // 1. Broadcast to target subscriber device via high-speed Cloud Push Relay
-  try {
-    const cloudRes = await fetch(`https://ntfy.sh/${safeTopic}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        target_fcm_token: payload.fcmToken || 'all',
-        title: payload.title,
-        body: payload.body,
-        icon: payload.iconUrl || '/favicon.svg',
-        url: payload.clickUrl || '/',
-        time: Date.now(),
-      }),
-    });
-    if (cloudRes.ok) relayDelivered = true;
-  } catch (err) {
-    console.warn('Cloud push relay note:', err);
+  if (!payload.tenantId || !payload.environment || !payload.fcmToken) {
+    return { ok: false, message: 'Pick a subscriber to send a test push to.' };
   }
-
-  // 2. Also trigger on local admin browser if permission granted
-  try {
-    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-      if ('serviceWorker' in navigator) {
-        const reg = await navigator.serviceWorker.getRegistration();
-        if (reg && reg.showNotification) {
-          await reg.showNotification(payload.title, {
-            body: payload.body,
-            icon: payload.iconUrl || '/favicon.svg',
-            badge: '/favicon.svg',
-            tag: payload.tag || 'marbee-test-push',
-            data: { url: payload.clickUrl || window.location.origin },
-          });
-        } else {
-          new Notification(payload.title, {
-            body: payload.body,
-            icon: payload.iconUrl || '/favicon.svg',
-            tag: payload.tag || 'marbee-test-push',
-          });
-        }
-      }
-    }
-  } catch {}
-
-  // 3. Update subscriber delivery status in storage & database
-  if (payload.tenantId && payload.environment && payload.fcmToken) {
-    await markPushSubscriberDeliveryResult(payload.tenantId, payload.environment, payload.fcmToken, true);
-  }
-
-  return {
-    ok: true,
-    message: relayDelivered
-      ? '✓ Push notification dispatched to subscriber device & displayed!'
-      : '✓ Push notification triggered for target subscriber.',
-  };
+  const { invokeFunction } = await import('./functions');
+  const result = await invokeFunction<{ success?: boolean; status?: string; error?: string }>('channel-send', {
+    action: 'send',
+    tenant_id: payload.tenantId,
+    environment: payload.environment,
+    fcm_token: payload.fcmToken,
+    title: payload.title,
+    body: payload.body,
+    icon_url: payload.iconUrl,
+    click_action: payload.clickUrl,
+    tag: payload.tag || 'marbee-test-push',
+  });
+  if (result.ok && result.data?.status === 'delivered') return { ok: true, message: 'Test push sent via Firebase.' };
+  const err = result.data?.error ?? result.error ?? 'Push send failed';
+  return { ok: false, message: err, autoDeactivated: /pruned|expired/i.test(err) };
 }
 
 // ==========================================

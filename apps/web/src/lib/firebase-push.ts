@@ -103,54 +103,93 @@ export async function registerPushSubscription(
   return { success: true, subscriber: data };
 }
 
-export type WebPushTarget = {
-  fcm_token: string;
-  customer_id: string | null;
+export type WebPushEnqueueResult = {
+  queued: number;
+  devices: number;
+  excluded: number;
+  duplicate: number;
+  capped: number;
+  no_subscription: number;
+  daily_cap?: number;
 };
 
-/** Resolve FCM tokens for campaign audience (subscriber id, customer id, or unlinked test devices). */
-export async function resolveWebPushTargets(
-  tenantId: string,
-  environment: string,
-  audienceIds: string[],
-): Promise<WebPushTarget[]> {
-  if (!audienceIds.length) return [];
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-  const { data: subs, error } = await supabase
-    .from('web_push_subscribers')
-    .select('id, fcm_token, customer_id')
-    .eq('tenant_id', tenantId)
-    .eq('environment', environment)
-    .eq('subscription_status', 'active');
-
-  if (error) throw new Error(`Failed to load push subscribers: ${error.message}`);
-
-  const idSet = new Set(audienceIds);
-  const seen = new Set<string>();
-  const targets: WebPushTarget[] = [];
-
-  const add = (row: WebPushTarget) => {
-    if (seen.has(row.fcm_token)) return;
-    seen.add(row.fcm_token);
-    targets.push(row);
+/**
+ * Queue a Web Push for these customers (D-022). Nothing is sent from the browser: the
+ * server resolves every active device of each customer, skips exclusions, enforces the
+ * daily fair-use cap and sends via push-worker with retries. The same idempotencyKey
+ * never sends twice to the same device, so retries and double clicks are safe.
+ */
+export async function enqueueWebPush(input: {
+  tenantId: string;
+  environment: string;
+  customerIds: string[];
+  idempotencyKey: string;
+  content: {
+    title: string;
+    body: string;
+    clickAction?: string;
+    iconUrl?: string;
+    imageUrl?: string;
+    badgeUrl?: string;
+    tag?: string;
+    ttlSeconds?: number;
+    actions?: ResolvedWebPushPayload['actions'];
+    trackOpens?: boolean;
   };
-
-  for (const sub of subs ?? []) {
-    if (idSet.has(sub.id) || (sub.customer_id && idSet.has(sub.customer_id))) {
-      add({ fcm_token: sub.fcm_token, customer_id: sub.customer_id });
-    }
+  journeyId?: string;
+  deliveryId?: string;
+  deliveryName?: string;
+}): Promise<WebPushEnqueueResult> {
+  const ids = [...new Set(input.customerIds.filter((id) => UUID_RE.test(id)))];
+  const total: WebPushEnqueueResult = { queued: 0, devices: 0, excluded: 0, duplicate: 0, capped: 0, no_subscription: 0 };
+  const c = input.content;
+  const content = {
+    title: c.title,
+    body: c.body,
+    click_url: c.clickAction,
+    icon_url: c.iconUrl,
+    image_url: c.imageUrl,
+    badge_url: c.badgeUrl,
+    tag: c.tag,
+    ttl_seconds: c.ttlSeconds,
+    actions: c.actions,
+    track_clicks: c.trackOpens !== false,
+  };
+  const journeyId = input.journeyId && UUID_RE.test(input.journeyId) ? input.journeyId : null;
+  for (let i = 0; i < ids.length; i += 5000) {
+    const { data, error } = await supabase.rpc('enqueue_web_push', {
+      p_tenant_id: input.tenantId,
+      p_environment: input.environment,
+      p_customer_ids: ids.slice(i, i + 5000),
+      p_content: content,
+      p_idempotency_key: input.idempotencyKey.slice(0, 200),
+      p_journey_id: journeyId,
+      p_delivery_id: input.deliveryId ?? null,
+      p_delivery_name: input.deliveryName ?? null,
+    });
+    if (error) throw new Error(`Could not queue web push: ${error.message}`);
+    const r = (data ?? {}) as Partial<WebPushEnqueueResult>;
+    total.queued += r.queued ?? 0;
+    total.devices += r.devices ?? 0;
+    total.excluded += r.excluded ?? 0;
+    total.duplicate += r.duplicate ?? 0;
+    total.capped += r.capped ?? 0;
+    total.no_subscription += r.no_subscription ?? 0;
+    total.daily_cap = r.daily_cap ?? total.daily_cap;
   }
+  return total;
+}
 
-  // Test Push registers tokens without customer_id — use them when audience has no linked match.
-  if (!targets.length) {
-    for (const sub of subs ?? []) {
-      if (!sub.customer_id) {
-        add({ fcm_token: sub.fcm_token, customer_id: null });
-      }
-    }
-  }
-
-  return targets;
+/** One-line summary for run logs / toasts. */
+export function describeEnqueue(r: WebPushEnqueueResult): string {
+  const parts = [`${r.queued} push${r.queued === 1 ? '' : 'es'} queued`];
+  if (r.duplicate) parts.push(`${r.duplicate} already sent`);
+  if (r.no_subscription) parts.push(`${r.no_subscription} without a subscription`);
+  if (r.excluded) parts.push(`${r.excluded} excluded`);
+  if (r.capped) parts.push(`${r.capped} over the daily limit`);
+  return parts.join(' · ');
 }
 
 export type ChannelSendResponse = {
@@ -239,65 +278,6 @@ export async function testWebPushConnection(
     checks,
     latencyMs: data?.latency_ms,
   };
-}
-
-/** Deliver web push to resolved subscribers via channel-send (same path as Settings → Test Push). */
-export async function sendWebPushToSubscribers(input: {
-  tenantId: string;
-  environment: string;
-  providerId?: string;
-  targets: WebPushTarget[];
-  title: string;
-  body: string;
-  clickAction?: string;
-  journeyId?: string;
-  deliveryId?: string;
-  deliveryName?: string;
-  iconUrl?: string;
-  imageUrl?: string;
-  badgeUrl?: string;
-  tag?: string;
-  ttlSeconds?: number;
-  actions?: ResolvedWebPushPayload['actions'];
-  trackOpens?: boolean;
-}): Promise<{ sent: number; failed: number; errors: string[] }> {
-  let sent = 0;
-  let failed = 0;
-  const errors: string[] = [];
-
-  for (const target of input.targets) {
-    const result = await invokeFunction<ChannelSendResponse>('channel-send', {
-      fcm_token: target.fcm_token,
-      customer_id: target.customer_id ?? undefined,
-      tenant_id: input.tenantId,
-      environment: input.environment,
-      provider_id: input.providerId,
-      title: input.title,
-      body: input.body,
-      click_action: input.clickAction ?? (typeof window !== 'undefined' ? window.location.origin : '/'),
-      app_origin: typeof window !== 'undefined' ? window.location.origin : undefined,
-      journey_id: input.journeyId,
-      delivery_id: input.deliveryId,
-      delivery_name: input.deliveryName,
-      icon_url: input.iconUrl,
-      image_url: input.imageUrl,
-      badge_url: input.badgeUrl,
-      tag: input.tag,
-      ttl_seconds: input.ttlSeconds,
-      actions: input.actions,
-      track_opens: input.trackOpens ?? true,
-    });
-
-    try {
-      assertChannelSendDelivered(result, 'Campaign web push');
-      sent += 1;
-    } catch (err) {
-      failed += 1;
-      errors.push(err instanceof Error ? err.message : 'channel-send failed');
-    }
-  }
-
-  return { sent, failed, errors };
 }
 
 /** Send test push via channel-send Edge Function (requires deploy) */

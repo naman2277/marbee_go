@@ -18,7 +18,7 @@ import {
   type DeliveryPrepData,
 } from './delivery-prep';
 import { resolveWebPushDeliveryContent } from './content-templates';
-import { resolveWebPushTargets, sendWebPushToSubscribers } from './firebase-push';
+import { describeEnqueue, enqueueWebPush } from './firebase-push';
 import { testMailjetConnection, testResendConnection } from './channel-test';
 import { renderBlocksToHtml } from './email-renderer';
 import { DEFAULT_EMAIL_THEME } from './email-builder-types';
@@ -431,59 +431,28 @@ async function executeDeliverySend(
   const deliveryId = deliveryMeta?.deliveryId;
 
   if (stepType === 'send_web_push') {
+    // D-022: queue server-side; push-worker sends with retries even if this tab closes.
     const pushContent = await resolveWebPushDeliveryContent(config);
-    const targets = await resolveWebPushTargets(ctx.tenantId, ctx.environment, sendIds);
-
-    if (targets.length) {
-      const delivery = await sendWebPushToSubscribers({
-        tenantId: ctx.tenantId,
-        environment: ctx.environment,
-        targets,
-        title: pushContent.title,
-        body: pushContent.body,
-        clickAction: pushContent.clickAction,
-        iconUrl: pushContent.iconUrl,
-        imageUrl: pushContent.imageUrl,
-        badgeUrl: pushContent.badgeUrl,
-        tag: pushContent.tag ?? deliveryMeta?.deliveryId,
-        ttlSeconds: pushContent.ttlSeconds,
-        actions: pushContent.actions,
-        trackOpens: pushContent.trackOpens,
-        journeyId: ctx.journeyId,
-        deliveryId,
-        deliveryName,
-      });
-
-      if (delivery.failed && !delivery.sent) {
-        throw new Error(
-          delivery.errors[0] ??
-            'Web push delivery failed — check Channels settings and channel-send Edge Function.',
-        );
-      }
-    } else {
-      const reason =
-        sendIds.length > 0
-          ? 'No active web push subscription for this audience. Allow notifications in the browser (Settings → Test Push or the site prompt) and retry.'
-          : 'No recipients in audience for this delivery.';
-      for (const customerId of sendIds.slice(0, 25)) {
-        await supabase.from('engagement_log').insert({
-          tenant_id: ctx.tenantId,
-          environment: ctx.environment,
-          customer_id: customerId,
-          channel: 'web_push',
-          message_id: crypto.randomUUID(),
-          event: 'failed',
-            metadata: {
-              delivery_name: deliveryName,
-              delivery_id: deliveryId,
-              content_template_id: config.content_template_id,
-              error: 'no_push_subscription',
-              error_detail: reason,
-              workflow: true,
-            },
-        });
-      }
-      throw new Error(reason);
+    if (!pushContent.title) throw new Error('Web push needs a title — pick a template or enter one.');
+    if (!sendIds.length) throw new Error('No recipients in audience for this delivery.');
+    const result = await enqueueWebPush({
+      tenantId: ctx.tenantId,
+      environment: ctx.environment,
+      customerIds: sendIds,
+      idempotencyKey: deliveryId
+        ? `delivery:${deliveryId}`
+        : `workflow:${ctx.journeyId ?? 'adhoc'}:${deliveryName}:${crypto.randomUUID()}`,
+      content: { ...pushContent, tag: pushContent.tag ?? deliveryId },
+      journeyId: ctx.journeyId,
+      deliveryId,
+      deliveryName,
+    });
+    if (!result.queued && !result.duplicate) {
+      throw new Error(
+        result.no_subscription
+          ? 'No active web push subscription for this audience. Visitors subscribe through the website push script (Web Analytics → Web Push).'
+          : `Nothing was queued: ${describeEnqueue(result)}`,
+      );
     }
     return;
   }

@@ -288,6 +288,8 @@ async function executeSend(
     environment: string;
     customerId: string;
     journeyId: string;
+    instanceId: string;
+    nodeId: string;
     instanceContext: Record<string, unknown>;
   },
 ): Promise<Record<string, unknown>> {
@@ -302,28 +304,18 @@ async function executeSend(
 
   if (stepType === 'send_web_push') {
     const { resolveWebPushDeliveryContent } = await import('./content-templates');
-    const { resolveWebPushTargets, sendWebPushToSubscribers } = await import('./firebase-push');
+    const { enqueueWebPush } = await import('./firebase-push');
     const pushContent = await resolveWebPushDeliveryContent(config);
-    const targets = await resolveWebPushTargets(ctx.tenantId, ctx.environment, [ctx.customerId]);
-
-    if (targets.length) {
-      await sendWebPushToSubscribers({
-        tenantId: ctx.tenantId,
-        environment: ctx.environment,
-        targets,
-        title: pushContent.title,
-        body: pushContent.body,
-        clickAction: pushContent.clickAction,
-        iconUrl: pushContent.iconUrl,
-        imageUrl: pushContent.imageUrl,
-        badgeUrl: pushContent.badgeUrl,
-        tag: pushContent.tag,
-        ttlSeconds: pushContent.ttlSeconds,
-        actions: pushContent.actions,
-        trackOpens: pushContent.trackOpens,
-        journeyId: ctx.journeyId,
-      });
-    }
+    // D-022: queued server-side; the same instance + step never sends twice.
+    await enqueueWebPush({
+      tenantId: ctx.tenantId,
+      environment: ctx.environment,
+      customerIds: [ctx.customerId],
+      idempotencyKey: `journey:${ctx.journeyId}:${ctx.instanceId}:${ctx.nodeId}`,
+      content: pushContent,
+      journeyId: ctx.journeyId,
+      deliveryName,
+    });
 
     const deliveries = {
       ...(ctx.instanceContext.deliveries as Record<string, string> | undefined),
@@ -524,6 +516,8 @@ async function advanceInstance(
     environment: instance.environment,
     customerId: instance.customer_id,
     journeyId,
+    instanceId: instance.id,
+    nodeId: node.id,
     instanceContext: context,
   };
 

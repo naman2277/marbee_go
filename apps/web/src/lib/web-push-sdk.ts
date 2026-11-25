@@ -1,5 +1,4 @@
 import {
-  assertChannelSendDelivered,
   initFirebase,
   registerPushSubscription,
   requestFcmToken,
@@ -7,7 +6,6 @@ import {
   type FirebaseWebConfig,
   type WebPushConnectionCheck,
 } from './firebase-push';
-import { invokeFunction } from './functions';
 import type { WebPushBehaviorConfig, WebPushRuntimeConfig } from './web-push-config';
 import { fetchWebPushRuntimeConfig } from './web-push-config';
 
@@ -47,43 +45,10 @@ export async function subscribeToWebPush(config: WebPushRuntimeConfig): Promise<
   return token;
 }
 
-export async function sendWelcomeNotification(
-  config: WebPushRuntimeConfig,
-  fcmToken: string,
-  behavior: WebPushBehaviorConfig,
-): Promise<{ delivered: boolean; error?: string }> {
-  if (!behavior.welcome_enabled) return { delivered: false };
-
-  const result = await invokeFunction('channel-send', {
-    fcm_token: fcmToken,
-    tenant_id: config.tenantId,
-    environment: config.environment,
-    provider_id: config.providerId,
-    title: behavior.welcome_title ?? 'Notifications enabled',
-    body: behavior.welcome_body ?? 'You will receive updates here.',
-    click_action: behavior.welcome_click_url ?? '/',
-    app_origin: window.location.origin,
-    icon_url: behavior.default_icon_url,
-    track_opens: behavior.track_opens ?? true,
-    ttl_seconds: behavior.default_ttl_seconds ?? 86400,
-    tag: 'marbee-welcome',
-  });
-
-  try {
-    assertChannelSendDelivered(result, 'Welcome notification');
-    return { delivered: true };
-  } catch (err) {
-    return {
-      delivered: false,
-      error: err instanceof Error ? err.message : 'Welcome notification failed',
-    };
-  }
-}
-
-/** Full subscribe flow: permission → token → DB → optional welcome push. */
+/** Subscribe flow inside the Marbee app: permission → token → DB. (Website visitors get the
+ *  welcome push server-side from push-subscribe — D-022 / TD-21.) */
 export async function runWebPushSubscribeFlow(config: WebPushRuntimeConfig): Promise<void> {
-  const token = await subscribeToWebPush(config);
-  await sendWelcomeNotification(config, token, config.behavior);
+  await subscribeToWebPush(config);
 }
 
 /** Silent re-register when permission already granted (auto-resubscribe). */

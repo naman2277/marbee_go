@@ -193,9 +193,18 @@ export async function saveChannelProvider(input: {
       payload.config = { ...config, ...(input.extraConfig ?? {}) };
     }
 
+    // Firebase (D-022): send the service-account JSON only when a new one was pasted. The
+    // database moves it to a server-only table; leaving the column out keeps the stored key.
+    const updatePayload: Record<string, unknown> = { ...payload };
+    if (input.providerType === 'firebase') {
+      const sa = input.values.service_account_json?.trim();
+      if (sa) updatePayload.credentials_encrypted = sa;
+      else delete updatePayload.credentials_encrypted;
+    }
+
     const { data, error } = await supabase
       .from('channel_providers')
-      .update(payload)
+      .update(updatePayload)
       .eq('id', input.id)
       .select('*')
       .single();
@@ -236,12 +245,10 @@ export function providerToFormValues(row: ChannelProviderRow): Record<string, st
   }
   const values = mergeProviderValues(row.channel, row.providerType, row.config, row.credentials);
   if (row.providerType === 'firebase') {
-    const raw = row.credentials.service_account_json;
-    if (raw) {
-      values.service_account_json = raw;
-    } else if (row.credentials._legacy) {
-      values.service_account_json = row.credentials._legacy;
-    }
+    // D-022: the service-account key lives server-side only (sql/95); the form shows it
+    // as "stored" and an empty box replaces it only when something new is pasted.
+    values.service_account_json = '';
+    if (row.config?.service_account_configured === true) values.__sa_configured = '1';
   }
   return values;
 }
