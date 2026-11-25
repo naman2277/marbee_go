@@ -123,13 +123,19 @@
   }
 
   api.subscribe = function () {
-    return getConfig().then(function (cfg) {
-      return Notification.requestPermission().then(function (perm) {
-        if (perm !== 'granted') return false;
-        store(DISMISS_KEY, null);
-        store(OPTOUT_KEY, null);
-        return register(cfg);
-      });
+    // Ask FIRST, synchronously inside the click: after a network round-trip Chrome may
+    // treat the request as gesture-less and only show a muted bell in the address bar.
+    var asked = Notification.permission === 'granted' ? Promise.resolve('granted') : Notification.requestPermission();
+    return asked.then(function (perm) {
+      if (perm !== 'granted') {
+        log('Notification permission is "' + perm + '"' + (perm === 'denied'
+          ? ' — allow notifications for this site in the browser\'s site settings.'
+          : ' — the prompt was dismissed (or Chrome showed it as a bell icon in the address bar).'));
+        return false;
+      }
+      store(DISMISS_KEY, null);
+      store(OPTOUT_KEY, null);
+      return getConfig().then(register);
     }).catch(function (e) { log(e.message); return false; });
   };
 
