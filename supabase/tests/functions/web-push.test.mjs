@@ -43,7 +43,10 @@ ok(new TextEncoder().encode(JSON.stringify(msg.message.data)).length < 4096, 'pa
 const err = (status, code, message = 'x') => JSON.stringify({ error: { status, message, details: code ? [{ '@type': 'type.googleapis.com/google.firebase.fcm.v1.FcmError', errorCode: code }] : [] } });
 ok(wp.classifyFcmResponse(200, '').outcome === 'delivered', '200 → delivered');
 ok(wp.classifyFcmResponse(404, err('NOT_FOUND', 'UNREGISTERED')).outcome === 'invalid_token', '404 UNREGISTERED → prune');
-ok(wp.classifyFcmResponse(410, '').outcome === 'failed' || wp.classifyFcmResponse(410, '').outcome === 'invalid_token', '410 is not retried');
+ok(wp.classifyFcmResponse(410, '').outcome === 'invalid_token', '410 Gone → prune');
+ok(wp.normalizeContent({ title: 'a', click_url: '//evil.example/x' }).click_url === undefined, 'protocol-relative URLs are rejected');
+ok(wp.normalizeContent({ title: 'a', click_url: '/\\evil.example' }).click_url === undefined, 'backslash host trick rejected');
+ok(wp.normalizeContent({ title: 'a', click_url: '/cart?x=1' }).click_url === '/cart?x=1', 'site-relative paths kept');
 ok(wp.classifyFcmResponse(400, err('INVALID_ARGUMENT', 'INVALID_ARGUMENT', 'The registration token is not a valid FCM registration token')).outcome === 'invalid_token', 'invalid token → prune');
 ok(wp.classifyFcmResponse(400, err('INVALID_ARGUMENT', 'INVALID_ARGUMENT', 'Invalid value at message.data')).outcome === 'failed', 'bad payload → failed, not pruned');
 ok(wp.classifyFcmResponse(403, err('PERMISSION_DENIED', 'SENDER_ID_MISMATCH')).outcome === 'invalid_token', 'sender mismatch → prune');

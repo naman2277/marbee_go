@@ -48,7 +48,6 @@ import {
   fetchWebAnalyticsMetrics,
   ingestWebAnalyticsEvents,
   fetchWebPushSubscribers,
-  registerWebPushSubscriber,
   deleteWebPushSubscriber,
   clearTestPushSubscribers,
   sendTestWebPushNotification,
@@ -349,7 +348,7 @@ export function WebAnalyticsPage() {
     }
   };
 
-  const handleTestWebPushDevice = async (customOptinPage = '/') => {
+  const handleTestWebPushDevice = async (_optinPage = '/') => {
     if (!currentSite) return;
     setIsSubscribingPush(true);
     setTestPushMsg(null);
@@ -366,38 +365,20 @@ export function WebAnalyticsPage() {
         return;
       }
 
-      const testToken = `TEST_TOKEN_admin_browser_${Math.random().toString(36).substring(2, 11)}_${Date.now()}`;
-      await registerWebPushSubscriber({
-        tenantId,
-        environment,
-        siteId: currentSite.siteId,
-        websiteDomain: currentSite.domain.replace(/^https?:\/\//, '').replace(/\/.*$/, ''),
-        optinPage: customOptinPage,
-        optinStatus: 'yes',
-        fcmToken: testToken,
-        isTestToken: true,
-        permissionStatus: perm,
-        browser: navigator.userAgent.includes('Edg') ? 'Edge' : navigator.userAgent.includes('Firefox') ? 'Firefox' : 'Chrome',
-        os: navigator.platform || 'Desktop',
-        device: 'desktop',
-      });
-
-      const pushRes = await sendTestWebPushNotification({
-        title: '🔔 Marbee Web Push Connected!',
-        body: `Live test notification from ${currentSite.name} (Opt-in from ${customOptinPage}). Device token registered in subscription table.`,
-        clickUrl: window.location.href,
-        tenantId,
-        environment,
-        fcmToken: testToken,
-      });
-
-      if (pushRes.ok) {
-        showToast('Web push token captured & live notification delivered!');
-        setTestPushMsg(`✓ Success: Token registered from ${currentSite.domain}${customOptinPage} & test notification delivered.`);
-      } else {
-        showToast(pushRes.message);
-        setTestPushMsg(`Token registered, notification note: ${pushRes.message}`);
+      // D-022: a real token for THIS browser (Firebase web config of the default provider),
+      // registered in the subscriber table, then a real FCM send from the server.
+      const { fetchWebPushRuntimeConfig } = await import('@/lib/web-push-config');
+      const { runPushTestWithWelcome } = await import('@/lib/web-push-sdk');
+      const runtime = await fetchWebPushRuntimeConfig(tenantId, environment);
+      if (!runtime) {
+        const msg = 'Web Push is not configured: add the Firebase web config + VAPID key in Settings → Channels → Web Push.';
+        showToast(msg);
+        setTestPushMsg(msg);
+        return;
       }
+      const result = await runPushTestWithWelcome(runtime);
+      showToast(result.message);
+      setTestPushMsg(result.sent ? `✓ ${result.message}` : `Not delivered: ${result.message}`);
       void queryClient.invalidateQueries({ queryKey: ['web-push-subscribers', tenantId, environment, currentSite?.siteId] });
       refetchSubscribers();
     } catch (e) {
@@ -410,30 +391,9 @@ export function WebAnalyticsPage() {
   };
 
   const handleSimulateVisitorOptin = async (pagePath: string) => {
-    if (!currentSite) return;
-    const fakeToken = `TEST_TOKEN_sim_${Math.random().toString(36).substring(2, 12)}_${Date.now().toString(36)}`;
-    const randomBrowser = ['Chrome', 'Safari', 'Firefox', 'Edge'][Math.floor(Math.random() * 4)];
-    const randomOs = ['Windows 11', 'macOS Sonoma', 'iOS 17', 'Android 14'][Math.floor(Math.random() * 4)];
-    const isMobile = randomOs.includes('iOS') || randomOs.includes('Android');
-
-    await registerWebPushSubscriber({
-      tenantId,
-      environment,
-      siteId: currentSite.siteId,
-      websiteDomain: currentSite.domain.replace(/^https?:\/\//, '').replace(/\/.*$/, ''),
-      optinPage: pagePath,
-      optinStatus: 'yes',
-      fcmToken: fakeToken,
-      isTestToken: true,
-      permissionStatus: 'granted',
-      browser: randomBrowser,
-      os: randomOs,
-      device: isMobile ? 'mobile' : 'desktop',
-    });
-
-    showToast(`Simulated +1 subscriber opt-in from ${pagePath}`);
-    void queryClient.invalidateQueries({ queryKey: ['web-push-subscribers', tenantId, environment, currentSite?.siteId] });
-    refetchSubscribers();
+    // D-022: fake subscribers are no longer written to the real table (they were targeted
+    // like real devices). Subscribe for real: open the site, or use Test Web Push here.
+    showToast(`Simulation is off — open ${pagePath} on your site and allow notifications to add a real subscriber.`);
   };
 
   const handleClearTestTokens = async () => {

@@ -41,14 +41,15 @@ DO $$ BEGIN EXECUTE 'REVOKE ALL ON public.channel_provider_secrets FROM anon, au
 EXCEPTION WHEN undefined_object THEN NULL; END $$;
 GRANT ALL ON public.channel_provider_secrets TO service_role;
 
--- Returns NULL when the text is not a Firebase service account.
-CREATE OR REPLACE FUNCTION public.firebase_sa_facts(p_raw TEXT)
-RETURNS JSONB
+-- The bare service-account JSON inside a stored value, or NULL. Older browser saves could
+-- wrap it: {"service_account_json":"{...}"} or {"_legacy":"{...}"} — unwrap those too.
+CREATE OR REPLACE FUNCTION public.firebase_sa_extract(p_raw TEXT)
+RETURNS TEXT
 LANGUAGE plpgsql
 IMMUTABLE
 SET search_path = public, pg_temp
 AS $$
-DECLARE v JSONB;
+DECLARE v JSONB; inner_raw TEXT;
 BEGIN
   IF p_raw IS NULL OR btrim(p_raw) = '' THEN RETURN NULL; END IF;
   BEGIN
@@ -56,7 +57,25 @@ BEGIN
   EXCEPTION WHEN others THEN
     RETURN NULL;
   END;
-  IF jsonb_typeof(v) <> 'object' OR v->>'type' IS DISTINCT FROM 'service_account' THEN RETURN NULL; END IF;
+  IF jsonb_typeof(v) <> 'object' THEN RETURN NULL; END IF;
+  IF v->>'type' = 'service_account' THEN RETURN btrim(p_raw); END IF;
+  inner_raw := coalesce(v->>'service_account_json', v->>'_legacy');
+  IF inner_raw IS NOT NULL AND inner_raw <> p_raw THEN RETURN public.firebase_sa_extract(inner_raw); END IF;
+  RETURN NULL;
+END;
+$$;
+
+-- Non-secret facts about a service account, for the settings page.
+CREATE OR REPLACE FUNCTION public.firebase_sa_facts(p_raw TEXT)
+RETURNS JSONB
+LANGUAGE plpgsql
+IMMUTABLE
+SET search_path = public, pg_temp
+AS $$
+DECLARE v JSONB; sa TEXT := public.firebase_sa_extract(p_raw);
+BEGIN
+  IF sa IS NULL THEN RETURN NULL; END IF;
+  v := sa::jsonb;
   RETURN jsonb_build_object(
     'service_account_configured', true,
     'service_account_project_id', v->>'project_id',
@@ -71,16 +90,22 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
-DECLARE v_facts JSONB;
+DECLARE v_sa TEXT; v_raw TEXT := nullif(btrim(coalesce(NEW.credentials_encrypted, '')), '');
 BEGIN
   IF NEW.channel <> 'web_push' OR NEW.provider_type <> 'firebase' THEN RETURN NEW; END IF;
-  v_facts := public.firebase_sa_facts(NEW.credentials_encrypted);
-  IF v_facts IS NOT NULL THEN
+  v_sa := public.firebase_sa_extract(v_raw);
+  IF v_sa IS NOT NULL THEN
     INSERT INTO public.channel_provider_secrets (provider_id, tenant_id, secret, updated_at)
-    VALUES (NEW.id, NEW.tenant_id, btrim(NEW.credentials_encrypted), NOW())
+    VALUES (NEW.id, NEW.tenant_id, v_sa, NOW())
     ON CONFLICT (provider_id) DO UPDATE SET secret = EXCLUDED.secret, updated_at = NOW()
       WHERE channel_provider_secrets.tenant_id = EXCLUDED.tenant_id;  -- never across workspaces
-    NEW.config := coalesce(NEW.config, '{}'::jsonb) || v_facts;
+    NEW.config := coalesce(NEW.config, '{}'::jsonb) || public.firebase_sa_facts(v_sa);
+  ELSIF v_raw IS NOT NULL AND v_raw <> '{}' THEN
+    -- Unrecognised content: never destroy it — keep it server-side (unless a key is
+    -- already stored there), so it can be inspected or re-pasted. Not marked configured.
+    INSERT INTO public.channel_provider_secrets (provider_id, tenant_id, secret, updated_at)
+    VALUES (NEW.id, NEW.tenant_id, v_raw, NOW())
+    ON CONFLICT (provider_id) DO NOTHING;
   END IF;
   -- Never keep anything secret-looking in the member-readable column.
   NEW.credentials_encrypted := NULL;
@@ -267,7 +292,10 @@ BEGIN
   UPDATE pg_temp._wp_targets t SET fresh = FALSE
   WHERE EXISTS (SELECT 1 FROM public.web_push_outbox o
     WHERE o.tenant_id = p_tenant_id AND o.environment = p_environment
-      AND o.idempotency_key = p_idempotency_key AND o.subscriber_id = t.subscriber_id);
+      AND o.idempotency_key = p_idempotency_key AND o.subscriber_id = t.subscriber_id
+      -- A send that ended failed/skipped may be sent again with the same key (e.g. after
+      -- the Firebase key was fixed). Queued, sending and delivered ones never repeat.
+      AND o.status NOT IN ('failed', 'skipped'));
 
   SELECT count(*), count(*) FILTER (WHERE excluded), count(*) FILTER (WHERE fresh AND NOT excluded),
          count(DISTINCT customer_id) FILTER (WHERE customer_id = ANY (v_customers))
@@ -288,7 +316,12 @@ BEGIN
     WHERE t.fresh AND NOT t.excluded
     ORDER BY t.subscriber_id
     LIMIT v_room
-    ON CONFLICT (tenant_id, environment, idempotency_key, subscriber_id) DO NOTHING;
+    ON CONFLICT (tenant_id, environment, idempotency_key, subscriber_id) DO UPDATE
+      SET status = 'queued', attempts = 0, next_attempt_at = NOW(), locked_until = NULL, last_error = NULL,
+          sent_at = NULL, message_id = gen_random_uuid(), content = EXCLUDED.content, customer_id = EXCLUDED.customer_id,
+          journey_id = EXCLUDED.journey_id, delivery_id = EXCLUDED.delivery_id, delivery_name = EXCLUDED.delivery_name,
+          created_at = NOW(), updated_at = NOW()
+      WHERE public.web_push_outbox.status IN ('failed', 'skipped');
     GET DIAGNOSTICS n_inserted = ROW_COUNT;
   END IF;
 

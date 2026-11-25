@@ -344,7 +344,10 @@ serve(async (req) => {
         .eq('tenant_id', ctx.tenantId).eq('environment', ctx.environment).eq('fcm_token', oldToken);
     }
 
-    const ecid = str(body.ecid, 200);
+    // Website anonymous id (analytics SDK: "mb_<uuid>"). Strictly validated, never "cleaned":
+    // a value that fails the pattern is simply not used for linking or stored.
+    const rawEcid = str(body.ecid, 200);
+    const ecid = rawEcid && /^[A-Za-z0-9_.-]{8,200}$/.test(rawEcid) ? rawEcid : null;
     // Who is this browser? Only the server decides (see header).
     let customerId: string | null = null;
     if (ctx.via === 'api_key' && typeof body.customer_id === 'string' && UUID_RE.test(body.customer_id)) {
@@ -355,7 +358,7 @@ serve(async (req) => {
     if (!customerId && ecid) {
       const { data: ident } = await supabase.from('customer_identities').select('customer_id')
         .eq('tenant_id', ctx.tenantId).eq('environment', ctx.environment)
-        .or(`ecid.eq.${ecid.replace(/[^A-Za-z0-9_\-.]/g, '')},anonymous_id.eq.${ecid.replace(/[^A-Za-z0-9_\-.]/g, '')}`)
+        .or(`ecid.eq.${ecid},anonymous_id.eq.${ecid}`)
         .not('customer_id', 'is', null).limit(1).maybeSingle();
       customerId = ident?.customer_id ?? null;
     }

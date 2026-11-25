@@ -203,7 +203,7 @@ supersede it with a new entry.
 - **Cost:** ₹0 (`pg` and the Supabase CLI are free). **Risk:** the runner runs SQL as the database owner — it only ever runs on the CEO's machine with a connection string the CEO pastes locally (never committed). v2 layer has never run on a real database; staging is its first run, done as a separate `--phase v2` step.
 
 ### D-022 · Web Push: production-ready, then frozen
-- **Date:** 2026-11-25 · **Status:** Proposed (waiting for founder verdict) · **Validation:** Not started
+- **Date:** 2026-11-25 · **Status:** Approved by the founder 2026-11-25 · **Validation:** Built and unit/SQL-tested on branch `claude/web-push-production`; end-to-end on dev pending
 - **Problem:** the audit (spec `specs/2026-11-25-web-push-production.md`) found 6 P0 gaps. The Firebase service-account private key is readable by every member from the browser. Campaign and journey pushes are sent from the browser with no retries or idempotency. One code path falls back to pushing every anonymous subscriber. There's no website SDK, so brands can't collect subscribers on their own site. The public site key can link a browser to any customer. Expired tokens are never pruned.
 - **Selected:** keep FCM; add a server-side outbox (`web_push_outbox`) drained by a `push-worker` edge function on pg_cron; keep the service-account key server-only and sealed (`channel_provider_secrets`); add a plain-JS website SDK + service worker; prune expired tokens, retry with backoff, add a daily fair-use cap (no credit debit, per D-015). After the end-to-end validation, Web Push is **frozen** (bug fixes only).
 - **Cost:** ₹0. **Risk / rollback:** see the spec.

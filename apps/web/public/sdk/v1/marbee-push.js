@@ -28,6 +28,7 @@
   var FIREBASE_VERSION = '11.6.0';
   var TOKEN_KEY = '_mb_push_token_' + SITE_ID;
   var DISMISS_KEY = '_mb_push_dismissed_' + SITE_ID;
+  var OPTOUT_KEY = '_mb_push_optout_' + SITE_ID;
 
   function log() { if (w.console) console.warn.apply(console, ['[Marbee Push]'].concat([].slice.call(arguments))); }
   function store(k, v) { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { /* private mode */ } }
@@ -126,6 +127,7 @@
       return Notification.requestPermission().then(function (perm) {
         if (perm !== 'granted') return false;
         store(DISMISS_KEY, null);
+        store(OPTOUT_KEY, null);
         return register(cfg);
       });
     }).catch(function (e) { log(e.message); return false; });
@@ -134,6 +136,7 @@
   api.unsubscribe = function () {
     var token = read(TOKEN_KEY);
     store(TOKEN_KEY, null);
+    store(OPTOUT_KEY, '1'); // browser permission stays "granted": don't silently re-subscribe
     if (!token) return Promise.resolve();
     return call('DELETE', { fcm_token: token }).then(function () {
       return getConfig().then(getMessaging).then(function (m) { return m.deleteToken(); });
@@ -169,6 +172,7 @@
 
   function start() {
     getConfig().then(function (cfg) {
+      if (read(OPTOUT_KEY) === '1') return null; // visitor unsubscribed on this site
       if (Notification.permission === 'granted') return register(cfg); // keep token fresh
       if (Notification.permission !== 'default' || MANUAL || !cfg.prompt || !cfg.prompt.enabled) return null;
       var dismissed = Number(read(DISMISS_KEY) || 0);

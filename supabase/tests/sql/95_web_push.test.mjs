@@ -177,6 +177,24 @@ ok(batch.length === 1 && batch[0].fcm_token === 'tok-c1-laptop', 'reactivated: h
 ok((await db.query(`SELECT status FROM web_push_outbox o JOIN web_push_subscribers s ON s.id = o.subscriber_id WHERE o.idempotency_key = 'delivery:3' AND s.fcm_token = 'tok-c1-phone'`)).rows[0].status === 'skipped',
   '...marked skipped, not sent');
 
+// Re-sending a delivery that failed: failed rows are queued again, delivered ones are not.
+q = await enqueue(UA, A, [C1, C2], 'delivery:1');
+ok(q.queued === 1 && q.duplicate === 1, `re-run of delivery:1 re-queues only the failed row (c2), not the delivered one (got ${JSON.stringify(q)})`);
+r = await svc(`SELECT status, attempts, last_error FROM web_push_outbox WHERE id = $1`, [retryId]);
+ok(r.rows[0].status === 'queued' && r.rows[0].attempts === 0 && r.rows[0].last_error === null, '...with a fresh attempt counter');
+
+// Wrapped / unrecognised keys are never destroyed by the move.
+const P3 = 'ffffffff-0000-0000-0000-0000000000f3', P4 = 'ffffffff-0000-0000-0000-0000000000f4';
+await as(UA, `INSERT INTO channel_providers (id, tenant_id, environment, channel, provider_type, name, credentials_encrypted, config)
+  VALUES ('${P3}','${A}','development','web_push','firebase','Wrapped', $1, '{}')`, [JSON.stringify({ service_account_json: SA })]);
+r = await svc(`SELECT secret FROM channel_provider_secrets WHERE provider_id = '${P3}'`);
+ok(r.rows[0]?.secret && JSON.parse(r.rows[0].secret).type === 'service_account', 'wrapped {"service_account_json": ...} key is unwrapped and moved');
+await as(UA, `INSERT INTO channel_providers (id, tenant_id, environment, channel, provider_type, name, credentials_encrypted, config)
+  VALUES ('${P4}','${A}','development','web_push','firebase','Odd', 'not-json-but-maybe-a-key', '{}')`);
+r = await db.query(`SELECT (SELECT secret FROM channel_provider_secrets WHERE provider_id = '${P4}') s, credentials_encrypted c, config FROM channel_providers WHERE id = '${P4}'`);
+ok(r.rows[0].s === 'not-json-but-maybe-a-key' && r.rows[0].c === null && !r.rows[0].config.service_account_configured,
+  'unrecognised content is kept server-side (not destroyed) and not marked configured');
+
 // Welcome push path: internal enqueue by subscriber id (anonymous device).
 q = (await svc(`SELECT enqueue_web_push_internal('${A}','production','{}'::uuid[],'{d0000000-0000-0000-0000-000000000005}'::uuid[],$1::jsonb,'welcome:d5') AS r`, [content])).rows[0].r;
 ok(q.queued === 1, 'service role can queue a welcome push to one specific device');

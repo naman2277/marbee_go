@@ -988,14 +988,17 @@ export async function fetchWebPushSubscribers(
   return ((data ?? []) as SubscriberRow[]).map(mapSubscriber);
 }
 
-/** Remove subscriptions that are no longer reachable (expired or unsubscribed). */
+const TEST_TOKEN_PREFIXES = ['TEST_TOKEN_', 'fcm_sim_', 'live_netlify_', 'mb_push_', 'mb_tok_'];
+
+/** Remove simulated / test tokens only (made-up tokens from older test buttons). Real
+ *  subscribers — including unsubscribed ones and their delivery history — are kept. */
 export async function clearTestPushSubscribers(tenantId: string, environment: string): Promise<void> {
   const { error } = await supabase
     .from('web_push_subscribers')
     .delete()
     .eq('tenant_id', tenantId)
     .eq('environment', environment)
-    .in('subscription_status', ['invalid', 'inactive']);
+    .or(TEST_TOKEN_PREFIXES.map((p) => `fcm_token.like.${p}*`).join(','));
   if (error) throw new Error(error.message);
 }
 
