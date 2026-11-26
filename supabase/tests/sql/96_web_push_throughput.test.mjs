@@ -79,9 +79,9 @@ await db.exec(`CREATE TABLE kicks (n int); CREATE OR REPLACE FUNCTION public.pus
 await db.query(`UPDATE web_push_outbox SET status = 'queued', locked_until = NULL WHERE status = 'sending'`); // no busy workers
 await db.query(`SELECT push_worker_tick()`);
 let kicks = (await db.query(`SELECT count(*)::int n FROM kicks`)).rows[0].n;
-ok(kicks === Math.ceil(due / 3000), `idle: tick starts ceil(${due}/3000) = ${kicks} workers for the backlog`);
+ok(kicks === Math.min(Math.ceil(due / 1000), 10), `idle: tick starts min(ceil(${due}/1000), 10) = ${kicks} workers for the backlog`);
 
-// Two workers already busy (≈1,000 rows locked): the tick only tops up to the target, so
+// Four workers already busy (≈1,000 rows locked at 250 each): the tick only tops up to the target, so
 // self-restarting workers + cron never pile up past 10.
 await db.query(`DELETE FROM kicks`);
 await db.query(`UPDATE web_push_outbox SET status = 'sending', locked_until = now() + interval '2 minutes'
@@ -89,7 +89,7 @@ await db.query(`UPDATE web_push_outbox SET status = 'sending', locked_until = no
 const due2 = (await svc(`SELECT web_push_due_count() AS n`)).rows[0].n;
 await db.query(`SELECT push_worker_tick()`);
 kicks = (await db.query(`SELECT count(*)::int n FROM kicks`)).rows[0].n;
-ok(kicks === Math.max(Math.min(Math.ceil(due2 / 3000), 10) - 2, 0), `busy: tick tops up by ${kicks} (target ${Math.ceil(due2 / 3000)} − 2 busy)`);
+ok(kicks === Math.max(Math.min(Math.ceil(due2 / 1000), 10) - 4, 0), `busy: tick tops up by ${kicks} (target ${Math.min(Math.ceil(due2 / 1000), 10)} − 4 busy)`);
 await db.query(`DELETE FROM kicks`);
 await db.query(`UPDATE web_push_outbox SET status = 'sending', locked_until = now() + interval '2 minutes' WHERE status = 'queued'`);
 await db.query(`UPDATE web_push_outbox SET status = 'queued', locked_until = NULL WHERE id IN (SELECT id FROM web_push_outbox WHERE status = 'sending' LIMIT 100)`);

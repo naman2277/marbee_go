@@ -194,7 +194,7 @@ BEGIN
   EXECUTE $q$SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'push_worker_url'$q$ INTO v_url;
   EXECUTE $q$SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'push_worker_key'$q$ INTO v_key;
   IF v_url IS NULL OR v_key IS NULL THEN RETURN FALSE; END IF;
-  EXECUTE 'SELECT net.http_post(url := $1, body := $2, headers := $3)'
+  EXECUTE 'SELECT net.http_post(url := $1, body := $2, headers := $3, timeout_milliseconds := 60000)'
     USING v_url, '{}'::jsonb,
           jsonb_build_object('Content-Type', 'application/json', 'Authorization', 'Bearer ' || v_key);
   RETURN TRUE;
@@ -336,7 +336,13 @@ BEGIN
     GET DIAGNOSTICS n_inserted = ROW_COUNT;
   END IF;
 
-  IF n_inserted > 0 THEN PERFORM public.push_worker_kick(); END IF;
+  IF n_inserted > 0 THEN
+    IF to_regprocedure('public.push_worker_kick_n(integer)') IS NOT NULL THEN   -- sql/96 (D-024)
+      EXECUTE 'SELECT public.push_worker_kick_n($1)' USING least(ceil(n_inserted / 1000.0)::int, 10);
+    ELSE
+      PERFORM public.push_worker_kick();
+    END IF;
+  END IF;
 
   RETURN jsonb_build_object(
     'queued', n_inserted,

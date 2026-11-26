@@ -6,7 +6,7 @@
 --    complete_web_push() logic (logs, retries, pruning), so behaviour is unchanged.
 -- 2. push_worker_kick_n(n): start up to n workers at once (max 10). The queue already makes
 --    parallel workers safe: claim_web_push_batch() uses SKIP LOCKED, so no row is sent twice.
--- 3. push_worker_tick() (cron, every minute) now starts one worker per ~3,000 due pushes,
+-- 3. push_worker_tick() (cron, every minute) now starts one worker per ~1,000 due pushes,
 --    up to 10. Each worker also re-starts itself while work remains (push-worker code), so
 --    a large blast drains continuously instead of once a minute.
 --
@@ -106,11 +106,11 @@ BEGIN
     LIMIT 5000);
   v_due := public.web_push_due_count();
   IF v_due = 0 THEN RETURN FALSE; END IF;
-  -- Target: one worker per ~3,000 due pushes, 1..10. Workers re-start themselves while work
-  -- remains, so only top up: a busy worker holds up to 500 rows locked in 'sending'.
-  SELECT ceil(count(*) / 500.0)::int INTO v_busy FROM public.web_push_outbox
+  -- Target: one worker per ~1,000 due pushes, 1..10 (measured 2026-11-27: runs must stay small). Workers re-start themselves while work
+  -- remains, so only top up: a busy worker holds up to 250 rows locked in 'sending'.
+  SELECT ceil(count(*) / 250.0)::int INTO v_busy FROM public.web_push_outbox
   WHERE status = 'sending' AND locked_until >= NOW();
-  v_want := least(ceil(v_due / 3000.0)::int, 10) - v_busy;
+  v_want := least(ceil(v_due / 1000.0)::int, 10) - v_busy;
   IF v_want <= 0 THEN RETURN FALSE; END IF;
   RETURN public.push_worker_kick_n(v_want) > 0;
 END;

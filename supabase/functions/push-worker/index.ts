@@ -25,11 +25,13 @@ import {
   type ServiceAccount,
 } from '../_shared/web-push.ts';
 
-// D-024 throughput: claim 500 at a time, 40 FCM calls in flight, record a batch's outcomes in
-// one database call, stop after MAX_PER_RUN (stays inside the per-invocation CPU limit) and
-// re-start itself while work remains. pg_cron starts one worker per ~3,000 due pushes (max 10).
-const BATCH = 500;
-const MAX_PER_RUN = 3_000;
+// D-024 throughput: claim 250 at a time, 25 FCM calls in flight, record a batch's outcomes in
+// one database call, stop after MAX_PER_RUN and re-start itself while work remains. Runs are
+// kept SMALL: Supabase allows ~2 s of CPU per invocation and kills bigger runs with HTTP 546
+// (measured on dev 2026-11-27 with 3,000-push runs). Parallelism comes from more runs instead:
+// a send starts one worker per ~1,000 pushes (max 10) and pg_cron tops up every minute.
+const BATCH = 250;
+const MAX_PER_RUN = 500;
 
 /** Cron / pg_net callers present PUSH_WORKER_SECRET (a dedicated random secret, also stored
  *  in Vault as push_worker_key). The service-role key is accepted too. */
@@ -40,8 +42,8 @@ function isWorkerCaller(req: Request): boolean {
   const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
   return secret.length >= 32 && token.length > 0 && constantTimeEqual(token, secret);
 }
-const CONCURRENCY = 40;
-const BUDGET_MS = 40_000;
+const CONCURRENCY = 25;
+const BUDGET_MS = 25_000;
 
 type Outcome = { id: string; outcome: SendResult['outcome']; error: string | null; retry_after: number | null };
 
