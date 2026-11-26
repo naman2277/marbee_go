@@ -24,7 +24,9 @@ Check: Edge Functions → Secrets has `MARBEE_SECRETS_KEY` (already used by the 
 cd "D:\My Projects\Marbee v2\Marbee\.claude\worktrees\upbeat-mirzakhani-9fbb86"; node scripts/db/apply.mjs apply --target dev --yes
 ```
 
-It asks for the dev database password (hidden) and applies only `95_web_push_production.sql`.
+It asks for the dev database password (hidden) and applies `95_web_push_production.sql` and
+`96_web_push_throughput.sql` (D-024: parallel workers + batched results). Or paste both files
+into the SQL editor, 95 first.
 
 ## 3. Let the database call the worker (SQL editor, once per project)
 

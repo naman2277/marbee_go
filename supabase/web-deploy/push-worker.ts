@@ -633,7 +633,11 @@ function backoffSeconds(attempt: number, retryAfter?: number): number {
 // the key is checked in code).
 
 
-const BATCH = 200;
+// D-024 throughput: claim 500 at a time, 40 FCM calls in flight, record a batch's outcomes in
+// one database call, stop after MAX_PER_RUN (stays inside the per-invocation CPU limit) and
+// re-start itself while work remains. pg_cron starts one worker per ~3,000 due pushes (max 10).
+const BATCH = 500;
+const MAX_PER_RUN = 3_000;
 
 /** Cron / pg_net callers present PUSH_WORKER_SECRET (a dedicated random secret, also stored
  *  in Vault as push_worker_key). The service-role key is accepted too. */
@@ -644,8 +648,10 @@ function isWorkerCaller(req: Request): boolean {
   const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
   return secret.length >= 32 && token.length > 0 && constantTimeEqual(token, secret);
 }
-const CONCURRENCY = 20;
-const BUDGET_MS = 45_000;
+const CONCURRENCY = 40;
+const BUDGET_MS = 40_000;
+
+type Outcome = { id: string; outcome: SendResult['outcome']; error: string | null; retry_after: number | null };
 
 type Row = {
   id: string; tenant_id: string; environment: string; message_id: string; content: Record<string, unknown>;
@@ -698,9 +704,26 @@ serve(async (req) => {
     return providers.get(key)!;
   };
 
+  // One database call per batch; falls back to one call per row (e.g. before sql/96 runs).
+  const record = async (outcomes: Outcome[]) => {
+    if (!outcomes.length) return;
+    const { error } = await supabase.rpc('complete_web_push_batch', { p_results: outcomes });
+    if (!error) return;
+    console.error('complete_web_push_batch failed, recording row by row', error.message);
+    await runPool(outcomes, 10, async (o) => {
+      const { error: cErr } = await supabase.rpc('complete_web_push', {
+        p_id: o.id, p_outcome: o.outcome, p_error: o.error, p_retry_after_seconds: o.retry_after,
+      });
+      // If this fails too, the row's lock expires and it is retried — at-least-once.
+      if (cErr) console.error('complete_web_push failed', o.id, cErr.message);
+    });
+  };
+
   try {
+    let hitCap = false;
     while (Date.now() - started < BUDGET_MS) {
-      const { data, error } = await supabase.rpc('claim_web_push_batch', { p_limit: BATCH });
+      if (totals.claimed >= MAX_PER_RUN) { hitCap = true; break; }
+      const { data, error } = await supabase.rpc('claim_web_push_batch', { p_limit: Math.min(BATCH, MAX_PER_RUN - totals.claimed) });
       if (error) {
         console.error('claim_web_push_batch failed', error.message);
         return errorResponse('Could not claim work', 500);
@@ -709,14 +732,14 @@ serve(async (req) => {
       if (!batch.length) break;
       totals.claimed += batch.length;
 
+      const outcomes: Outcome[] = [];
       await runPool(batch, CONCURRENCY, async (row) => {
         let result: SendResult;
-        const p = await providerFor(row);
-        if (!p.sa) {
-          result = { outcome: p.transient ? 'retry' : 'failed', error: p.error };
+        const prov = await providerFor(row);
+        if (!prov.sa) {
+          result = { outcome: prov.transient ? 'retry' : 'failed', error: prov.error };
         } else {
-          const content = normalizeContent(row.content ?? {});
-          result = await sendFcm(p.sa, row.fcm_token, content, {
+          result = await sendFcm(prov.sa, row.fcm_token, normalizeContent(row.content ?? {}), {
             message_id: row.message_id,
             tenant_id: row.tenant_id,
             environment: row.environment,
@@ -727,19 +750,28 @@ serve(async (req) => {
           });
         }
         totals[result.outcome] += 1;
-        const { error: cErr } = await supabase.rpc('complete_web_push', {
-          p_id: row.id,
-          p_outcome: result.outcome,
-          p_error: result.error ? explainFcmError(result.error).slice(0, 500) : null,
-          p_retry_after_seconds: result.retryAfterSeconds ?? null,
+        outcomes.push({
+          id: row.id,
+          outcome: result.outcome,
+          error: result.error ? explainFcmError(result.error).slice(0, 500) : null,
+          retry_after: result.retryAfterSeconds ?? null,
         });
-        // If this fails the row's lock expires and it is retried — at-least-once.
-        if (cErr) console.error('complete_web_push failed', row.id, cErr.message);
       });
-
-      if (batch.length < BATCH) break;
+      await record(outcomes);
+      if (batch.length < BATCH && totals.claimed < MAX_PER_RUN) break;
     }
-    return jsonResponse({ ok: true, ...totals, ms: Date.now() - started });
+
+    // More due work than this run may take: start a replacement worker now instead of
+    // waiting for the next cron minute (keeps a large blast draining continuously).
+    let restarted = false;
+    if (hitCap || Date.now() - started >= BUDGET_MS) {
+      const { data: due } = await supabase.rpc('web_push_due_count');
+      if (Number(due ?? 0) > 0) {
+        const { data: kicked } = await supabase.rpc('push_worker_kick');
+        restarted = kicked === true;
+      }
+    }
+    return jsonResponse({ ok: true, ...totals, restarted, ms: Date.now() - started });
   } catch (e) {
     console.error('push-worker unhandled', e instanceof Error ? e.message : e);
     return errorResponse('Internal error', 500);

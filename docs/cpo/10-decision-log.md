@@ -222,3 +222,12 @@ supersede it with a new entry.
   - Open/dismiss analytics and conversion attribution (separate MVP item).
   - Global (cross-isolate) rate limiter (TD-14); moving the outbox to pgmq (v2 layer); other channels' credentials (TD-28).
 - **Operational notes:** the worker authenticates cron calls with `PUSH_WORKER_SECRET` (function secret) = Vault `push_worker_key`; staging/production follow `runbooks/web-push-rollout.md`.
+
+### D-024 · Web Push bulk throughput (exception to the D-023 freeze)
+- **Date:** 2026-11-26 · **Status:** Approved (CTO decision; founder asked for it and approved the merge 2026-11-26) · **Validation:** SQL + unit tests; throughput on dev **not yet measured**
+- **Problem:** one worker per minute sending 20 pushes in parallel, with one database call per push, drains roughly 5–9k pushes/minute (estimate). A 1M-subscriber blast would take 2–3 hours.
+- **Selected:** (1) the worker records a whole batch's results in one call (`complete_web_push_batch`, same per-row logic); (2) pg_cron starts one worker per ~3,000 due pushes, up to 10 in parallel, and each worker re-starts itself while work remains; (3) per worker: batches of 500, 40 sends in flight, at most 3,000 per run (stays inside the per-invocation CPU limit). Parallel workers are safe because claiming uses SKIP LOCKED.
+- **Expected (estimate):** ~50k–100k pushes/minute → 1M in roughly 10–20 minutes. FCM allows ~600k/minute per Firebase project. Measure on dev with a synthetic load before relying on it.
+- **Not changed:** the API (`enqueue_web_push`), idempotency, retries, pruning, the daily cap (100k per workspace; raise per workspace in `tenants.settings.web_push_daily_cap` for bulk senders).
+- **Cost:** ₹0 at current volumes; up to 10 function invocations per minute only while a blast drains (free tier: 500k/month). **Risk:** more concurrent database connections during a blast (10 workers × a few connections) — fine on the current plan; watch during the first real blast. **Rollback:** redeploy the previous push-worker; `select cron.unschedule('marbee_push_worker_tick')` stops everything; the 95 functions still work without 96.
+- **Why it does not break the freeze:** performance only — no new feature, no API change. The freeze (D-023) stands for everything else.
