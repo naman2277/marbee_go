@@ -240,3 +240,10 @@ supersede it with a new entry.
 - **Selected:** a Marbee Shopify app (the same app the Wave 2 Shopify connector needs) with an app proxy (`/apps/marbee/sw.js` → new edge function `shopify-proxy`, Shopify-signed) and an app embed block that adds the push script without theme edits. The SDK uses the worker's folder as its scope. Spec: `specs/2026-11-27-web-push-shopify.md`.
 - **Freeze:** a distribution adapter for frozen Web Push (D-023), not a new push feature.
 - **Cost:** ₹0 (Shopify Partner account and dev stores are free). **Needs:** the founder creates a Shopify Partner account and a dev store; a ½-day spike confirms the proxy serves the worker unchanged before the rest is built.
+
+### D-026 · Web Push broadcast to subscribers (launch-blocking exception to the D-023 freeze)
+- **Date:** 2026-11-27 · **Status:** Proposed (waiting for founder verdict) · **Validation:** Not started
+- **Problem:** marketers can't send a push from the UI; anonymous website subscribers can't be targeted (sends target customers only); the campaign UI isn't built (D-005).
+- **Selected:** a Broadcasts screen in the Web Push hub (compose, audience = all / filters / Marbee cohort, live device count, test send, schedule, results) on the existing outbox and worker; new SQL 97 with member- and permission-checked RPCs. Spec: `specs/2026-11-27-web-push-broadcast.md`.
+- **Freeze:** an exception because it blocks launch; the campaign builder later reuses the same server functions (no second send path).
+- **Cost:** ₹0. **Effort:** ~2.5–3 days.
