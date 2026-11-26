@@ -6,7 +6,7 @@
 --    complete_web_push() logic (logs, retries, pruning), so behaviour is unchanged.
 -- 2. push_worker_kick_n(n): start up to n workers at once (max 10). The queue already makes
 --    parallel workers safe: claim_web_push_batch() uses SKIP LOCKED, so no row is sent twice.
--- 3. push_worker_tick() (cron, every minute) now starts one worker per ~3,000 due pushes,
+-- 3. push_worker_tick() (cron, every minute) now starts one worker per ~1,000 due pushes,
 --    up to 10. Each worker also re-starts itself while work remains (push-worker code), so
 --    a large blast drains continuously instead of once a minute.
 --
@@ -92,27 +92,45 @@ DO $$ BEGIN EXECUTE 'REVOKE ALL ON FUNCTION public.web_push_due_count() FROM ano
 EXCEPTION WHEN undefined_object THEN NULL; END $$;
 GRANT EXECUTE ON FUNCTION public.web_push_due_count() TO service_role;
 
-CREATE OR REPLACE FUNCTION public.push_worker_tick()
-RETURNS BOOLEAN
+-- The one place that decides how many workers to start (used by the cron AND by every send,
+-- so overlapping blasts never push past the target — Codex, PR #7).
+-- Target: one worker per ~1,000 due pushes, 1..10 (measured 2026-11-27: runs must stay small).
+-- Workers re-start themselves while work remains, so only top up: a busy worker holds up to
+-- 250 rows locked in 'sending'. Returns the number of workers started.
+CREATE OR REPLACE FUNCTION public.push_worker_top_up()
+RETURNS INT
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 DECLARE v_due INT; v_busy INT; v_want INT;
 BEGIN
+  v_due := public.web_push_due_count();
+  IF v_due = 0 THEN RETURN 0; END IF;
+  SELECT ceil(count(*) / 250.0)::int INTO v_busy FROM public.web_push_outbox
+  WHERE status = 'sending' AND locked_until >= NOW();
+  v_want := least(ceil(v_due / 1000.0)::int, 10) - v_busy;
+  IF v_want <= 0 THEN RETURN 0; END IF;
+  RETURN public.push_worker_kick_n(v_want);
+END;
+$$;
+REVOKE ALL ON FUNCTION public.push_worker_top_up() FROM PUBLIC;
+DO $$ BEGIN EXECUTE 'REVOKE ALL ON FUNCTION public.push_worker_top_up() FROM anon, authenticated';
+EXCEPTION WHEN undefined_object THEN NULL; END $$;
+GRANT EXECUTE ON FUNCTION public.push_worker_top_up() TO service_role;
+
+CREATE OR REPLACE FUNCTION public.push_worker_tick()
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
   DELETE FROM public.web_push_outbox WHERE id IN (
     SELECT id FROM public.web_push_outbox
     WHERE status IN ('delivered', 'failed', 'skipped') AND created_at < NOW() - interval '30 days'
     LIMIT 5000);
-  v_due := public.web_push_due_count();
-  IF v_due = 0 THEN RETURN FALSE; END IF;
-  -- Target: one worker per ~3,000 due pushes, 1..10. Workers re-start themselves while work
-  -- remains, so only top up: a busy worker holds up to 500 rows locked in 'sending'.
-  SELECT ceil(count(*) / 500.0)::int INTO v_busy FROM public.web_push_outbox
-  WHERE status = 'sending' AND locked_until >= NOW();
-  v_want := least(ceil(v_due / 3000.0)::int, 10) - v_busy;
-  IF v_want <= 0 THEN RETURN FALSE; END IF;
-  RETURN public.push_worker_kick_n(v_want) > 0;
+  RETURN public.push_worker_top_up() > 0;
 END;
 $$;
 REVOKE ALL ON FUNCTION public.push_worker_tick() FROM PUBLIC;

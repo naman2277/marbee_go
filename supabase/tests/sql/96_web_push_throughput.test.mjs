@@ -79,9 +79,9 @@ await db.exec(`CREATE TABLE kicks (n int); CREATE OR REPLACE FUNCTION public.pus
 await db.query(`UPDATE web_push_outbox SET status = 'queued', locked_until = NULL WHERE status = 'sending'`); // no busy workers
 await db.query(`SELECT push_worker_tick()`);
 let kicks = (await db.query(`SELECT count(*)::int n FROM kicks`)).rows[0].n;
-ok(kicks === Math.ceil(due / 3000), `idle: tick starts ceil(${due}/3000) = ${kicks} workers for the backlog`);
+ok(kicks === Math.min(Math.ceil(due / 1000), 10), `idle: tick starts min(ceil(${due}/1000), 10) = ${kicks} workers for the backlog`);
 
-// Two workers already busy (≈1,000 rows locked): the tick only tops up to the target, so
+// Four workers already busy (≈1,000 rows locked at 250 each): the tick only tops up to the target, so
 // self-restarting workers + cron never pile up past 10.
 await db.query(`DELETE FROM kicks`);
 await db.query(`UPDATE web_push_outbox SET status = 'sending', locked_until = now() + interval '2 minutes'
@@ -89,12 +89,23 @@ await db.query(`UPDATE web_push_outbox SET status = 'sending', locked_until = no
 const due2 = (await svc(`SELECT web_push_due_count() AS n`)).rows[0].n;
 await db.query(`SELECT push_worker_tick()`);
 kicks = (await db.query(`SELECT count(*)::int n FROM kicks`)).rows[0].n;
-ok(kicks === Math.max(Math.min(Math.ceil(due2 / 3000), 10) - 2, 0), `busy: tick tops up by ${kicks} (target ${Math.ceil(due2 / 3000)} − 2 busy)`);
+ok(kicks === Math.max(Math.min(Math.ceil(due2 / 1000), 10) - 4, 0), `busy: tick tops up by ${kicks} (target ${Math.min(Math.ceil(due2 / 1000), 10)} − 4 busy)`);
 await db.query(`DELETE FROM kicks`);
 await db.query(`UPDATE web_push_outbox SET status = 'sending', locked_until = now() + interval '2 minutes' WHERE status = 'queued'`);
 await db.query(`UPDATE web_push_outbox SET status = 'queued', locked_until = NULL WHERE id IN (SELECT id FROM web_push_outbox WHERE status = 'sending' LIMIT 100)`);
 await db.query(`SELECT push_worker_tick()`);
 ok((await db.query(`SELECT count(*)::int n FROM kicks`)).rows[0].n === 0, 'enough workers busy: tick starts none');
+
+// A new send while a blast is still draining uses the same top-up (Codex, PR #7): no extra workers.
+await db.query(`DELETE FROM kicks`);
+await svc(`SELECT enqueue_web_push_internal('${A}','production','{${C}}'::uuid[],'{}'::uuid[],'{"title":"Overlap"}'::jsonb,'blast-3')`);
+ok((await db.query(`SELECT count(*)::int n FROM kicks`)).rows[0].n === 0, 'a send during a busy blast starts no workers beyond the target');
+// ...and when nothing is busy, a send starts its workers right away.
+await db.query(`UPDATE web_push_outbox SET status = 'queued', locked_until = NULL WHERE status = 'sending'`);
+await db.query(`DELETE FROM kicks`);
+await svc(`SELECT enqueue_web_push_internal('${A}','production','{${C}}'::uuid[],'{}'::uuid[],'{"title":"Fresh"}'::jsonb,'blast-4')`);
+const dueNow = (await svc(`SELECT web_push_due_count() AS n`)).rows[0].n;
+ok((await db.query(`SELECT count(*)::int n FROM kicks`)).rows[0].n === Math.min(Math.ceil(dueNow / 1000), 10), 'an idle send starts min(ceil(due/1000), 10) workers immediately');
 
 for (const f of files.filter((f) => f > '96_')) await db.exec(strip(readFileSync(`supabase/sql/${f}`, 'utf8')));
 console.log(failures === 0 ? '\nALL PASSED' : `\n${failures} FAILED`);
