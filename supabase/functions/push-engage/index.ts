@@ -1,6 +1,7 @@
 import { serve } from 'https://deno.land/std@0.208.0/http/server.ts';
 import { getServiceClient, corsHeaders, jsonResponse, errorResponse } from '../_shared/supabase.ts';
 import { tenantIsActive } from '../_shared/tenant-guard.ts';
+import { clientIp, rateLimited, tooLarge } from '../_shared/ingest-auth.ts';
 
 type EngageRequest = {
   tenant_id: string;
@@ -25,6 +26,9 @@ serve(async (req) => {
   // Title, body and click_url come ONLY from that stored message — never from the
   // request — so /push/open can't be turned into an open redirect or fake-stats tool.
   if (req.method !== 'POST') return errorResponse('Method not allowed', 405);
+  if (tooLarge(req, 4 * 1024)) return errorResponse('Payload too large', 413);
+  // D-022: public endpoint (service workers on customer sites call it) — per-isolate backstop.
+  if (rateLimited(`push-engage:${clientIp(req)}`, 120)) return errorResponse('Rate limit exceeded', 429);
 
   try {
     const payload = (await req.json().catch(() => null)) as EngageRequest | null;

@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Marbee Web Push — test shop</title>
+<style>body{font:15px/1.5 system-ui,sans-serif;max-width:640px;margin:40px auto;padding:0 16px;color:#0f172a}code{background:#f1f5f9;padding:1px 5px;border-radius:4px}button{font:inherit;padding:8px 14px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;cursor:pointer;margin-right:8px}#log{white-space:pre-wrap;background:#0f172a;color:#a7f3d0;padding:12px;border-radius:8px;font:12px ui-monospace,monospace;min-height:60px}</style>
+</head>
+<body>
+<h1>Test shop (Web Push E2E, D-022)</h1>
+<p>Open as <code>http://localhost:5500/?site=SITE_ID&amp;key=WRITE_KEY</code>. The site must allow origin <code>http://localhost:5500</code> in Marbee → Web Analytics.</p>
+<p><button id="sub">Subscribe</button><button id="unsub">Unsubscribe</button><button id="state">State</button></p>
+<div id="log"></div>
+<script>
+  var q = new URLSearchParams(location.search);
+  var log = function (m) { document.getElementById('log').textContent += m + '\n'; };
+  var _warn = console.warn;
+  console.warn = function () { log([].slice.call(arguments).join(' ')); _warn.apply(console, arguments); };
+  window.__marbee_site = q.get('site');
+  window.__marbee_write_key = q.get('key');
+  window.__marbee_api = q.get('api') || 'https://uqffhyaftlwetqigfenp.supabase.co/functions/v1';
+  var marbee = q.get('marbee') || 'http://localhost:5173';
+  if (!window.__marbee_site || !window.__marbee_write_key) log('Add ?site=…&key=… to the URL.');
+  var s = document.createElement('script');
+  s.src = marbee + '/sdk/v1/marbee-push.js';
+  // Like a real install: automatic soft prompt on page load. Add &prompt=manual to test the button-only mode.
+  if (q.get('prompt') === 'manual') s.setAttribute('data-prompt', 'manual');
+  s.onload = function () { log('SDK loaded from ' + marbee + ' · permission: ' + MarbeePush.permission()); };
+  document.head.appendChild(s);
+  document.getElementById('sub').onclick = function () { MarbeePush.subscribe().then(function (ok) { log('subscribe → ' + ok); }); };
+  document.getElementById('unsub').onclick = function () { MarbeePush.unsubscribe().then(function () { log('unsubscribed'); }); };
+  document.getElementById('state').onclick = function () { log('permission=' + MarbeePush.permission() + ' subscribed=' + MarbeePush.isSubscribed()); };
+</script>
+</body>
+</html>

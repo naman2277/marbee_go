@@ -93,8 +93,8 @@ export function WebPushBehaviorPanel({
           </ul>
           {!diagnostic.ok && (
             <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-              Deploy <code className="rounded bg-amber-100 px-1">channel-send</code> in Supabase with JWT verification
-              OFF. If you saved config before today, re-open Firebase provider and click Save again (Web API key fix).
+              Add a Firebase provider with the web config (Project ID, Sender ID, App ID, Web API key, VAPID public
+              key) and the service-account JSON, mark it default, and Save. Then run Test push.
             </p>
           )}
         </Card>

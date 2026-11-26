@@ -69,6 +69,7 @@ export function ChannelProviderForm({
                 onChange={(v) => onChange(field.key, v)}
                 disabled={disabled}
                 highlighted={focusFieldKey === field.key}
+                storedOnServer={field.key === 'service_account_json' && values.__sa_configured === '1'}
               />
             ))}
           </div>
@@ -86,6 +87,7 @@ function ProviderField({
   onChange,
   disabled,
   highlighted,
+  storedOnServer,
 }: {
   channel: ChannelType;
   providerType: string;
@@ -94,13 +96,29 @@ function ProviderField({
   onChange: (v: string) => void;
   disabled?: boolean;
   highlighted?: boolean;
+  /** D-022: a key is already stored (encrypted, server-side); leave empty to keep it. */
+  storedOnServer?: boolean;
 }) {
   const spanClass = field.type === 'json' || field.type === 'textarea' ? 'sm:col-span-2' : '';
   const inputClass =
     'mt-1 w-full rounded-lg border px-3 py-2 text-sm disabled:bg-slate-50 disabled:text-slate-500';
   const monoClass = field.type === 'json' || field.type === 'password' ? 'font-mono text-xs' : '';
   const guide = getFieldGuide(channel, providerType, field.key);
-  const missing = field.required && !value.trim();
+  const missing = field.required && !value.trim() && !storedOnServer;
+  // Secrets must never reach spellcheckers / writing-assistant extensions (e.g. Grammarly
+  // uploads what you type) or the browser's autofill store.
+  const secretAttrs = field.secret
+    ? {
+        spellCheck: false,
+        autoComplete: 'off',
+        autoCorrect: 'off',
+        autoCapitalize: 'off',
+        'data-gramm': 'false',
+        'data-gramm_editor': 'false',
+        'data-enable-grammarly': 'false',
+        'data-lt-active': 'false',
+      }
+    : {};
 
   return (
     <div
@@ -135,7 +153,12 @@ function ProviderField({
           onChange={(e) => onChange(e.target.value)}
           disabled={disabled}
           rows={field.rows ?? 4}
-          placeholder={field.placeholder ?? guide.example}
+          {...secretAttrs}
+          placeholder={
+            storedOnServer
+              ? 'Stored securely on the server. Paste a new JSON only to replace it.'
+              : field.placeholder ?? guide.example
+          }
           className={`${inputClass} ${monoClass} ${missing ? 'border-amber-300 bg-amber-50/30' : 'border-slate-200'}`}
         />
       ) : (
@@ -144,12 +167,16 @@ function ProviderField({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           disabled={disabled}
+          {...secretAttrs}
           placeholder={field.placeholder ?? guide.example}
           className={`${inputClass} ${monoClass} ${missing ? 'border-amber-300 bg-amber-50/30' : 'border-slate-200'}`}
         />
       )}
 
       {missing && <p className="mt-1 text-xs text-amber-700">Required — hover (i) for where to find this value</p>}
+      {storedOnServer && !value.trim() && (
+        <p className="mt-1 text-xs text-emerald-700">Stored securely on the server (encrypted) — never shown again.</p>
+      )}
     </div>
   );
 }

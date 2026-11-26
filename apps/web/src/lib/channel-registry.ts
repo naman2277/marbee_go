@@ -297,7 +297,7 @@ export const CHANNEL_DEFINITIONS: ChannelDefinition[] = [
             required: true,
             secret: true,
             rows: 6,
-            help: 'Firebase → Project settings → Service accounts → Generate key',
+            help: 'Firebase → Project settings → Service accounts → Generate key. Stored encrypted on the server and never shown again — paste a new one only to replace it.',
           },
         ],
       },
@@ -420,7 +420,8 @@ export function validateProviderValues(
   const errors: string[] = [];
 
   for (const field of def.fields) {
-    if (field.required && !values[field.key]?.trim()) {
+    const storedOnServer = field.key === 'service_account_json' && values.__sa_configured === '1';
+    if (field.required && !values[field.key]?.trim() && !storedOnServer) {
       errors.push(`${field.label} is required`);
     }
     if (field.type === 'json' && values[field.key]?.trim()) {

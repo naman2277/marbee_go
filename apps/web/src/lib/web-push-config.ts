@@ -209,12 +209,12 @@ export async function diagnoseWebPushSetup(tenantId: string, environment: string
         : `Missing in config: ${missing.join(', ')}. Open the provider, re-enter values, and Save again.`,
   });
 
-  const hasSa = hasServiceAccountJson(row.credentials_encrypted);
+  const hasSa = cfg.service_account_configured === true || hasServiceAccountJson(row.credentials_encrypted);
   checks.push({
     label: 'Service account (server send)',
     pass: hasSa,
     detail: hasSa
-      ? 'Service account JSON is stored for FCM HTTP v1 sends.'
+      ? `Service account stored server-side (project ${String(cfg.service_account_project_id ?? '?')}).`
       : 'Service account JSON missing — paste it from Firebase → Project settings → Service accounts.',
   });
 

@@ -48,7 +48,6 @@ import {
   fetchWebAnalyticsMetrics,
   ingestWebAnalyticsEvents,
   fetchWebPushSubscribers,
-  registerWebPushSubscriber,
   deleteWebPushSubscriber,
   clearTestPushSubscribers,
   sendTestWebPushNotification,
@@ -349,7 +348,7 @@ export function WebAnalyticsPage() {
     }
   };
 
-  const handleTestWebPushDevice = async (customOptinPage = '/') => {
+  const handleTestWebPushDevice = async (_optinPage = '/') => {
     if (!currentSite) return;
     setIsSubscribingPush(true);
     setTestPushMsg(null);
@@ -366,38 +365,20 @@ export function WebAnalyticsPage() {
         return;
       }
 
-      const testToken = `TEST_TOKEN_admin_browser_${Math.random().toString(36).substring(2, 11)}_${Date.now()}`;
-      await registerWebPushSubscriber({
-        tenantId,
-        environment,
-        siteId: currentSite.siteId,
-        websiteDomain: currentSite.domain.replace(/^https?:\/\//, '').replace(/\/.*$/, ''),
-        optinPage: customOptinPage,
-        optinStatus: 'yes',
-        fcmToken: testToken,
-        isTestToken: true,
-        permissionStatus: perm,
-        browser: navigator.userAgent.includes('Edg') ? 'Edge' : navigator.userAgent.includes('Firefox') ? 'Firefox' : 'Chrome',
-        os: navigator.platform || 'Desktop',
-        device: 'desktop',
-      });
-
-      const pushRes = await sendTestWebPushNotification({
-        title: '🔔 Marbee Web Push Connected!',
-        body: `Live test notification from ${currentSite.name} (Opt-in from ${customOptinPage}). Device token registered in subscription table.`,
-        clickUrl: window.location.href,
-        tenantId,
-        environment,
-        fcmToken: testToken,
-      });
-
-      if (pushRes.ok) {
-        showToast('Web push token captured & live notification delivered!');
-        setTestPushMsg(`✓ Success: Token registered from ${currentSite.domain}${customOptinPage} & test notification delivered.`);
-      } else {
-        showToast(pushRes.message);
-        setTestPushMsg(`Token registered, notification note: ${pushRes.message}`);
+      // D-022: a real token for THIS browser (Firebase web config of the default provider),
+      // registered in the subscriber table, then a real FCM send from the server.
+      const { fetchWebPushRuntimeConfig } = await import('@/lib/web-push-config');
+      const { runPushTestWithWelcome } = await import('@/lib/web-push-sdk');
+      const runtime = await fetchWebPushRuntimeConfig(tenantId, environment);
+      if (!runtime) {
+        const msg = 'Web Push is not configured: add the Firebase web config + VAPID key in Settings → Channels → Web Push.';
+        showToast(msg);
+        setTestPushMsg(msg);
+        return;
       }
+      const result = await runPushTestWithWelcome(runtime);
+      showToast(result.message);
+      setTestPushMsg(result.sent ? `✓ ${result.message}` : `Not delivered: ${result.message}`);
       void queryClient.invalidateQueries({ queryKey: ['web-push-subscribers', tenantId, environment, currentSite?.siteId] });
       refetchSubscribers();
     } catch (e) {
@@ -410,30 +391,9 @@ export function WebAnalyticsPage() {
   };
 
   const handleSimulateVisitorOptin = async (pagePath: string) => {
-    if (!currentSite) return;
-    const fakeToken = `TEST_TOKEN_sim_${Math.random().toString(36).substring(2, 12)}_${Date.now().toString(36)}`;
-    const randomBrowser = ['Chrome', 'Safari', 'Firefox', 'Edge'][Math.floor(Math.random() * 4)];
-    const randomOs = ['Windows 11', 'macOS Sonoma', 'iOS 17', 'Android 14'][Math.floor(Math.random() * 4)];
-    const isMobile = randomOs.includes('iOS') || randomOs.includes('Android');
-
-    await registerWebPushSubscriber({
-      tenantId,
-      environment,
-      siteId: currentSite.siteId,
-      websiteDomain: currentSite.domain.replace(/^https?:\/\//, '').replace(/\/.*$/, ''),
-      optinPage: pagePath,
-      optinStatus: 'yes',
-      fcmToken: fakeToken,
-      isTestToken: true,
-      permissionStatus: 'granted',
-      browser: randomBrowser,
-      os: randomOs,
-      device: isMobile ? 'mobile' : 'desktop',
-    });
-
-    showToast(`Simulated +1 subscriber opt-in from ${pagePath}`);
-    void queryClient.invalidateQueries({ queryKey: ['web-push-subscribers', tenantId, environment, currentSite?.siteId] });
-    refetchSubscribers();
+    // D-022: fake subscribers are no longer written to the real table (they were targeted
+    // like real devices). Subscribe for real: open the site, or use Test Web Push here.
+    showToast(`Simulation is off — open ${pagePath} on your site and allow notifications to add a real subscriber.`);
   };
 
   const handleClearTestTokens = async () => {
@@ -607,26 +567,6 @@ export function WebAnalyticsPage() {
     };
   }, [refetchMetrics, refetchSites, refetchSubscribers, refetchBehavioralSessions]);
 
-  // Cloud SSE Stream for instant cross-domain subscriber capture (Netlify / live sites)
-  useEffect(() => {
-    let eventSource: EventSource | null = null;
-    try {
-      const safeTopic = `marbee_push_${(tenantId || 'default').replace(/[^a-zA-Z0-9_]/g, '_')}`;
-      eventSource = new EventSource(`https://ntfy.sh/${safeTopic}/sse`);
-      eventSource.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data && data.event === 'message') {
-            void queryClient.invalidateQueries({ queryKey: ['web-push-subscribers'] });
-          }
-        } catch {}
-      };
-    } catch {}
-
-    return () => {
-      if (eventSource) eventSource.close();
-    };
-  }, [tenantId, queryClient]);
 
   const handleManualRefresh = async () => {
     setIsManualRefreshing(true);
@@ -765,217 +705,25 @@ export function WebAnalyticsPage() {
 
 
 
+  // D-022: the website SDK talks only to Marbee's push-subscribe function with this site's
+  // public key (origin-checked). The old snippet relayed tokens through a public ntfy.sh
+  // topic — removed.
+  const marbeeOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+  const functionsBase = `${String(import.meta.env.VITE_SUPABASE_URL ?? '').replace(/\/$/, '')}/functions/v1`;
   const webPushSwCode = currentSite
-    ? `// Marbee Web Push Service Worker — Place in your website root: /sw.js
-self.addEventListener('push', function(event) {
-  var data = { title: 'New Notification', body: 'You have an update from ${currentSite.name}', icon: '/favicon.svg' };
-  try {
-    if (event.data) data = Object.assign(data, event.data.json());
-  } catch(e) {
-    if (event.data) data.body = event.data.text();
-  }
-  event.waitUntil(
-    self.registration.showNotification(data.title, {
-      body: data.body,
-      icon: data.icon || '/favicon.svg',
-      badge: '/favicon.svg',
-      data: { url: data.click_action || data.url || '/' }
-    })
-  );
-});
-
-self.addEventListener('notificationclick', function(event) {
-  event.notification.close();
-  var targetUrl = (event.notification.data && event.notification.data.url) ? event.notification.data.url : '/';
-  event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
-      for (var i = 0; i < clientList.length; i++) {
-        var client = clientList[i];
-        if (client.url === targetUrl && 'focus' in client) return client.focus();
-      }
-      if (clients.openWindow) return clients.openWindow(targetUrl);
-    })
-  );
-});`
+    ? `// Marbee Web Push service worker for ${currentSite.name}.
+// Save this file as /marbee-push-sw.js in the ROOT of ${currentDomainClean}.
+importScripts('${marbeeOrigin}/sdk/v1/marbee-push-sw-core.js');`
     : '';
 
   const webPushSnippetCode = currentSite
-    ? `<!-- Marbee Web Push Smart Opt-in SDK with Automatic Visitor Prompt -->
-<script>
-(function(siteId, tenantId, env, siteName) {
-  if (!('serviceWorker' in navigator) || !('Notification' in window)) return;
-  if (localStorage.getItem('_mb_push_dismissed') === '1') return;
-
-  // 1. Register Service Worker on Page Load
-  window.addEventListener('load', function() {
-    navigator.serviceWorker.register('/sw.js').then(function(reg) {
-      if (Notification.permission === 'granted') {
-        registerPushSubscription(reg, 'yes');
-      } else if (Notification.permission === 'default') {
-        // Automatically ask visitor after 2.5s with a smart opt-in banner
-        setTimeout(function() { showSmartOptinPrompt(reg); }, 2500);
-      }
-    });
-  });
-
-  // 2. Stylish Opt-in Prompt Modal
-  function showSmartOptinPrompt(reg) {
-    if (document.getElementById('mb-push-modal')) return;
-    var el = document.createElement('div');
-    el.id = 'mb-push-modal';
-    el.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:999999;background:#0f172a;color:#fff;padding:12px 18px;border-radius:12px;box-shadow:0 20px 40px rgba(0,0,0,0.3);display:flex;align-items:center;gap:12px;font-family:system-ui,-apple-system,sans-serif;font-size:13px;border:1px solid #334155;';
-    el.innerHTML = '<span>🔔</span><div><strong>Enable Alerts from ' + siteName + '</strong><div style="color:#94a3b8;font-size:11px;">Stay updated with real-time news & campaign alerts.</div></div><div style="display:flex;gap:6px;margin-left:12px;"><button id="mb-allow-btn" style="background:#6366f1;color:#fff;border:none;padding:6px 12px;border-radius:6px;font-weight:600;cursor:pointer;font-size:11px;">Allow</button><button id="mb-later-btn" style="background:transparent;color:#94a3b8;border:1px solid #475569;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:11px;">Later</button></div>';
-    document.body.appendChild(el);
-
-    document.getElementById('mb-allow-btn').onclick = function() {
-      el.remove();
-      Notification.requestPermission().then(function(perm) {
-        if (perm === 'granted') registerPushSubscription(reg, 'yes');
-      });
-    };
-    document.getElementById('mb-later-btn').onclick = function() {
-      el.remove();
-      localStorage.setItem('_mb_push_dismissed', '1');
-    };
-  }
-
-  // Universal VAPID Public Key for cross-website browser push subscription
-  var VAPID_KEY = 'BJZ7fKENGyf2FoQf1LUqhbTj3xvpPodPiMzcE1NSvJzUQeCAjSPhQ3EfOdCc9i2zcWOLxZX5Jpkf3svui7_9JY4';
-
-  function urlBase64ToUint8Array(base64String) {
-    var padding = '='.repeat((4 - base64String.length % 4) % 4);
-    var base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-    var rawData = window.atob(base64);
-    var outputArray = new Uint8Array(rawData.length);
-    for (var i = 0; i < rawData.length; ++i) {
-      outputArray[i] = rawData.charCodeAt(i);
-    }
-    return outputArray;
-  }
-
-  // 3. Ingest Real Browser Device Token with Website, Page & Opt-in Tracking
-  function registerPushSubscription(reg, optinStatus) {
-    function sendPayload(token, endpointUrl, p256dhKey, authSecret, isTest) {
-      var payload = {
-        site_id: siteId,
-        tenant_id: tenantId,
-        environment: env,
-        website_domain: location.hostname,
-        optin_page: location.pathname,
-        optin_status: optinStatus || 'yes',
-        fcm_token: token,
-        endpoint: endpointUrl || '',
-        p256dh: p256dhKey || '',
-        auth: authSecret || '',
-        is_test_token: Boolean(isTest),
-        permission_status: Notification.permission,
-        browser: navigator.userAgent
-      };
-
-      // 1. Cloud HTTPS Relay (Works globally from any HTTPS website e.g. Netlify/Shopify/WordPress)
-      try {
-        var cloudTopic = 'marbee_push_' + (tenantId || 'default').replace(/[^a-zA-Z0-9_]/g, '_');
-        fetch('https://ntfy.sh/' + cloudTopic, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        }).then(function() {
-          console.log('✓ Marbee Web Push token connected from ' + location.hostname);
-        }).catch(function(){});
-      } catch(e) {}
-
-      // 2. Direct Local / Same-Origin API
-      try {
-        fetch('${window.location.origin}/api/v1/web-push/subscribe', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        }).catch(function(){});
-      } catch(e) {}
-    }
-
-    function extractAndSend(sub) {
-      if (!sub) return;
-      var endpoint = sub.endpoint || '';
-      var rawToken = endpoint;
-      // Extract standard FCM token string from Google endpoint if applicable
-      if (endpoint.indexOf('fcm.googleapis.com/fcm/send/') !== -1) {
-        rawToken = endpoint.split('fcm.googleapis.com/fcm/send/')[1];
-      }
-      var p256dh = '';
-      var auth = '';
-      try {
-        if (sub.getKey) {
-          var pKey = sub.getKey('p256dh');
-          if (pKey) p256dh = btoa(String.fromCharCode.apply(null, new Uint8Array(pKey)));
-          var aKey = sub.getKey('auth');
-          if (aKey) auth = btoa(String.fromCharCode.apply(null, new Uint8Array(aKey)));
-        }
-      } catch(e) {}
-      sendPayload(rawToken, endpoint, p256dh, auth, false);
-    }
-
-    if (!reg || !reg.pushManager) return;
-
-    reg.pushManager.getSubscription().then(function(sub) {
-      if (sub) {
-        extractAndSend(sub);
-        return;
-      }
-      return reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(VAPID_KEY)
-      }).then(function(newSub) {
-        extractAndSend(newSub);
-      }).catch(function(err) {
-        console.warn('Standard VAPID subscription note:', err);
-      });
-    }).catch(function(err) {
-      console.warn('Push manager getSubscription note:', err);
-    });
-  }
-
-  // 4. Real-time Outbound Push Message Receiver (Instant delivery to all connected devices)
-  try {
-    var outboundTopic = 'marbee_push_outbound_' + (tenantId || 'default').replace(/[^a-zA-Z0-9_]/g, '_');
-    var es = new EventSource('https://ntfy.sh/' + outboundTopic + '/sse');
-    es.onmessage = function(e) {
-      try {
-        var msgObj = JSON.parse(e.data);
-        if (msgObj && msgObj.event === 'message') {
-          var d = JSON.parse(msgObj.message);
-          if (Notification.permission === 'granted') {
-            navigator.serviceWorker.ready.then(function(reg) {
-              reg.showNotification(d.title || '🔔 ' + siteName, {
-                body: d.body || 'You have a new update.',
-                icon: d.icon || '/favicon.svg',
-                badge: '/favicon.svg',
-                data: { url: d.url || '/' }
-              });
-            }).catch(function() {
-              new Notification(d.title || '🔔 ' + siteName, {
-                body: d.body || 'You have a new update.',
-                icon: d.icon || '/favicon.svg'
-              });
-            });
-          }
-        }
-      } catch(err) {}
-    };
-  } catch(e) {}
-
-  // Manual Trigger Helper
-  window.marbeeEnablePush = function() {
-    Notification.requestPermission().then(function(perm) {
-      if (perm === 'granted') {
-        navigator.serviceWorker.ready.then(function(reg) {
-          registerPushSubscription(reg, 'yes');
-        });
-      }
-    });
-  };
-})('${currentSite.siteId}', '${tenantId}', '${environment}', '${currentSite.name}');
-</script>`
+    ? `<!-- Marbee Web Push (shows a soft opt-in prompt, then the browser's own prompt) -->
+<script async src="${marbeeOrigin}/sdk/v1/marbee-push.js"
+  data-site="${currentSite.siteId}"
+  data-write-key="${currentSite.writeKey}"
+  data-api="${functionsBase}"></script>
+<!-- Own button instead of the automatic prompt: add data-prompt="manual" and call
+     MarbeePush.subscribe() on click. -->`
     : '';
 
   const handleDownloadSwJs = () => {
@@ -984,12 +732,12 @@ self.addEventListener('notificationclick', function(event) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'sw.js';
+    a.download = 'marbee-push-sw.js';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    showToast('Downloaded sw.js file');
+    showToast('Downloaded marbee-push-sw.js');
   };
 
   // Calculate SVG Chart Paths
@@ -1909,7 +1657,7 @@ self.addEventListener('notificationclick', function(event) {
                           <h4 className="text-xs font-bold text-slate-900">Add Service Worker</h4>
                         </div>
                         <p className="text-[11px] text-slate-600 leading-relaxed">
-                          Save the script below as <code className="font-mono text-purple-700 bg-purple-100 px-1 py-0.5 rounded">/sw.js</code> in your website public root.
+                          Save the script below as <code className="font-mono text-purple-700 bg-purple-100 px-1 py-0.5 rounded">/marbee-push-sw.js</code> in your website public root.
                         </p>
                       </div>
 
@@ -1940,14 +1688,14 @@ self.addEventListener('notificationclick', function(event) {
                         <div className="flex items-center gap-2">
                           <span className="font-bold text-xs text-slate-900">Step 1: Service Worker Code</span>
                           <span className="font-mono text-[11px] text-purple-700 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded-md">
-                            /sw.js
+                            /marbee-push-sw.js
                           </span>
                         </div>
                         <div className="flex items-center gap-1.5">
                           <Button
                             onClick={handleDownloadSwJs}
                             className="bg-purple-600 hover:bg-purple-700 text-white font-semibold text-xs h-7 px-2.5 rounded-lg shadow-2xs"
-                            title="Download sw.js file directly"
+                            title="Download marbee-push-sw.js"
                           >
                             <Download className="mr-1 h-3 w-3" />
                             Download sw.js
@@ -1959,12 +1707,12 @@ self.addEventListener('notificationclick', function(event) {
                             {copiedKey === 'swCode' ? (
                               <>
                                 <Check className="mr-1 h-3 w-3 text-emerald-600" />
-                                Copied /sw.js
+                                Copied
                               </>
                             ) : (
                               <>
                                 <Copy className="mr-1 h-3 w-3" />
-                                Copy /sw.js
+                                Copy
                               </>
                             )}
                           </Button>

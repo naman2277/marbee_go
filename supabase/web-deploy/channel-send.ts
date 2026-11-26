@@ -5,7 +5,7 @@
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 import { serve } from 'https://deno.land/std@0.208.0/http/server.ts';
 
-// ---- _shared/auth.ts ---------------------------------
+// ---- _shared/auth.ts -----------------------------------------
 // Shared caller authentication for edge functions (Phase 0, SEC-01).
 //
 // Rule (docs/cpo/09-security-baseline.md §2): a function derives tenant access
@@ -87,7 +87,7 @@ async function requirePermission(user: AuthedUser, tenantId: string, permission:
   if (data !== true) throw new AuthError(403, `You need the "${label ?? permission}" permission for this`);
 }
 
-// ---- _shared/webhook-sig.ts ------------------------------------------------------------------
+// ---- _shared/webhook-sig.ts ----------------------------------
 // Constant-time compare + HMAC signature verification (Phase 0 · SEC-18).
 // No imports, so it is easy to test and safe to share.
 
@@ -123,7 +123,7 @@ async function verifyHmacSignature(secret: string, body: string | Uint8Array, al
   return constantTimeEqual(value.toLowerCase(), hex) || constantTimeEqual(value, b64);
 }
 
-// ---- _shared/tenant-guard.ts -----------------------------------------------------------------
+// ---- _shared/tenant-guard.ts ---------------------------------
 // Workspace guards for edge functions that act with the service role
 // (Phase 0 · TD-12b, SEC-18).
 //
@@ -185,69 +185,140 @@ async function requireMemberWithPermission(
   throw new AuthError(403, 'You do not have permission for this in this workspace');
 }
 
-// ---- channel-send/index.ts -------------------------------------------------------------------
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-tenant-id, x-environment',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+// ---- _shared/secret-box.ts -----------------------------------
+// Server-side secret sealing (Phase 0 · SEC-05/SEC-07).
+//
+// Seals tenant secrets (AI provider keys, global-variable secrets) with AES-256-GCM
+// using ONE server-only master key: the edge-function secret MARBEE_SECRETS_KEY
+// (32 random bytes, base64). The database only ever stores the sealed envelope:
+//
+//     mbs1.<base64 12-byte IV>.<base64 ciphertext+tag>
+//
+// The browser never sees the master key or the plaintext. Values written before this
+// existed are plaintext ("legacy"); openSecret() still returns them so nothing breaks,
+// and callers re-seal them on next use.
+//
+// Generate a key:  node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+// Set it:          Supabase Dashboard → Edge Functions → Secrets → MARBEE_SECRETS_KEY
+
+const PREFIX = 'mbs1';
+const enc = new TextEncoder();
+const dec = new TextDecoder();
+
+let cachedKey: CryptoKey | null = null;
+let cachedFrom: string | null = null;
+
+function b64(bytes: Uint8Array): string {
+  let s = '';
+  for (let i = 0; i < bytes.length; i += 1) s += String.fromCharCode(bytes[i]);
+  return btoa(s);
+}
+function unb64(s: string): Uint8Array<ArrayBuffer> {
+  const bin = atob(s);
+  const out = new Uint8Array(new ArrayBuffer(bin.length));
+  for (let i = 0; i < bin.length; i += 1) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+function readMasterKey(): string {
+  // deno-lint-ignore no-explicit-any
+  const env = (globalThis as any).Deno?.env;
+  const v = env?.get('MARBEE_SECRETS_KEY')?.trim();
+  if (!v) throw new Error('Server misconfigured: MARBEE_SECRETS_KEY is not set');
+  return v;
+}
+
+async function masterKey(): Promise<CryptoKey> {
+  const material = readMasterKey();
+  if (cachedKey && cachedFrom === material) return cachedKey;
+  const raw = unb64(material);
+  if (raw.length !== 32) throw new Error('MARBEE_SECRETS_KEY must be 32 bytes (base64)');
+  cachedKey = await crypto.subtle.importKey('raw', raw, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+  cachedFrom = material;
+  return cachedKey;
+}
+
+function isSealed(value: string | null | undefined): boolean {
+  return typeof value === 'string' && value.startsWith(`${PREFIX}.`);
+}
+
+/** Encrypt a secret for storage. */
+async function sealSecret(plaintext: string): Promise<string> {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await masterKey(), enc.encode(plaintext)));
+  return `${PREFIX}.${b64(iv)}.${b64(ct)}`;
+}
+
+/** Decrypt a stored secret. Legacy plaintext is returned as-is; empty → null. Tampered → throws. */
+async function openSecret(stored: string | null | undefined): Promise<string | null> {
+  if (stored === null || stored === undefined) return null;
+  const v = stored.trim();
+  if (!v) return null;
+  if (!isSealed(v)) return v; // legacy plaintext — caller should re-seal
+  const [, ivB64, ctB64] = v.split('.');
+  if (!ivB64 || !ctB64) throw new Error('Malformed sealed secret');
+  const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(ivB64) }, await masterKey(), unb64(ctB64));
+  return dec.decode(pt);
+}
+
+/** "…abcd" for display. Never reveals more than the last 4 characters. */
+function last4(plaintext: string): string {
+  const t = plaintext.trim();
+  return t.length <= 4 ? '' : t.slice(-4);
+}
+
+// ---- _shared/web-push.ts -------------------------------------
+// Web Push over Firebase Cloud Messaging HTTP v1 (D-022).
+//
+// Shared by channel-send (tests + real-time sends) and push-worker (campaign/journey
+// outbox). Pure pieces — service-account parsing, message building, response
+// classification — are unit-tested in supabase/tests/functions/web-push.test.mjs.
+//
+// Messages are DATA-ONLY: the Marbee service worker (public/sdk/v1/marbee-push-sw.js)
+// always draws the notification itself, so there is never a second, auto-drawn copy.
+
+type ServiceAccount = {
+  type?: string;
+  project_id: string;
+  client_email: string;
+  private_key: string;
+  token_uri?: string;
 };
 
-function json(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-  });
-}
+type PushAction = { action?: string; title?: string; url?: string };
 
-function errorResponse(message: string, status = 400) {
-  return json({ error: message }, status);
-}
-
-function getServiceClient(): SupabaseClient {
-  return createClient(
-    Deno.env.get('SUPABASE_URL') ?? '',
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-  );
-}
-
-interface SendRequest {
-  action?: 'test_connection' | 'send';
-  provider_id?: string;
-  customer_id?: string;
-  fcm_token?: string;
-  title?: string;
+/** What a send carries. Everything here ends up visible on the device — no secrets. */
+type PushContent = {
+  title: string;
   body?: string;
   icon_url?: string;
   image_url?: string;
   badge_url?: string;
   tag?: string;
+  click_url?: string;
   ttl_seconds?: number;
-  actions?: Array<{ action?: string; title?: string; url?: string }>;
-  track_opens?: boolean;
-  click_action?: string;
-  app_origin?: string;
-  data?: Record<string, string>;
-  journey_id?: string;
-  delivery_id?: string;
-  delivery_name?: string;
-  tenant_id?: string;
-  environment?: string;
-}
-
-type ConnectionCheck = { label: string; ok: boolean; detail?: string };
-
-type ServiceAccount = {
-  type?: string;
-  project_id?: string;
-  client_email?: string;
-  private_key?: string;
-  token_uri?: string;
+  actions?: PushAction[];
+  track_clicks?: boolean;
 };
 
+type PushContext = {
+  message_id: string;
+  tenant_id: string;
+  environment: string;
+  journey_id?: string | null;
+  delivery_id?: string | null;
+  delivery_name?: string | null;
+  /** Full URL of the push-engage function, so the service worker can report clicks. */
+  engage_url?: string;
+};
+
+type SendOutcome = 'delivered' | 'retry' | 'invalid_token' | 'failed';
+type SendResult = { outcome: SendOutcome; error?: string; retryAfterSeconds?: number; httpStatus?: number };
+
 function parseServiceAccount(raw: string): ServiceAccount {
-  let sa: ServiceAccount;
+  let sa: Partial<ServiceAccount>;
   try {
-    sa = JSON.parse(raw) as ServiceAccount;
+    sa = JSON.parse(raw);
   } catch {
     throw new Error('Service account JSON is not valid JSON');
   }
@@ -269,185 +340,419 @@ function parseServiceAccount(raw: string): ServiceAccount {
   if (sa.token_uri && !sa.token_uri.includes('oauth2.googleapis.com')) {
     throw new Error('token_uri must be https://oauth2.googleapis.com/token — use JSON downloaded from Firebase');
   }
-  return sa;
+  if (!/^[a-z0-9-]{4,40}$/.test(sa.project_id)) throw new Error('Service account project_id is not a valid Firebase project id');
+  return sa as ServiceAccount;
 }
 
-async function loadWebPushProvider(
-  supabase: ReturnType<typeof getServiceClient>,
-  tenantId: string,
-  environment: string,
-  providerId?: string,
-) {
-  let query = supabase
-    .from('channel_providers')
-    .select('credentials_encrypted, config')
-    .eq('tenant_id', tenantId)
-    .eq('environment', environment)
-    .eq('channel', 'web_push');
-
-  if (providerId) {
-    query = query.eq('id', providerId);
-  } else {
-    query = query.eq('is_default', true);
+const httpUrl = (v: unknown): string | undefined => {
+  if (typeof v !== 'string' || !v.trim()) return undefined;
+  const s = v.trim();
+  if (s.startsWith('/')) {
+    // Relative to the subscribing site. "//host" and "/\host" would leave it.
+    return s.startsWith('//') || s.startsWith('/\\') ? undefined : s.slice(0, 2000);
   }
+  try {
+    const u = new URL(s);
+    return u.protocol === 'https:' || u.protocol === 'http:' ? u.toString().slice(0, 2000) : undefined;
+  } catch {
+    return undefined;
+  }
+};
+const text = (v: unknown, max: number) => (typeof v === 'string' ? v.slice(0, max) : '');
 
-  const { data: provider } = await query.maybeSingle();
-  return provider;
+/** Clean user-supplied content: trims lengths, keeps only http(s)/relative URLs, max 2 actions. */
+function normalizeContent(input: Record<string, unknown>): PushContent {
+  const actions = Array.isArray(input.actions) ? (input.actions as PushAction[]) : [];
+  const ttl = Number(input.ttl_seconds ?? input.ttlSeconds);
+  return {
+    title: text(input.title, 200),
+    body: text(input.body, 1000),
+    icon_url: httpUrl(input.icon_url ?? input.iconUrl),
+    image_url: httpUrl(input.image_url ?? input.imageUrl),
+    badge_url: httpUrl(input.badge_url ?? input.badgeUrl),
+    tag: text(input.tag, 100) || undefined,
+    click_url: httpUrl(input.click_url ?? input.clickAction ?? input.click_action),
+    ttl_seconds: Number.isFinite(ttl) && ttl > 0 ? Math.min(Math.floor(ttl), 2419200) : 86400,
+    actions: actions.slice(0, 2).map((a, i) => ({
+      action: text(a?.action, 40) || `action_${i + 1}`,
+      title: text(a?.title, 40) || 'Open',
+      url: httpUrl(a?.url),
+    })),
+    track_clicks: input.track_clicks !== false && input.track_opens !== false && input.trackOpens !== false,
+  };
 }
 
-async function handleTestConnection(
-  supabase: ReturnType<typeof getServiceClient>,
-  tenantId: string,
-  environment: string,
-  payload: SendRequest,
-) {
+/** FCM rejects data payloads over 4,096 bytes. Keep a margin for FCM's own keys. */
+const MAX_DATA_BYTES = 3_800;
+const byteLen = (o: unknown) => new TextEncoder().encode(JSON.stringify(o)).length;
+
+/** FCM v1 request body. Data values must all be strings. Oversized content is trimmed to
+ *  fit (body first, then images, then button links) so a send never fails for size. */
+function buildFcmMessage(token: string, content: PushContent, ctx: PushContext) {
+  const msg = buildFcmMessageRaw(token, content, ctx);
+  const data = msg.message.data;
+  if (byteLen(data) <= MAX_DATA_BYTES) return msg;
+  const over = () => byteLen(data) > MAX_DATA_BYTES;
+  if (over()) {
+    const excess = byteLen(data) - MAX_DATA_BYTES;
+    const body = data.body;
+    data.body = body.slice(0, Math.max(0, body.length - excess - 1)) + (body ? '…' : '');
+  }
+  for (const k of ['image_url', 'badge_url', 'icon_url'] as const) if (over()) data[k] = '';
+  if (over()) {
+    const actions = (JSON.parse(data.actions_json) as PushAction[]).map((a) => ({ ...a, url: undefined }));
+    data.actions_json = JSON.stringify(actions);
+  }
+  if (over()) data.actions_json = '[]';
+  if (over()) data.delivery_name = '';
+  return msg;
+}
+
+function buildFcmMessageRaw(token: string, content: PushContent, ctx: PushContext) {
+  const data: Record<string, string> = {
+    marbee: '1',
+    message_id: ctx.message_id,
+    tenant_id: ctx.tenant_id,
+    environment: ctx.environment,
+    journey_id: ctx.journey_id ?? '',
+    delivery_id: ctx.delivery_id ?? '',
+    delivery_name: ctx.delivery_name ?? '',
+    title: content.title,
+    body: content.body ?? '',
+    icon_url: content.icon_url ?? '',
+    image_url: content.image_url ?? '',
+    badge_url: content.badge_url ?? '',
+    tag: content.tag ?? '',
+    click_url: content.click_url ?? '/',
+    actions_json: JSON.stringify(content.actions ?? []),
+    track_clicks: content.track_clicks === false ? 'false' : 'true',
+    engage_url: ctx.engage_url ?? '',
+  };
+  return {
+    message: {
+      token,
+      data,
+      webpush: { headers: { TTL: String(content.ttl_seconds ?? 86400), Urgency: 'high' } },
+    },
+  };
+}
+
+type FcmErrorBody = { error?: { status?: string; message?: string; details?: Array<{ errorCode?: string }> } };
+
+/** Map an FCM v1 HTTP response to what the outbox should do next. */
+function classifyFcmResponse(status: number, bodyText: string, retryAfter?: string | null): SendResult {
+  if (status >= 200 && status < 300) return { outcome: 'delivered', httpStatus: status };
+  let parsed: FcmErrorBody = {};
+  try { parsed = JSON.parse(bodyText); } catch { /* not JSON */ }
+  const codes = (parsed.error?.details ?? []).map((d) => d?.errorCode).filter(Boolean) as string[];
+  const st = parsed.error?.status ?? '';
+  const msg = (parsed.error?.message ?? bodyText ?? '').slice(0, 300);
+  const has = (c: string) => codes.includes(c) || st === c;
+  const ra = retryAfter ? Number(retryAfter) : NaN;
+  const retryAfterSeconds = Number.isFinite(ra) && ra > 0 ? Math.min(Math.floor(ra), 3600) : undefined;
+  const error = `FCM ${status}${codes[0] || st ? ` ${codes[0] || st}` : ''}: ${msg}`.trim();
+
+  if (status === 404 || status === 410 || has('UNREGISTERED')) return { outcome: 'invalid_token', error, httpStatus: status };
+  if (has('SENDER_ID_MISMATCH')) return { outcome: 'invalid_token', error, httpStatus: status };
+  if (status === 400 && /registration token/i.test(msg)) return { outcome: 'invalid_token', error, httpStatus: status };
+  if (status === 429 || has('QUOTA_EXCEEDED')) return { outcome: 'retry', error, retryAfterSeconds: retryAfterSeconds ?? 60, httpStatus: status };
+  if (status >= 500 || has('UNAVAILABLE') || has('INTERNAL')) return { outcome: 'retry', error, retryAfterSeconds, httpStatus: status };
+  if (status === 401) return { outcome: 'retry', error, httpStatus: status }; // access token expired mid-run
+  return { outcome: 'failed', error, httpStatus: status };
+}
+
+/** Human-readable hint for the settings page / delivery log. */
+function explainFcmError(error: string): string {
+  if (/UNAUTHENTICATED|THIRD_PARTY_AUTH_ERROR|invalid authentication|PERMISSION_DENIED/i.test(error)) {
+    return 'Firebase rejected the server key. Re-download the service-account JSON (Firebase → Project settings → Service accounts) and make sure "Firebase Cloud Messaging API (V1)" is enabled.';
+  }
+  if (/SENDER_ID_MISMATCH/i.test(error)) {
+    return 'This browser was subscribed with a different Firebase project than the server key. Check the web config and service account belong to the same project.';
+  }
+  if (/UNREGISTERED|registration token/i.test(error)) return 'The browser subscription has expired or was removed — the device was pruned.';
+  return error;
+}
+
+// ---------------------------------------------------------------- OAuth
+const tokenCache = new Map<string, { token: string; exp: number }>();
+
+function base64Url(data: string | Uint8Array): string {
+  const bytes = typeof data === 'string' ? new TextEncoder().encode(data) : data;
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 1) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function pemToDer(pem: string): ArrayBuffer {
+  const b64 = pem.replace(/-----(BEGIN|END) PRIVATE KEY-----/g, '').replace(/\\n/g, '').replace(/\s/g, '');
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i += 1) out[i] = bin.charCodeAt(i);
+  return out.buffer;
+}
+
+/** Google access token for FCM, cached per service account for ~50 minutes. */
+async function getFcmAccessToken(sa: ServiceAccount, opts: { fetchFn?: typeof fetch; force?: boolean } = {}): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+  const cached = tokenCache.get(sa.client_email);
+  if (!opts.force && cached && cached.exp - 600 > now) return cached.token;
+
+  const header = base64Url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
+  const claim = base64Url(JSON.stringify({
+    iss: sa.client_email,
+    scope: 'https://www.googleapis.com/auth/firebase.messaging',
+    aud: 'https://oauth2.googleapis.com/token',
+    iat: now,
+    exp: now + 3600,
+  }));
+  const key = await crypto.subtle.importKey('pkcs8', pemToDer(sa.private_key), { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
+  const sig = new Uint8Array(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(`${header}.${claim}`)));
+  const jwt = `${header}.${claim}.${base64Url(sig)}`;
+
+  const res = await (opts.fetchFn ?? fetch)('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `grant_type=${encodeURIComponent('urn:ietf:params:oauth:grant-type:jwt-bearer')}&assertion=${jwt}`,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.access_token) {
+    // Never echo the response wholesale (could include request details); keep the error code.
+    throw new Error(`Google OAuth failed: ${String(data.error ?? res.status)}${data.error_description ? ` — ${String(data.error_description).slice(0, 200)}` : ''}`);
+  }
+  tokenCache.set(sa.client_email, { token: data.access_token, exp: now + Number(data.expires_in ?? 3600) });
+  return data.access_token;
+}
+
+function forgetFcmAccessToken(sa: ServiceAccount): void {
+  tokenCache.delete(sa.client_email);
+}
+
+/** Send one message. Never throws — network errors come back as a retry. */
+async function sendFcm(
+  sa: ServiceAccount,
+  token: string,
+  content: PushContent,
+  ctx: PushContext,
+  opts: { fetchFn?: typeof fetch } = {},
+): Promise<SendResult> {
+  const f = opts.fetchFn ?? fetch;
+  try {
+    const access = await getFcmAccessToken(sa, opts);
+    const res = await f(`https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${access}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(buildFcmMessage(token, content, ctx)),
+      signal: AbortSignal.timeout(15000),
+    });
+    const result = classifyFcmResponse(res.status, res.ok ? '' : await res.text(), res.headers.get('retry-after'));
+    if (res.status === 401) forgetFcmAccessToken(sa);
+    return result;
+  } catch (e) {
+    const m = e instanceof Error ? e.message : String(e);
+    // A bad key is not going to fix itself on retry.
+    if (/Google OAuth failed: (invalid_grant|invalid_client|unauthorized_client)/.test(m) || /pkcs8|DataError|import/i.test(m)) {
+      return { outcome: 'failed', error: m };
+    }
+    return { outcome: 'retry', error: `Network: ${m}`.slice(0, 300) };
+  }
+}
+
+// ---------------------------------------------------------------- provider key
+type MinimalClient = {
+  // deno-lint-ignore no-explicit-any
+  from: (t: string) => any;
+};
+
+/**
+ * Load a provider's service-account JSON from the server-only secrets table (sql/95),
+ * re-sealing legacy plaintext on the way. Falls back to the pre-95 column so a deploy
+ * of the functions before the SQL keeps working.
+ */
+async function loadServiceAccountJson(
+  supabase: MinimalClient,
+  provider: { id: string; tenant_id?: string; credentials_encrypted?: string | null },
+  box: { openSecret: (s: string) => Promise<string | null>; sealSecret: (s: string) => Promise<string>; isSealed: (s: string) => boolean },
+): Promise<string | null> {
+  let q = supabase.from('channel_provider_secrets').select('secret').eq('provider_id', provider.id);
+  if (provider.tenant_id) q = q.eq('tenant_id', provider.tenant_id); // defence in depth
+  const { data, error } = await q.maybeSingle();
+  if (!error && data?.secret) {
+    const plain = await box.openSecret(data.secret);
+    if (plain && !box.isSealed(data.secret)) {
+      try {
+        const sealed = await box.sealSecret(plain);
+        await supabase.from('channel_provider_secrets').update({ secret: sealed, updated_at: new Date().toISOString() }).eq('provider_id', provider.id);
+      } catch (e) {
+        console.error('re-seal of web push key skipped', e instanceof Error ? e.message : e);
+      }
+    }
+    return plain;
+  }
+  const legacy = provider.credentials_encrypted?.trim();
+  return legacy && legacy !== '{}' ? legacy : null;
+}
+
+/** Backoff used by the outbox (mirrors complete_web_push in sql/95, for display/tests). */
+function backoffSeconds(attempt: number, retryAfter?: number): number {
+  return Math.min(Math.max(30 * 4 ** Math.max(attempt - 1, 0), retryAfter ?? 0), 3600);
+}
+
+// ---- channel-send/index.ts -----------------------------------
+// channel-send — immediate Web Push sends: Settings "Test push" (test_connection) and
+// real-time messages from the RTM engine. Campaign / journey sends do NOT come here any
+// more: they are queued with enqueue_web_push() and sent by push-worker (D-022).
+//
+// Callers: the engine (service-role key) or a signed-in member with journeys.publish /
+// settings.manage (test: settings.manage). Never for a suspended workspace.
+// The Firebase service-account key is read server-side only (sql/95
+// channel_provider_secrets), sealed with MARBEE_SECRETS_KEY.
+
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-tenant-id, x-environment',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
+
+function json(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+}
+const errorResponse = (message: string, status = 400) => json({ error: message }, status);
+
+function getServiceClient(): SupabaseClient {
+  return createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ENVS = ['production', 'staging', 'development'];
+
+interface SendRequest {
+  action?: 'test_connection' | 'send';
+  provider_id?: string;
+  customer_id?: string;
+  fcm_token?: string;
+  title?: string;
+  body?: string;
+  icon_url?: string;
+  image_url?: string;
+  badge_url?: string;
+  tag?: string;
+  ttl_seconds?: number;
+  actions?: Array<{ action?: string; title?: string; url?: string }>;
+  track_opens?: boolean;
+  click_action?: string;
+  journey_id?: string;
+  delivery_id?: string;
+  delivery_name?: string;
+  tenant_id?: string;
+  environment?: string;
+}
+
+type ConnectionCheck = { label: string; ok: boolean; detail?: string };
+
+async function loadProvider(supabase: SupabaseClient, tenantId: string, environment: string, providerId?: string) {
+  let q = supabase.from('channel_providers').select('id, tenant_id, credentials_encrypted, config, status')
+    .eq('tenant_id', tenantId).eq('environment', environment).eq('channel', 'web_push');
+  q = providerId && UUID_RE.test(providerId) ? q.eq('id', providerId) : q.eq('is_default', true);
+  const { data } = await q.limit(1).maybeSingle();
+  return data as { id: string; tenant_id: string; credentials_encrypted: string | null; config: Record<string, unknown>; status: string } | null;
+}
+
+async function loadSa(supabase: SupabaseClient, provider: { id: string; tenant_id: string; credentials_encrypted: string | null }): Promise<ServiceAccount> {
+  const raw = await loadServiceAccountJson(supabase, provider, { openSecret, sealSecret, isSealed });
+  if (!raw) throw new Error('Service account JSON not configured — paste the Firebase service-account key in Channels → Web Push');
+  return parseServiceAccount(raw);
+}
+
+const engageUrl = () => `${(Deno.env.get('SUPABASE_URL') ?? '').replace(/\/$/, '')}/functions/v1/push-engage`;
+
+async function markInvalid(supabase: SupabaseClient, tenantId: string, environment: string, token: string) {
+  const { data } = await supabase.from('web_push_subscribers')
+    .update({ subscription_status: 'invalid', token_invalidated_at: new Date().toISOString() })
+    .eq('tenant_id', tenantId).eq('environment', environment).eq('fcm_token', token)
+    .select('id');
+  const ids = (data ?? []).map((r: { id: string }) => r.id);
+  if (ids.length) await supabase.from('channel_endpoints').update({ status: 'invalid' }).eq('tenant_id', tenantId).in('subscriber_id', ids);
+}
+
+async function handleTestConnection(supabase: SupabaseClient, tenantId: string, environment: string, payload: SendRequest) {
   const start = Date.now();
   const checks: ConnectionCheck[] = [];
+  const done = (success: boolean, status: string, extra: Record<string, unknown>) =>
+    json({ success, status, checks, latency_ms: Date.now() - start, ...extra });
 
-  const provider = await loadWebPushProvider(supabase, tenantId, environment, payload.provider_id);
+  const provider = await loadProvider(supabase, tenantId, environment, payload.provider_id);
   if (!provider) {
-    checks.push({
-      label: 'Default web push provider',
-      ok: false,
-      detail: `No default Firebase provider for ${environment}`,
-    });
-    return json({
-      success: false,
-      status: 'failed',
-      error: 'No default web push provider configured',
-      checks,
-      latency_ms: Date.now() - start,
-    });
+    checks.push({ label: 'Default web push provider', ok: false, detail: `No default Firebase provider for ${environment}` });
+    return done(false, 'failed', { error: 'No default web push provider configured' });
   }
+  checks.push({ label: 'Default web push provider', ok: true, detail: 'Provider record found' });
 
-  checks.push({
-    label: 'Default web push provider',
-    ok: true,
-    detail: 'Provider record found in database',
-  });
-
-  const creds = provider.credentials_encrypted?.trim();
-  if (!creds) {
-    checks.push({
-      label: 'Service account JSON',
-      ok: false,
-      detail: 'Missing — paste Firebase service account key in Channels → Web Push',
-    });
-    return json({
-      success: false,
-      status: 'failed',
-      error: 'Service account JSON not configured',
-      checks,
-      latency_ms: Date.now() - start,
-    });
-  }
-
-  let serviceAccount: ServiceAccount;
+  let sa: ServiceAccount;
   try {
-    serviceAccount = parseServiceAccount(creds);
-    checks.push({
-      label: 'Service account JSON',
-      ok: true,
-      detail: `Project ${serviceAccount.project_id}`,
-    });
+    sa = await loadSa(supabase, provider);
+    checks.push({ label: 'Service account JSON', ok: true, detail: `Project ${sa.project_id} (stored server-side)` });
   } catch (err) {
     const detail = err instanceof Error ? err.message : 'Invalid service account';
     checks.push({ label: 'Service account JSON', ok: false, detail });
-    return json({
-      success: false,
-      status: 'failed',
-      error: detail,
-      checks,
-      latency_ms: Date.now() - start,
-    });
+    return done(false, 'failed', { error: detail });
+  }
+
+  const webProject = String(provider.config?.project_id ?? '');
+  if (webProject && webProject !== sa.project_id) {
+    const detail = `Web config is for project "${webProject}" but the service account is for "${sa.project_id}" — they must match`;
+    checks.push({ label: 'Same Firebase project', ok: false, detail });
+    return done(false, 'failed', { error: detail });
   }
 
   try {
-    await getFirebaseAccessToken(serviceAccount as { client_email: string; private_key: string });
-    checks.push({
-      label: 'Google OAuth (FCM API)',
-      ok: true,
-      detail: `Authenticated as ${serviceAccount.client_email}`,
-    });
+    await getFcmAccessToken(sa, { force: true });
+    checks.push({ label: 'Google OAuth (FCM API)', ok: true, detail: `Authenticated as ${sa.client_email}` });
   } catch (err) {
-    const detail = err instanceof Error ? err.message : 'OAuth failed';
+    const detail = explainFcmError(err instanceof Error ? err.message : 'OAuth failed');
     checks.push({ label: 'Google OAuth (FCM API)', ok: false, detail });
-    return json({
-      success: false,
-      status: 'failed',
-      error: detail,
-      checks,
-      latency_ms: Date.now() - start,
-    });
+    return done(false, 'failed', { error: detail });
   }
 
   if (!payload.fcm_token) {
-    return json({
-      success: true,
-      status: 'connected',
-      message: 'Server credentials verified with Google — browser token required for end-to-end delivery test',
-      checks,
-      latency_ms: Date.now() - start,
-    });
+    return done(true, 'connected', { message: 'Server credentials verified with Google — allow notifications in this browser to test delivery' });
   }
 
-  const appOrigin = payload.app_origin ?? Deno.env.get('APP_URL') ?? 'http://localhost:5173';
-  try {
-    await sendViaFirebase(creds, payload.fcm_token, {
-      title: payload.title ?? 'Marbee Test Push',
-      body: payload.body ?? 'Web Push via Firebase FCM HTTP v1 is working!',
-      click_action: payload.click_action ?? appOrigin,
-      app_origin: appOrigin,
-      tenant_id: tenantId,
-      environment,
-      track_opens: false,
-      tag: 'marbee-connection-test',
-    });
-    checks.push({
-      label: 'FCM message delivery',
-      ok: true,
-      detail: 'Google FCM accepted the message for this device token',
-    });
-    return json({
-      success: true,
-      status: 'delivered',
-      message: 'Test notification delivered via FCM',
-      checks,
-      latency_ms: Date.now() - start,
-    });
-  } catch (err) {
-    const detail = err instanceof Error ? err.message : 'FCM delivery failed';
-    checks.push({ label: 'FCM message delivery', ok: false, detail });
-    return json({
-      success: false,
-      status: 'failed',
-      error: detail,
-      checks,
-      latency_ms: Date.now() - start,
-    });
+  const content = normalizeContent({
+    title: payload.title ?? 'Marbee test push',
+    body: payload.body ?? 'Web Push via Firebase Cloud Messaging is working.',
+    click_url: payload.click_action,
+    tag: 'marbee-connection-test',
+    track_clicks: false,
+  });
+  const result = await sendFcm(sa, payload.fcm_token, content, {
+    message_id: crypto.randomUUID(), tenant_id: tenantId, environment, engage_url: engageUrl(),
+  });
+  if (result.outcome === 'delivered') {
+    checks.push({ label: 'FCM message delivery', ok: true, detail: 'Google FCM accepted the message for this browser' });
+    return done(true, 'delivered', { message: 'Test notification sent via FCM' });
   }
+  if (result.outcome === 'invalid_token') await markInvalid(supabase, tenantId, environment, payload.fcm_token);
+  const detail = explainFcmError(result.error ?? 'FCM delivery failed');
+  checks.push({ label: 'FCM message delivery', ok: false, detail });
+  return done(false, 'failed', { error: detail });
 }
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
-  }
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+  if (req.method !== 'POST') return errorResponse('Method not allowed', 405);
 
   try {
-    const payload: SendRequest = await req.json();
+    const payload = (await req.json().catch(() => null)) as SendRequest | null;
+    if (!payload || typeof payload !== 'object') return errorResponse('JSON body required', 400);
 
     const tenantId = req.headers.get('x-tenant-id') ?? payload.tenant_id;
     const environment = req.headers.get('x-environment') ?? payload.environment ?? 'production';
     if (!tenantId) return errorResponse('Missing tenant_id in request body', 401);
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)) {
-      return errorResponse('Invalid tenant_id', 400);
-    }
+    if (!UUID_RE.test(tenantId)) return errorResponse('Invalid tenant_id', 400);
+    if (!ENVS.includes(environment)) return errorResponse('Invalid environment', 400);
 
     const supabase = getServiceClient();
-
-    // Phase 0: this function used to accept ANY caller for ANY tenant. Now only the
-    // engine (service role) or a signed-in member with send rights may use it, and
-    // never for a suspended workspace.
     try {
       if (!isServiceCaller(req)) {
         await requireMemberWithPermission(
@@ -461,268 +766,85 @@ serve(async (req) => {
       throw e;
     }
 
-    if (payload.action === 'test_connection') {
-      return await handleTestConnection(supabase, tenantId, environment, payload);
-    }
+    if (payload.action === 'test_connection') return await handleTestConnection(supabase, tenantId, environment, payload);
 
-    const ctx = { tenantId, environment };
+    // ---- single immediate send (RTM engine / manual) ----------------------------
     const messageId = crypto.randomUUID();
-    const appOrigin =
-      payload.app_origin ??
-      Deno.env.get('APP_URL') ??
-      'http://localhost:5173';
-    const destinationUrl = payload.click_action ?? `${appOrigin}/`;
-    const trackOpens = payload.track_opens !== false;
-    const openUrl =
-      `${appOrigin.replace(/\/$/, '')}/push/open?mid=${encodeURIComponent(messageId)}` +
-      `&tid=${encodeURIComponent(tenantId)}&env=${encodeURIComponent(environment)}` +
-      (payload.journey_id ? `&jid=${encodeURIComponent(String(payload.journey_id))}` : '') +
-      (payload.delivery_id ? `&did=${encodeURIComponent(String(payload.delivery_id))}` : '') +
-      (payload.delivery_name ? `&dn=${encodeURIComponent(String(payload.delivery_name))}` : '');
-    const notificationLink = trackOpens ? openUrl : destinationUrl;
+    const customerId = payload.customer_id && UUID_RE.test(payload.customer_id) ? payload.customer_id : null;
 
-    let fcmToken = payload.fcm_token;
-    if (!fcmToken && payload.customer_id) {
-      const { data: sub } = await supabase
-        .from('web_push_subscribers')
-        .select('fcm_token')
-        .eq('tenant_id', ctx.tenantId)
-        .eq('environment', ctx.environment)
-        .eq('customer_id', payload.customer_id)
-        .eq('subscription_status', 'active')
-        .order('last_seen', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      fcmToken = sub?.fcm_token;
+    // A raw token must belong to this workspace's own subscribers.
+    let target: { id: string | null; fcm_token: string; customer_id: string | null } | null = null;
+    if (payload.fcm_token) {
+      const { data } = await supabase.from('web_push_subscribers').select('id, fcm_token, customer_id')
+        .eq('tenant_id', tenantId).eq('environment', environment).eq('fcm_token', payload.fcm_token)
+        .eq('subscription_status', 'active').maybeSingle();
+      target = data;
+      // The RTM engine may carry a token from the brand's own app (recipient.push_token).
+      if (!target && isServiceCaller(req) && payload.fcm_token.length <= 4096) {
+        target = { id: null, fcm_token: payload.fcm_token, customer_id: null };
+      }
+    } else if (customerId) {
+      const { data } = await supabase.from('web_push_subscribers').select('id, fcm_token, customer_id')
+        .eq('tenant_id', tenantId).eq('environment', environment).eq('customer_id', customerId)
+        .eq('subscription_status', 'active').order('last_seen', { ascending: false }).limit(1).maybeSingle();
+      target = data;
     }
+    if (!target) return errorResponse('No active push subscription found', 404);
+    const resolvedCustomer = customerId ?? target.customer_id;
 
-    if (!fcmToken) return errorResponse('No active push subscription found', 404);
-
-    if (payload.customer_id) {
-      const { data: excluded } = await supabase
-        .from('exclusions')
-        .select('id')
-        .eq('tenant_id', ctx.tenantId)
-        .eq('customer_id', payload.customer_id)
-        .or('channel.eq.web_push,channel.is.null')
-        .lte('start_date', new Date().toISOString().split('T')[0])
-        .or(`end_date.is.null,end_date.gte.${new Date().toISOString().split('T')[0]}`)
-        .maybeSingle();
-
+    if (resolvedCustomer) {
+      const today = new Date().toISOString().slice(0, 10);
+      const { data: excluded } = await supabase.from('exclusions').select('id')
+        .eq('tenant_id', tenantId).eq('customer_id', resolvedCustomer)
+        .or('channel.eq.web_push,channel.is.null').lte('start_date', today)
+        .or(`end_date.is.null,end_date.gte.${today}`).limit(1).maybeSingle();
       if (excluded) return errorResponse('Customer is excluded from web push', 403);
     }
 
-    const provider = await loadWebPushProvider(supabase, ctx.tenantId, ctx.environment, payload.provider_id);
+    const content = normalizeContent({ ...payload, click_url: payload.click_action });
+    if (!content.title) return errorResponse('title is required', 400);
 
-    let deliveryStatus = 'failed';
+    let status: 'delivered' | 'failed' = 'failed';
     let errorCode: string | null = null;
-    const creds = provider?.credentials_encrypted?.trim();
-
-    if (!creds) {
-      errorCode =
-        'Firebase Service Account JSON not configured. Add credentials in Settings → Channels → Web Push.';
+    const provider = await loadProvider(supabase, tenantId, environment, payload.provider_id);
+    if (!provider) {
+      errorCode = 'No default Web Push provider. Add one in Channels → Web Push.';
     } else {
       try {
-        parseServiceAccount(creds);
-        await sendViaFirebase(creds, fcmToken, {
-          ...payload,
-          message_id: messageId,
-          tenant_id: tenantId,
-          environment,
-          click_action: notificationLink,
-          destination_url: destinationUrl,
-          open_url: openUrl,
-          track_opens: trackOpens,
+        const sa = await loadSa(supabase, provider);
+        const result = await sendFcm(sa, target.fcm_token, content, {
+          message_id: messageId, tenant_id: tenantId, environment,
+          journey_id: payload.journey_id ?? null, delivery_id: payload.delivery_id ?? null,
+          delivery_name: payload.delivery_name ?? null, engage_url: engageUrl(),
         });
-        deliveryStatus = 'delivered';
+        if (result.outcome === 'delivered') status = 'delivered';
+        else {
+          errorCode = explainFcmError(result.error ?? 'FCM_ERROR');
+          if (result.outcome === 'invalid_token') await markInvalid(supabase, tenantId, environment, target.fcm_token);
+        }
       } catch (err) {
         errorCode = err instanceof Error ? err.message : 'FCM_ERROR';
       }
     }
 
+    const journeyId = payload.journey_id && UUID_RE.test(payload.journey_id) ? payload.journey_id : null;
     await supabase.from('engagement_log').insert({
-      tenant_id: ctx.tenantId,
-      environment: ctx.environment,
-      customer_id: payload.customer_id ?? null,
-      channel: 'web_push',
-      message_id: messageId,
-      event: deliveryStatus === 'delivered' ? 'delivered' : 'failed',
-      journey_id: payload.journey_id ?? null,
+      tenant_id: tenantId, environment, customer_id: resolvedCustomer, channel: 'web_push',
+      message_id: messageId, event: status, journey_id: journeyId,
       metadata: {
-        title: payload.title,
-        body: payload.body,
-        click_url: destinationUrl,
-        click_action: destinationUrl,
-        delivery_id: payload.delivery_id,
-        delivery_name: payload.delivery_name,
-        open_url: openUrl,
+        title: content.title, body: content.body, click_url: content.click_url ?? null, click_action: content.click_url ?? null,
+        delivery_id: payload.delivery_id, delivery_name: payload.delivery_name, subscriber_id: target.id,
+        source: 'channel-send', error: errorCode ?? undefined,
       },
     });
-
     await supabase.from('customer_delivery_log').insert({
-      tenant_id: ctx.tenantId,
-      environment: ctx.environment,
-      customer_id: payload.customer_id ?? null,
-      journey_id: payload.journey_id ?? null,
-      channel: 'web_push',
-      provider: 'firebase',
-      message_id: messageId,
-      status: deliveryStatus,
-      error_code: errorCode,
+      tenant_id: tenantId, environment, customer_id: resolvedCustomer, journey_id: journeyId,
+      channel: 'web_push', provider: 'firebase', message_id: messageId, status, error_code: errorCode?.slice(0, 200) ?? null,
     });
 
-    return json({
-      success: deliveryStatus === 'delivered',
-      message_id: messageId,
-      status: deliveryStatus,
-      error: errorCode,
-    });
+    return json({ success: status === 'delivered', message_id: messageId, status, error: errorCode });
   } catch (err) {
-    return errorResponse(err instanceof Error ? err.message : 'Unknown error', 500);
+    console.error('channel-send unhandled', err instanceof Error ? err.message : err);
+    return errorResponse('Internal error', 500);
   }
 });
-
-async function sendViaFirebase(
-  serviceAccountJson: string,
-  fcmToken: string,
-  payload: SendRequest & { message_id?: string; tenant_id?: string; environment?: string; destination_url?: string; open_url?: string },
-) {
-  const serviceAccount = parseServiceAccount(serviceAccountJson);
-  const accessToken = await getFirebaseAccessToken(serviceAccount as { client_email: string; private_key: string });
-  const messageId = payload.message_id ?? crypto.randomUUID();
-  const ttl = Number(payload.ttl_seconds ?? 86400);
-  const actions = Array.isArray(payload.actions) ? payload.actions : [];
-  const webpushNotification: Record<string, unknown> = {};
-  if (payload.icon_url) webpushNotification.icon = payload.icon_url;
-  if (payload.badge_url) webpushNotification.badge = payload.badge_url;
-  if (payload.image_url) webpushNotification.image = payload.image_url;
-  if (payload.tag) webpushNotification.tag = payload.tag;
-  if (actions.length) {
-    webpushNotification.actions = actions.slice(0, 2).map((a) => ({
-      action: a.action ?? 'open',
-      title: a.title ?? 'Open',
-    }));
-  }
-
-  const response = await fetch(
-    `https://fcm.googleapis.com/v1/projects/${serviceAccount.project_id}/messages:send`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        message: {
-          token: fcmToken,
-          notification: { title: payload.title, body: payload.body },
-          webpush: {
-            headers: { TTL: String(ttl) },
-            fcm_options: { link: payload.click_action },
-            notification: Object.keys(webpushNotification).length ? webpushNotification : undefined,
-          },
-          data: {
-            message_id: messageId,
-            tenant_id: payload.tenant_id ?? '',
-            environment: payload.environment ?? 'production',
-            journey_id: payload.journey_id ?? '',
-            title: String(payload.title ?? ''),
-            body: String(payload.body ?? ''),
-            click_url: payload.destination_url ?? payload.click_action ?? '/',
-            open_url: payload.open_url ?? payload.click_action ?? '',
-            delivery_id: payload.delivery_id ?? '',
-            delivery_name: payload.delivery_name ?? '',
-            icon_url: payload.icon_url ?? '',
-            image_url: payload.image_url ?? '',
-            badge_url: payload.badge_url ?? '',
-            tag: payload.tag ?? '',
-            actions_json: JSON.stringify(actions),
-            track_opens: payload.track_opens === false ? 'false' : 'true',
-          },
-        },
-      }),
-    },
-  );
-
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(formatFcmError(err));
-  }
-}
-
-function formatFcmError(raw: string): string {
-  try {
-    const parsed = JSON.parse(raw);
-    const msg = parsed.error?.message ?? raw;
-    if (msg.includes('UNAUTHENTICATED') || msg.includes('invalid authentication')) {
-      return 'Firebase auth failed. Re-download Service Account JSON from Firebase → Project Settings → Service Accounts. Also enable "Firebase Cloud Messaging API" in Google Cloud Console.';
-    }
-    if (msg.includes('NOT_FOUND') || msg.includes('registration token')) {
-      return 'FCM rejected the device token — client Firebase config may not match the service account project. Re-save provider settings and run Test push again.';
-    }
-    return msg;
-  } catch {
-    return raw;
-  }
-}
-
-async function getFirebaseAccessToken(serviceAccount: { client_email: string; private_key: string }) {
-  const now = Math.floor(Date.now() / 1000);
-  const header = base64UrlEncode(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
-  const claim = base64UrlEncode(
-    JSON.stringify({
-      iss: serviceAccount.client_email,
-      scope: 'https://www.googleapis.com/auth/firebase.messaging',
-      aud: 'https://oauth2.googleapis.com/token',
-      iat: now,
-      exp: now + 3600,
-    }),
-  );
-
-  const key = await crypto.subtle.importKey(
-    'pkcs8',
-    pemToArrayBuffer(serviceAccount.private_key),
-    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
-    false,
-    ['sign'],
-  );
-
-  const signature = await crypto.subtle.sign(
-    'RSASSA-PKCS1-v1_5',
-    key,
-    new TextEncoder().encode(`${header}.${claim}`),
-  );
-
-  const jwt = `${header}.${claim}.${base64UrlEncode(new Uint8Array(signature))}`;
-
-  const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
-  });
-
-  const tokenData = await tokenRes.json();
-  if (!tokenRes.ok || !tokenData.access_token) {
-    throw new Error(`Google OAuth failed: ${JSON.stringify(tokenData)}`);
-  }
-  return tokenData.access_token;
-}
-
-function base64UrlEncode(data: string | Uint8Array): string {
-  const bytes = typeof data === 'string' ? new TextEncoder().encode(data) : data;
-  let binary = '';
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-function pemToArrayBuffer(pem: string): ArrayBuffer {
-  const b64 = pem
-    .replace(/-----BEGIN PRIVATE KEY-----/g, '')
-    .replace(/-----END PRIVATE KEY-----/g, '')
-    .replace(/\\n/g, '')
-    .replace(/\s/g, '');
-  const binary = atob(b64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes.buffer;
-}
