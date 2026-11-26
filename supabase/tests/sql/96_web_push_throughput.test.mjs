@@ -96,6 +96,17 @@ await db.query(`UPDATE web_push_outbox SET status = 'queued', locked_until = NUL
 await db.query(`SELECT push_worker_tick()`);
 ok((await db.query(`SELECT count(*)::int n FROM kicks`)).rows[0].n === 0, 'enough workers busy: tick starts none');
 
+// A new send while a blast is still draining uses the same top-up (Codex, PR #7): no extra workers.
+await db.query(`DELETE FROM kicks`);
+await svc(`SELECT enqueue_web_push_internal('${A}','production','{${C}}'::uuid[],'{}'::uuid[],'{"title":"Overlap"}'::jsonb,'blast-3')`);
+ok((await db.query(`SELECT count(*)::int n FROM kicks`)).rows[0].n === 0, 'a send during a busy blast starts no workers beyond the target');
+// ...and when nothing is busy, a send starts its workers right away.
+await db.query(`UPDATE web_push_outbox SET status = 'queued', locked_until = NULL WHERE status = 'sending'`);
+await db.query(`DELETE FROM kicks`);
+await svc(`SELECT enqueue_web_push_internal('${A}','production','{${C}}'::uuid[],'{}'::uuid[],'{"title":"Fresh"}'::jsonb,'blast-4')`);
+const dueNow = (await svc(`SELECT web_push_due_count() AS n`)).rows[0].n;
+ok((await db.query(`SELECT count(*)::int n FROM kicks`)).rows[0].n === Math.min(Math.ceil(dueNow / 1000), 10), 'an idle send starts min(ceil(due/1000), 10) workers immediately');
+
 for (const f of files.filter((f) => f > '96_')) await db.exec(strip(readFileSync(`supabase/sql/${f}`, 'utf8')));
 console.log(failures === 0 ? '\nALL PASSED' : `\n${failures} FAILED`);
 process.exit(failures ? 1 : 0);

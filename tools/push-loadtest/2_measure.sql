@@ -13,8 +13,9 @@ select
   round(count(*) filter (where status not in ('queued', 'sending')) * 60.0
         / nullif(extract(epoch from (max(updated_at) filter (where status not in ('queued', 'sending')) - min(created_at))), 0)) as pushes_per_minute,
   (select count(*) from public.web_push_outbox
-    where idempotency_key = 'loadtest-1' and status = 'sending' and locked_until > now()) / 500 + 1 as workers_busy_approx,
+    where idempotency_key = 'loadtest-1' and status = 'sending' and locked_until > now()) / 250 + 1 as workers_busy_approx,
   (select left(string_agg(distinct last_error, ' | '), 200) from public.web_push_outbox
     where idempotency_key = 'loadtest-1' and last_error is not null) as errors_seen
 from public.web_push_outbox
-where idempotency_key = 'loadtest-1';
+where idempotency_key = 'loadtest-1'
+  and customer_id in (select id from public.customers where email = 'loadtest@marbee.test' and first_name = 'Load Test');

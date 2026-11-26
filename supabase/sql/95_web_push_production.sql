@@ -337,8 +337,8 @@ BEGIN
   END IF;
 
   IF n_inserted > 0 THEN
-    IF to_regprocedure('public.push_worker_kick_n(integer)') IS NOT NULL THEN   -- sql/96 (D-024)
-      EXECUTE 'SELECT public.push_worker_kick_n($1)' USING least(ceil(n_inserted / 1000.0)::int, 10);
+    IF to_regprocedure('public.push_worker_top_up()') IS NOT NULL THEN   -- sql/96 (D-024): same target as the cron
+      EXECUTE 'SELECT public.push_worker_top_up()';
     ELSE
       PERFORM public.push_worker_kick();
     END IF;
