@@ -336,12 +336,17 @@ serve(async (req) => {
       return jsonResponse({ success: true });
     }
 
-    // Token rotated by the browser: retire the old one.
+    // Token rotated by the browser: retire the old one, and keep its customer link (otherwise a
+    // linked customer silently drops out of campaigns whenever Chrome rotates the token). The old
+    // token is a long random secret only that browser knows; the link never leaves this workspace.
     const oldToken = str(body.old_token, 4096);
+    let inheritedCustomer: string | null = null;
     if (oldToken && oldToken !== fcmToken && TOKEN_RE.test(oldToken)) {
-      await supabase.from('web_push_subscribers')
+      const { data: old } = await supabase.from('web_push_subscribers')
         .update({ subscription_status: 'inactive', token_invalidated_at: new Date().toISOString() })
-        .eq('tenant_id', ctx.tenantId).eq('environment', ctx.environment).eq('fcm_token', oldToken);
+        .eq('tenant_id', ctx.tenantId).eq('environment', ctx.environment).eq('fcm_token', oldToken)
+        .select('customer_id');
+      inheritedCustomer = (old ?? []).map((r: { customer_id: string | null }) => r.customer_id).find(Boolean) ?? null;
     }
 
     // Website anonymous id (analytics SDK: "mb_<uuid>"). Strictly validated, never "cleaned":
@@ -355,6 +360,7 @@ serve(async (req) => {
         .eq('tenant_id', ctx.tenantId).eq('environment', ctx.environment).eq('id', body.customer_id).maybeSingle();
       customerId = c?.id ?? null;
     }
+    if (!customerId && inheritedCustomer) customerId = inheritedCustomer;
     if (!customerId && ecid) {
       const { data: ident } = await supabase.from('customer_identities').select('customer_id')
         .eq('tenant_id', ctx.tenantId).eq('environment', ctx.environment)
