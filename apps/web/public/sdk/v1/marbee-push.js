@@ -144,9 +144,11 @@
     store(TOKEN_KEY, null);
     store(OPTOUT_KEY, '1'); // browser permission stays "granted": don't silently re-subscribe
     if (!token) return Promise.resolve();
-    return call('DELETE', { fcm_token: token }).then(function () {
-      return getConfig().then(getMessaging).then(function (m) { return m.deleteToken(); });
-    }).catch(function (e) { log(e.message); });
+    // Tell Marbee AND remove the browser's own token, each even if the other fails.
+    var server = call('DELETE', { fcm_token: token }).catch(function (e) { log('unsubscribe (server): ' + e.message); });
+    var local = getConfig().then(getMessaging).then(function (m) { return m.deleteToken(); })
+      .catch(function (e) { log('unsubscribe (browser): ' + e.message); });
+    return Promise.all([server, local]).then(function () { return undefined; });
   };
 
   // ---- soft prompt (before the browser's own prompt, so a "no" isn't permanent) -------

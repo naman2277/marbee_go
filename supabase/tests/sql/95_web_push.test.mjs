@@ -203,6 +203,15 @@ await as(UB, `INSERT INTO channel_providers (id, tenant_id, environment, channel
 ok((await db.query(`SELECT count(*)::int n FROM channel_provider_secrets WHERE provider_id = '${PA}'`)).rows[0].n === 0,
   'an upsert from another workspace cannot plant a key on this provider');
 
+// Excluded after enqueue (e.g. while waiting): skipped at claim time, never sent (Codex, PR #5).
+q = await enqueue(UA, A, [C1], 'delivery:excl');
+await db.query(`INSERT INTO exclusions (tenant_id, environment, customer_id, channel, reason) VALUES ('${A}','production','${C1}', NULL, 'opted out after queueing')`);
+const claimedExcl = (await svc(`SELECT * FROM claim_web_push_batch(50)`)).rows.filter((x) => x.customer_id === C1);
+const exclRows = (await db.query(`SELECT status, last_error FROM web_push_outbox WHERE idempotency_key = 'delivery:excl'`)).rows;
+ok(q.queued >= 1 && claimedExcl.length === 0 && exclRows.every((x) => x.status === 'skipped' && x.last_error === 'customer excluded'),
+  'a customer excluded after queueing is skipped at claim time');
+await db.query(`DELETE FROM exclusions WHERE customer_id = '${C1}' AND channel IS NULL`);
+
 // Welcome push path: internal enqueue by subscriber id (anonymous device).
 q = (await svc(`SELECT enqueue_web_push_internal('${A}','production','{}'::uuid[],'{d0000000-0000-0000-0000-000000000005}'::uuid[],$1::jsonb,'welcome:d5') AS r`, [content])).rows[0].r;
 ok(q.queued === 1, 'service role can queue a welcome push to one specific device');

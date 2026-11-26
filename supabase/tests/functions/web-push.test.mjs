@@ -38,6 +38,14 @@ ok(msg.message.data.engage_url.endsWith('/push-engage') && msg.message.data.mess
 ok(JSON.parse(msg.message.data.actions_json).length === 2, 'actions travel as JSON');
 ok(msg.message.webpush.headers.TTL === '2419200', 'TTL header set');
 ok(new TextEncoder().encode(JSON.stringify(msg.message.data)).length < 4096, 'payload fits FCM\'s 4 KB data limit for normal content');
+const huge = wp.normalizeContent({
+  title: 'T'.repeat(200), body: 'B'.repeat(1000), click_url: 'https://s.test/' + 'c'.repeat(1900),
+  icon_url: 'https://s.test/' + 'i'.repeat(1900), image_url: 'https://s.test/' + 'm'.repeat(1900),
+  actions: [{ title: 'A', url: 'https://s.test/' + 'a'.repeat(1900) }, { title: 'B', url: 'https://s.test/' + 'b'.repeat(1900) }],
+});
+const big = wp.buildFcmMessage('tok', huge, { message_id: 'm', tenant_id: 't', environment: 'production' }).message.data;
+ok(new TextEncoder().encode(JSON.stringify(big)).length <= wp.MAX_DATA_BYTES, 'oversized content is trimmed under the FCM limit');
+ok(big.click_url.length > 1900 && big.title.length === 200, '...keeping the title and the main link intact');
 
 // ---------------------------------------------------------------- classification
 const err = (status, code, message = 'x') => JSON.stringify({ error: { status, message, details: code ? [{ '@type': 'type.googleapis.com/google.firebase.fcm.v1.FcmError', errorCode: code }] : [] } });

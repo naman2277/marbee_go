@@ -382,8 +382,33 @@ function normalizeContent(input: Record<string, unknown>): PushContent {
   };
 }
 
-/** FCM v1 request body. Data values must all be strings. */
+/** FCM rejects data payloads over 4,096 bytes. Keep a margin for FCM's own keys. */
+const MAX_DATA_BYTES = 3_800;
+const byteLen = (o: unknown) => new TextEncoder().encode(JSON.stringify(o)).length;
+
+/** FCM v1 request body. Data values must all be strings. Oversized content is trimmed to
+ *  fit (body first, then images, then button links) so a send never fails for size. */
 function buildFcmMessage(token: string, content: PushContent, ctx: PushContext) {
+  const msg = buildFcmMessageRaw(token, content, ctx);
+  const data = msg.message.data;
+  if (byteLen(data) <= MAX_DATA_BYTES) return msg;
+  const over = () => byteLen(data) > MAX_DATA_BYTES;
+  if (over()) {
+    const excess = byteLen(data) - MAX_DATA_BYTES;
+    const body = data.body;
+    data.body = body.slice(0, Math.max(0, body.length - excess - 1)) + (body ? '…' : '');
+  }
+  for (const k of ['image_url', 'badge_url', 'icon_url'] as const) if (over()) data[k] = '';
+  if (over()) {
+    const actions = (JSON.parse(data.actions_json) as PushAction[]).map((a) => ({ ...a, url: undefined }));
+    data.actions_json = JSON.stringify(actions);
+  }
+  if (over()) data.actions_json = '[]';
+  if (over()) data.delivery_name = '';
+  return msg;
+}
+
+function buildFcmMessageRaw(token: string, content: PushContent, ctx: PushContext) {
   const data: Record<string, string> = {
     marbee: '1',
     message_id: ctx.message_id,

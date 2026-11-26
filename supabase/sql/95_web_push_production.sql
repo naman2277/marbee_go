@@ -310,6 +310,9 @@ BEGIN
   INTO n_targets, n_excluded, n_fresh, n_reached
   FROM pg_temp._wp_targets;
 
+  -- Serialize cap accounting per workspace (two concurrent sends must not both see the same
+  -- remaining room). Held until this transaction ends; other workspaces are unaffected.
+  PERFORM pg_advisory_xact_lock(hashtextextended('web_push_cap:' || p_tenant_id::text, 0));
   v_cap := coalesce(public.web_push_daily_cap(p_tenant_id), 100000);
   SELECT count(*) INTO v_used FROM public.web_push_outbox
   WHERE tenant_id = p_tenant_id AND created_at >= date_trunc('day', NOW()) AND status <> 'skipped';
@@ -399,6 +402,15 @@ BEGIN
     locked_until = NULL, updated_at = NOW()
   FROM public.web_push_subscribers s
   WHERE s.id = o.subscriber_id AND o.status = 'queued' AND s.subscription_status <> 'active';
+
+  -- Customers excluded since enqueue (e.g. while a retry waits): skip, don't send.
+  UPDATE public.web_push_outbox o SET status = 'skipped', last_error = 'customer excluded',
+    locked_until = NULL, updated_at = NOW()
+  WHERE o.status = 'queued' AND o.next_attempt_at <= NOW() AND o.customer_id IS NOT NULL
+    AND EXISTS (SELECT 1 FROM public.exclusions e
+      WHERE e.tenant_id = o.tenant_id AND e.customer_id = o.customer_id
+        AND (e.channel IS NULL OR e.channel = 'web_push')
+        AND e.start_date <= CURRENT_DATE AND (e.end_date IS NULL OR e.end_date >= CURRENT_DATE));
 
   RETURN QUERY
   WITH c AS (
