@@ -233,3 +233,10 @@ supersede it with a new entry.
 - **Not changed:** the API (`enqueue_web_push`), idempotency, retries, pruning, the daily cap (100k per workspace; raise per workspace in `tenants.settings.web_push_daily_cap` for bulk senders).
 - **Cost:** ₹0 at current volumes; up to 10 function invocations per minute only while a blast drains (free tier: 500k/month). **Risk:** more concurrent database connections during a blast (10 workers × a few connections) — fine on the current plan; watch during the first real blast. **Rollback:** redeploy the previous push-worker; `select cron.unschedule('marbee_push_worker_tick')` stops everything; the 95 functions still work without 96.
 - **Why it does not break the freeze:** performance only — no new feature, no API change. The freeze (D-023) stands for everything else.
+
+### D-025 · Web Push on Shopify stores via one Marbee Shopify app
+- **Date:** 2026-11-27 · **Status:** Proposed (waiting for founder verdict) · **Validation:** Not started
+- **Problem:** Shopify can't host the push worker file at the store's root, so Shopify brands (our ICP) cannot use Web Push.
+- **Selected:** a Marbee Shopify app (the same app the Wave 2 Shopify connector needs) with an app proxy (`/apps/marbee/sw.js` → new edge function `shopify-proxy`, Shopify-signed) and an app embed block that adds the push script without theme edits. The SDK uses the worker's folder as its scope. Spec: `specs/2026-11-27-web-push-shopify.md`.
+- **Freeze:** a distribution adapter for frozen Web Push (D-023), not a new push feature.
+- **Cost:** ₹0 (Shopify Partner account and dev stores are free). **Needs:** the founder creates a Shopify Partner account and a dev store; a ½-day spike confirms the proxy serves the worker unchanged before the rest is built.
