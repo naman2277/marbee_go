@@ -235,7 +235,7 @@ supersede it with a new entry.
 - **Why it does not break the freeze:** performance only — no new feature, no API change. The freeze (D-023) stands for everything else.
 
 ### D-025 · Web Push on Shopify stores via one Marbee Shopify app
-- **Date:** 2026-11-27 · **Status:** Proposed (waiting for founder verdict) · **Validation:** Not started
+- **Date:** 2026-11-27 · **Status:** Proposed, parked by the founder 2026-11-27 (see status/pending.md #2) · **Validation:** Not started
 - **Problem:** Shopify can't host the push worker file at the store's root, so Shopify brands (our ICP) cannot use Web Push.
 - **Selected:** a Marbee Shopify app (the same app the Wave 2 Shopify connector needs) with an app proxy (`/apps/marbee/sw.js` → new edge function `shopify-proxy`, Shopify-signed) and an app embed block that adds the push script without theme edits. The SDK uses the worker's folder as its scope. Spec: `specs/2026-11-27-web-push-shopify.md`.
 - **Freeze:** a distribution adapter for frozen Web Push (D-023), not a new push feature.
