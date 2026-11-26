@@ -203,7 +203,22 @@ supersede it with a new entry.
 - **Cost:** ₹0 (`pg` and the Supabase CLI are free). **Risk:** the runner runs SQL as the database owner — it only ever runs on the CEO's machine with a connection string the CEO pastes locally (never committed). v2 layer has never run on a real database; staging is its first run, done as a separate `--phase v2` step.
 
 ### D-022 · Web Push: production-ready, then frozen
-- **Date:** 2026-11-25 · **Status:** Approved by the founder 2026-11-25 · **Validation:** Built and unit/SQL-tested on branch `claude/web-push-production`; end-to-end on dev pending
+- **Date:** 2026-11-25 · **Status:** Approved by the founder 2026-11-25 · **Validation:** End-to-end on dev 2026-11-26 with the founder (website subscribe → server-side send → received with the tab closed → click recorded; see D-023)
 - **Problem:** the audit (spec `specs/2026-11-25-web-push-production.md`) found 6 P0 gaps. The Firebase service-account private key is readable by every member from the browser. Campaign and journey pushes are sent from the browser with no retries or idempotency. One code path falls back to pushing every anonymous subscriber. There's no website SDK, so brands can't collect subscribers on their own site. The public site key can link a browser to any customer. Expired tokens are never pruned.
 - **Selected:** keep FCM; add a server-side outbox (`web_push_outbox`) drained by a `push-worker` edge function on pg_cron; keep the service-account key server-only and sealed (`channel_provider_secrets`); add a plain-JS website SDK + service worker; prune expired tokens, retry with backoff, add a daily fair-use cap (no credit debit, per D-015). After the end-to-end validation, Web Push is **frozen** (bug fixes only).
 - **Cost:** ₹0. **Risk / rollback:** see the spec.
+
+### D-023 · Web Push is frozen (feature-complete, bug fixes only)
+- **Date:** 2026-11-26 · **Status:** Approved (CTO decision under D-022) · **Validation:** Validated on dev `uqffhyaftlwetqigfenp` with the founder 2026-11-26
+- **Evidence:** test site on `localhost:5500` subscribed through the website SDK (site key, origin-checked) → welcome push and a campaign-style push queued with `enqueue_web_push` → pg_cron → `push-worker` → FCM → shown in Chrome with the test tab closed → click recorded as `clicked` in `engagement_log`. Expired token marked failed/pruned; unsubscribed browsers skipped. Tests: `95_web_push.test.mjs` (SQL, PGlite chain), `web-push.test.mjs` (FCM logic). `/code-review` (9 findings fixed) and `/security-review` (none ≥ 8/10; low-confidence trigger hardening applied).
+- **What "frozen" means:** no new Web Push features without a new decision entry. Bug fixes, security fixes and copy changes are allowed. The send API that other modules call is `enqueue_web_push(...)` (members) / `enqueue_web_push_internal(...)` (server); campaigns and journeys must use it — never send from the browser.
+- **In scope (done):** website SDK + service worker (`/sdk/v1/marbee-push.js`, `marbee-push-sw-core.js`), soft prompt + opt-out that sticks, server-side outbox with idempotency, retries (30 s → 32 min, 5 tries), pruning of 404/410/invalid tokens, daily fair-use cap (100,000 per workspace, `tenants.settings.web_push_daily_cap`), exclusions honoured, server-only sealed Firebase key, welcome push, click tracking, test push, delivery logs.
+- **Explicitly out of scope:**
+  - Campaign / journey **UI and orchestration** (campaigns UI not built yet; journeys still step in the browser — D-005). They call `enqueue_web_push` when built.
+  - **Linking a website visitor to a customer from the browser** ("identify"): unsafe without signed identity (SEC-13). Supported today: the brand's server calls `push-subscribe` with a secret API key + `customer_id`. Signed identify is a future decision.
+  - Native mobile app push (Wave 3); Safari/iOS beyond what FCM web supports.
+  - Per-customer frequency caps, quiet hours, send-time optimisation, A/B tests, segments/topics broadcast.
+  - Per-recipient personalisation rendered on the server (content is snapshotted at enqueue).
+  - Open/dismiss analytics and conversion attribution (separate MVP item).
+  - Global (cross-isolate) rate limiter (TD-14); moving the outbox to pgmq (v2 layer); other channels' credentials (TD-28).
+- **Operational notes:** the worker authenticates cron calls with `PUSH_WORKER_SECRET` (function secret) = Vault `push_worker_key`; staging/production follow `runbooks/web-push-rollout.md`.
