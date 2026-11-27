@@ -226,6 +226,100 @@ DO $$ BEGIN EXECUTE 'REVOKE ALL ON FUNCTION public.web_push_daily_cap(UUID) FROM
 EXCEPTION WHEN undefined_object THEN NULL; END $$;
 GRANT EXECUTE ON FUNCTION public.web_push_daily_cap(UUID) TO service_role;
 
+-- Shared second half of every enqueue (customers, welcome push, broadcasts — D-026).
+-- Expects pg_temp._wp_targets(subscriber_id, customer_id, excluded, fresh) filled by the caller
+-- with this workspace's active devices. Applies exclusions, idempotency, the daily cap
+-- (serialized per workspace), inserts into the outbox (at p_send_at, or now) and starts workers.
+CREATE OR REPLACE FUNCTION public.web_push_enqueue_targets(
+  p_tenant_id       UUID,
+  p_environment     TEXT,
+  p_content         JSONB,
+  p_idempotency_key TEXT,
+  p_journey_id      UUID,
+  p_delivery_id     TEXT,
+  p_delivery_name   TEXT,
+  p_provider_id     UUID,
+  p_send_at         TIMESTAMPTZ
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_today DATE := CURRENT_DATE;
+  v_at    TIMESTAMPTZ := greatest(coalesce(p_send_at, NOW()), NOW());
+  v_cap INT; v_used INT; v_room INT;
+  n_targets INT; n_excluded INT; n_fresh INT; n_inserted INT := 0;
+BEGIN
+  UPDATE pg_temp._wp_targets t SET excluded = TRUE
+  WHERE t.customer_id IS NOT NULL AND EXISTS (
+    SELECT 1 FROM public.exclusions e
+    WHERE e.tenant_id = p_tenant_id AND e.customer_id = t.customer_id
+      AND (e.channel IS NULL OR e.channel = 'web_push')
+      AND e.start_date <= v_today AND (e.end_date IS NULL OR e.end_date >= v_today));
+
+  UPDATE pg_temp._wp_targets t SET fresh = FALSE
+  WHERE EXISTS (SELECT 1 FROM public.web_push_outbox o
+    WHERE o.tenant_id = p_tenant_id AND o.environment = p_environment
+      AND o.idempotency_key = p_idempotency_key AND o.subscriber_id = t.subscriber_id
+      -- A send that ended failed/skipped may be sent again with the same key (e.g. after
+      -- the Firebase key was fixed). Queued, sending and delivered ones never repeat.
+      AND o.status NOT IN ('failed', 'skipped'));
+
+  SELECT count(*), count(*) FILTER (WHERE excluded), count(*) FILTER (WHERE fresh AND NOT excluded)
+  INTO n_targets, n_excluded, n_fresh
+  FROM pg_temp._wp_targets;
+
+  -- Serialize cap accounting per workspace (two concurrent sends must not both see the same
+  -- remaining room). Held until this transaction ends; other workspaces are unaffected.
+  PERFORM pg_advisory_xact_lock(hashtextextended('web_push_cap:' || p_tenant_id::text, 0));
+  v_cap := coalesce(public.web_push_daily_cap(p_tenant_id), 100000);
+  SELECT count(*) INTO v_used FROM public.web_push_outbox
+  WHERE tenant_id = p_tenant_id AND created_at >= date_trunc('day', NOW()) AND status <> 'skipped';
+  v_room := greatest(v_cap - v_used, 0);
+
+  IF n_fresh > 0 AND v_room > 0 THEN
+    INSERT INTO public.web_push_outbox (tenant_id, environment, idempotency_key, subscriber_id, customer_id,
+      content, journey_id, delivery_id, delivery_name, provider_id, next_attempt_at)
+    SELECT p_tenant_id, p_environment, p_idempotency_key, t.subscriber_id, t.customer_id,
+      p_content, p_journey_id, left(p_delivery_id, 200), left(p_delivery_name, 200), p_provider_id, v_at
+    FROM pg_temp._wp_targets t
+    WHERE t.fresh AND NOT t.excluded
+    ORDER BY t.subscriber_id
+    LIMIT v_room
+    ON CONFLICT (tenant_id, environment, idempotency_key, subscriber_id) DO UPDATE
+      SET status = 'queued', attempts = 0, next_attempt_at = EXCLUDED.next_attempt_at, locked_until = NULL, last_error = NULL,
+          sent_at = NULL, message_id = gen_random_uuid(), content = EXCLUDED.content, customer_id = EXCLUDED.customer_id,
+          journey_id = EXCLUDED.journey_id, delivery_id = EXCLUDED.delivery_id, delivery_name = EXCLUDED.delivery_name,
+          created_at = NOW(), updated_at = NOW()
+      WHERE public.web_push_outbox.status IN ('failed', 'skipped');
+    GET DIAGNOSTICS n_inserted = ROW_COUNT;
+  END IF;
+
+  IF n_inserted > 0 AND v_at <= NOW() THEN
+    IF to_regprocedure('public.push_worker_top_up()') IS NOT NULL THEN   -- sql/96 (D-024): same target as the cron
+      EXECUTE 'SELECT public.push_worker_top_up()';
+    ELSE
+      PERFORM public.push_worker_kick();
+    END IF;
+  END IF;
+
+  RETURN jsonb_build_object(
+    'queued', n_inserted,
+    'devices', n_targets,
+    'excluded', n_excluded,
+    'duplicate', n_targets - n_excluded - n_fresh,
+    'capped', greatest(n_fresh - n_inserted, 0),
+    'daily_cap', v_cap
+  );
+END;
+$$;
+REVOKE ALL ON FUNCTION public.web_push_enqueue_targets(UUID, TEXT, JSONB, TEXT, UUID, TEXT, TEXT, UUID, TIMESTAMPTZ) FROM PUBLIC;
+DO $$ BEGIN EXECUTE 'REVOKE ALL ON FUNCTION public.web_push_enqueue_targets(UUID, TEXT, JSONB, TEXT, UUID, TEXT, TEXT, UUID, TIMESTAMPTZ) FROM anon, authenticated';
+EXCEPTION WHEN undefined_object THEN NULL; END $$;
+GRANT EXECUTE ON FUNCTION public.web_push_enqueue_targets(UUID, TEXT, JSONB, TEXT, UUID, TEXT, TEXT, UUID, TIMESTAMPTZ) TO service_role;
+
 -- Service-role entry point (push-subscribe welcome push, server workers).
 -- Targets = every ACTIVE device of the given customers (linked directly, or through an
 -- ecid / website anonymous id in customer_identities) plus the given subscriber ids, inside this workspace only.
@@ -247,11 +341,10 @@ SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 DECLARE
-  v_today     DATE := CURRENT_DATE;
   v_customers UUID[] := coalesce(p_customer_ids, '{}');
   v_subs      UUID[] := coalesce(p_subscriber_ids, '{}');
-  v_cap INT; v_used INT; v_room INT;
-  n_targets INT; n_excluded INT; n_fresh INT; n_reached INT; n_inserted INT := 0;
+  n_reached INT;
+  v_result JSONB;
 BEGIN
   IF p_tenant_id IS NULL THEN RAISE EXCEPTION 'tenant is required' USING ERRCODE = 'check_violation'; END IF;
   IF p_environment IS NULL OR p_environment NOT IN ('production', 'staging', 'development') THEN
@@ -290,69 +383,12 @@ BEGIN
     AND (s.customer_id = ANY (v_customers) OR s.id = ANY (v_subs) OR ci.customer_id IS NOT NULL)
   ORDER BY s.id, ci.customer_id NULLS LAST;
 
-  UPDATE pg_temp._wp_targets t SET excluded = TRUE
-  WHERE t.customer_id IS NOT NULL AND EXISTS (
-    SELECT 1 FROM public.exclusions e
-    WHERE e.tenant_id = p_tenant_id AND e.customer_id = t.customer_id
-      AND (e.channel IS NULL OR e.channel = 'web_push')
-      AND e.start_date <= v_today AND (e.end_date IS NULL OR e.end_date >= v_today));
-
-  UPDATE pg_temp._wp_targets t SET fresh = FALSE
-  WHERE EXISTS (SELECT 1 FROM public.web_push_outbox o
-    WHERE o.tenant_id = p_tenant_id AND o.environment = p_environment
-      AND o.idempotency_key = p_idempotency_key AND o.subscriber_id = t.subscriber_id
-      -- A send that ended failed/skipped may be sent again with the same key (e.g. after
-      -- the Firebase key was fixed). Queued, sending and delivered ones never repeat.
-      AND o.status NOT IN ('failed', 'skipped'));
-
-  SELECT count(*), count(*) FILTER (WHERE excluded), count(*) FILTER (WHERE fresh AND NOT excluded),
-         count(DISTINCT customer_id) FILTER (WHERE customer_id = ANY (v_customers))
-  INTO n_targets, n_excluded, n_fresh, n_reached
+  SELECT count(DISTINCT customer_id) FILTER (WHERE customer_id = ANY (v_customers)) INTO n_reached
   FROM pg_temp._wp_targets;
-
-  -- Serialize cap accounting per workspace (two concurrent sends must not both see the same
-  -- remaining room). Held until this transaction ends; other workspaces are unaffected.
-  PERFORM pg_advisory_xact_lock(hashtextextended('web_push_cap:' || p_tenant_id::text, 0));
-  v_cap := coalesce(public.web_push_daily_cap(p_tenant_id), 100000);
-  SELECT count(*) INTO v_used FROM public.web_push_outbox
-  WHERE tenant_id = p_tenant_id AND created_at >= date_trunc('day', NOW()) AND status <> 'skipped';
-  v_room := greatest(v_cap - v_used, 0);
-
-  IF n_fresh > 0 AND v_room > 0 THEN
-    INSERT INTO public.web_push_outbox (tenant_id, environment, idempotency_key, subscriber_id, customer_id,
-      content, journey_id, delivery_id, delivery_name, provider_id)
-    SELECT p_tenant_id, p_environment, p_idempotency_key, t.subscriber_id, t.customer_id,
-      p_content, p_journey_id, left(p_delivery_id, 200), left(p_delivery_name, 200), p_provider_id
-    FROM pg_temp._wp_targets t
-    WHERE t.fresh AND NOT t.excluded
-    ORDER BY t.subscriber_id
-    LIMIT v_room
-    ON CONFLICT (tenant_id, environment, idempotency_key, subscriber_id) DO UPDATE
-      SET status = 'queued', attempts = 0, next_attempt_at = NOW(), locked_until = NULL, last_error = NULL,
-          sent_at = NULL, message_id = gen_random_uuid(), content = EXCLUDED.content, customer_id = EXCLUDED.customer_id,
-          journey_id = EXCLUDED.journey_id, delivery_id = EXCLUDED.delivery_id, delivery_name = EXCLUDED.delivery_name,
-          created_at = NOW(), updated_at = NOW()
-      WHERE public.web_push_outbox.status IN ('failed', 'skipped');
-    GET DIAGNOSTICS n_inserted = ROW_COUNT;
-  END IF;
-
-  IF n_inserted > 0 THEN
-    IF to_regprocedure('public.push_worker_top_up()') IS NOT NULL THEN   -- sql/96 (D-024): same target as the cron
-      EXECUTE 'SELECT public.push_worker_top_up()';
-    ELSE
-      PERFORM public.push_worker_kick();
-    END IF;
-  END IF;
-
-  RETURN jsonb_build_object(
-    'queued', n_inserted,
-    'devices', n_targets,
-    'excluded', n_excluded,
-    'duplicate', n_targets - n_excluded - n_fresh,
-    'capped', greatest(n_fresh - n_inserted, 0),
-    'no_subscription', greatest((SELECT count(DISTINCT c) FROM unnest(v_customers) c) - n_reached, 0),
-    'daily_cap', v_cap
-  );
+  v_result := public.web_push_enqueue_targets(p_tenant_id, p_environment, p_content, p_idempotency_key,
+    p_journey_id, p_delivery_id, p_delivery_name, p_provider_id, NULL);
+  RETURN v_result || jsonb_build_object(
+    'no_subscription', greatest((SELECT count(DISTINCT c) FROM unnest(v_customers) c) - n_reached, 0));
 END;
 $$;
 REVOKE ALL ON FUNCTION public.enqueue_web_push_internal(UUID, TEXT, UUID[], UUID[], JSONB, TEXT, UUID, TEXT, TEXT, UUID) FROM PUBLIC;
