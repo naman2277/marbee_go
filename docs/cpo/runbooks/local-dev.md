@@ -2,6 +2,13 @@
 
 All local apps talk to the **dev** Supabase project. Commands are for PowerShell, run from the repo folder.
 
+> **If PowerShell says `npm.ps1 cannot be loaded because running scripts is disabled`:** type `npm.cmd`
+> instead of `npm` (e.g. `npm.cmd run dev:all`). Same program, not blocked by Windows' script policy.
+> This applies to every `npm` command in these runbooks.
+
+**Keep the apps alive:** run `npm run dev:all` in a Terminal tab you own and leave it open. Servers that a
+Claude session starts (`preview_start`) stop when that session restarts or is archived.
+
 ## Start everything
 
 First time in a folder (or after `git pull` changed `package.json`):

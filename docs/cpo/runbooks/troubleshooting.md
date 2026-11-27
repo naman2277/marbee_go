@@ -8,6 +8,15 @@ npm run health
 
 It tells you which app is down and whether Supabase answers. Then find your symptom below.
 
+## `npm.ps1 cannot be loaded because running scripts is disabled on this system`
+
+Windows' PowerShell script policy blocks `npm`. Use `npm.cmd` instead, e.g. `npm.cmd run health`. Nothing to install or change.
+
+## Apps were up, now all DOWN
+
+The servers were started by a Claude session, and that session restarted or was archived, which stops them.
+Start them in your own Terminal tab and leave it open: `npm.cmd run dev:all`.
+
 ## "This site can't be reached" / `ERR_CONNECTION_REFUSED` on localhost
 
 **Cause:** the dev server isn't running. It stops when its terminal window closes, the PC restarts, or a
