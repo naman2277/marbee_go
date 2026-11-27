@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "predev": "node ../../scripts/dev/env-sync.mjs --app web --quiet",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "generate:templates": "node ../../scripts/generate-content-template-library.mjs",
