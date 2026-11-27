@@ -98,7 +98,9 @@ For diff-level review use the built-in `/code-review` and `/security-review`.
   `supabase/` (Postgres, Auth, Storage, Edge Functions in Deno, Realtime).
 - **Live schema = numbered scripts in `supabase/sql/NN_*.sql`** (run in order in the SQL editor), plus the
   `supabase/sql/v2/52–59` scale layer. `supabase/migrations/` is stale — do not add to it.
-- 24 edge functions in `supabase/functions/`; manual-paste copies in `supabase/web-deploy/`.
+- 28 edge functions in `supabase/functions/` (list + JWT settings: `manifest.json`); manual-paste copies in `supabase/web-deploy/`.
 - Dev harness pages live under `/dev/*` routes.
+- Local apps: `npm run dev:all` (web 5173, console 5174, console-mock 5175), `npm run health`, `npm run dev:env`
+  (fills a worktree's `.env.local`); `preview_start` names in `.claude/launch.json`. Runbooks: `docs/cpo/runbooks/`.
 - No automated tests exist in `apps/web` yet. Lint: `npm run lint`; build/typecheck: `npm run build`.
 - After any doc-affecting decision, update the relevant `docs/cpo/` file in the same change.

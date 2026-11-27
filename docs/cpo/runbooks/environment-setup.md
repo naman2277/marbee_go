@@ -2,7 +2,7 @@
 
 **Decision:** D-021 · **Who runs it:** CEO (live-system execution, D-014) · **Time:** ~45 min the first time
 
-The pipeline replaces pasting ~95 SQL scripts and 27 functions by hand. It runs the numbered
+The pipeline replaces pasting ~95 SQL scripts and 28 functions by hand. It runs the numbered
 scripts in `supabase/sql/` in order, records each one in a ledger table inside the database
 (`public._marbee_schema_ledger`), never runs one twice, stops at the first error, and refuses to
 touch a database whose history it can't see.
@@ -89,7 +89,7 @@ Create an access token: Supabase → **Account → Access tokens**. Project ref:
 
 ```powershell
 $env:SUPABASE_ACCESS_TOKEN = "<paste token>"
-npm run fn:deploy -- --project-ref <ref> --dry-run   # shows 27 commands + which have JWT on
+npm run fn:deploy -- --project-ref <ref> --dry-run   # shows 28 commands + which have JWT on
 npm run fn:deploy -- --project-ref <ref> --yes
 ```
 

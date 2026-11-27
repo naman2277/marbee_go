@@ -19,6 +19,7 @@ coding agent working on Marbee. Update them in the same change as the decision t
 | 09 | [Security Baseline](09-security-baseline.md) | **Action required** |
 | 10 | [Decision Log](10-decision-log.md) | Active |
 | 11 | [Technical Debt Register](11-tech-debt-register.md) | Active |
+| — | [Runbooks](runbooks/README.md): run, test, deploy, environments | Active |
 
 ## Evidence labels used throughout
 
