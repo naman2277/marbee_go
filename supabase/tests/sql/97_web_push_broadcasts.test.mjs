@@ -128,6 +128,49 @@ ok(r.cap_remaining === 2, `preview shows remaining cap (${r.cap_remaining})`);
 r = await send(UA, K(5));
 ok(r.queued === 2 && r.capped === 1, `cap holds the rest (${JSON.stringify(r)})`);
 
+// ---- websites ------------------------------------------------------------------------
+await db.exec(`
+  INSERT INTO web_analytics_sites (tenant_id, environment, site_id, name, domain, write_key, verification_token, status) VALUES
+    ('${A}','production','site-a','Shop A','a.test','wk-aaaaaaaa','vt-a','active'),
+    ('${A}','production','site-b','Shop B','b.test','wk-bbbbbbbb','vt-b','active'),
+    ('${B}','production','site-x','Other','x.test','wk-xxxxxxxx','vt-x','active');
+  UPDATE web_push_subscribers SET site_id = 'site-a' WHERE id IN ('${sub(1)}','${sub(2)}','${sub(6)}');
+  UPDATE web_push_subscribers SET site_id = 'site-b' WHERE id IN ('${sub(3)}','${sub(4)}');
+`);
+const live = (await db.query(`SELECT site_id, count(*)::int n FROM web_push_subscribers WHERE tenant_id = '${A}' AND subscription_status = 'active' GROUP BY 1`)).rows;
+const liveN = (site) => live.find((x) => x.site_id === site)?.n ?? 0;
+ok((await count(UA, { sites: ['site-a'] })).devices === liveN('site-a'), `filter by website A (${liveN('site-a')})`);
+ok((await count(UA, { sites: ['site-b'] })).devices === liveN('site-b'), `filter by website B (${liveN('site-b')})`);
+ok((await count(UA, { sites: ['site-x'] })).devices === 0, "another workspace's website reaches nobody");
+const sites = (await as(UA, `SELECT web_push_site_counts($1,'production') AS r`, [A])).rows[0].r;
+ok(sites.length === 2 && sites.find((x) => x.site_id === 'site-a').devices === liveN('site-a') && sites.find((x) => x.site_id === 'site-a').name === 'Shop A', `website list with devices ${JSON.stringify(sites)}`);
+ok(await throwsWith(as(UB, `SELECT web_push_site_counts($1,'production')`, [A]), /access/), 'other workspace cannot list websites');
+
+// ---- folders -------------------------------------------------------------------------
+const folder = (uid, op, path, name = null) => as(uid, `SELECT web_push_folder_save($1,'production',$2,$3,$4) AS r`, [A, op, path, name]).then((x) => x.rows[0].r);
+ok((await folder(UA, 'create', '/', ' sale 2026 ')).path === '/sale 2026', 'create folder (trimmed)');
+ok((await folder(UA, 'create', '/sale 2026', 'diwali')).path === '/sale 2026/diwali', 'create subfolder');
+ok(await throwsWith(folder(UA, 'create', '/', 'a/b'), /no "\/"/), 'slash in a name is refused');
+ok(await throwsWith(folder(UV, 'create', '/', 'x'), /permission/), 'viewer cannot create folders');
+await as(UA, `SELECT web_push_broadcast_move($1,'/sale 2026/diwali')`, [bid]);
+ok(await throwsWith(as(UA, `SELECT web_push_broadcast_move($1,'/nope')`, [bid]), /not found/), 'cannot move into a missing folder');
+ok(await throwsWith(as(UB, `SELECT web_push_broadcast_move($1,'/')`, [bid]), /not found/), 'other workspace cannot move it');
+await folder(UA, 'rename', '/sale 2026', 'sale 2027');
+const fl = (await as(UA, `SELECT path, parent_path FROM web_push_campaign_folders ORDER BY path`)).rows;
+ok(JSON.stringify(fl.map((x) => x.path)) === '["/sale 2027","/sale 2027/diwali"]' && fl[1].parent_path === '/sale 2027', `rename moves subfolders ${JSON.stringify(fl)}`);
+list = (await as(UA, `SELECT * FROM web_push_broadcast_list($1,'production',50)`, [A])).rows;
+ok(list.find((x) => x.id === bid).folder_path === '/sale 2027/diwali', 'rename moves campaigns inside');
+const before = list.length;
+await folder(UA, 'delete', '/sale 2027');
+list = (await as(UA, `SELECT * FROM web_push_broadcast_list($1,'production',50)`, [A])).rows;
+ok(list.find((x) => x.id === bid).folder_path === '/' && list.length === before, 'delete keeps campaigns (moved up to the parent)');
+ok((await as(UA, `SELECT count(*)::int n FROM web_push_campaign_folders`)).rows[0].n === 0, 'folder and subfolders deleted');
+ok((await as(UB, `SELECT count(*)::int n FROM web_push_campaign_folders`)).rows[0].n === 0, 'folders are per workspace');
+await folder(UA, 'create', '/', 'q4');
+const inFolder = (await as(UA, `SELECT web_push_broadcast_send($1,'production',$2,'In folder',$3::jsonb,'{"kind":"all"}'::jsonb,'{"sites":["site-b"]}'::jsonb,NULL,NULL,'/q4') AS r`, [A, K(8), content])).rows[0].r;
+const row = (await db.query(`SELECT folder_path FROM web_push_broadcasts WHERE id = $1`, [inFolder.broadcast_id])).rows[0];
+ok(row.folder_path === '/q4' && inFolder.devices === liveN('site-b'), `send into a folder, to website B only (${JSON.stringify(inFolder)})`);
+
 for (const f of files.filter((f) => f > '97_')) await db.exec(strip(readFileSync(`supabase/sql/${f}`, 'utf8')));
 console.log(failures === 0 ? '\nALL PASSED' : `\n${failures} FAILED`);
 process.exit(failures ? 1 : 0);

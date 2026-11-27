@@ -10,6 +10,8 @@ export type BroadcastFilter = {
   browsers?: string[];
   os?: string[];
   devices?: string[];
+  /** web_analytics_sites.site_id values; empty/undefined = every website */
+  sites?: string[];
   subscribed_within_days?: number;
   active_within_days?: number;
   linked?: 'any' | 'linked' | 'anonymous';
@@ -39,6 +41,8 @@ export type BroadcastRow = {
   cancelled_at: string | null;
   result: { queued?: number; devices?: number; excluded?: number; capped?: number };
   status: 'scheduled' | 'sending' | 'sent' | 'cancelled';
+  folder_path: string;
+  created_by: string | null;
   queued: number;
   delivered: number;
   failed: number;
@@ -65,6 +69,12 @@ export function filterFor(choice: AudienceChoice): BroadcastFilter {
 }
 
 export function describeAudience(a: Record<string, unknown>): string {
+  const siteNames = Array.isArray(a.siteNames) ? (a.siteNames as string[]) : [];
+  const base = describeWho(a);
+  return siteNames.length ? `${base} · on ${siteNames.join(', ')}` : base;
+}
+
+function describeWho(a: Record<string, unknown>): string {
   if (a.kind === 'audience') return `Audience: ${String(a.audienceName ?? 'audience')}`;
   if (a.kind === 'filter') {
     const f = (a.filter ?? {}) as BroadcastFilter;
@@ -126,9 +136,12 @@ export async function sendBroadcast(input: {
   clientKey: string;
   name: string;
   content: Record<string, unknown>;
-  audience: AudienceChoice;
+  /** What the marketer chose, stored for display (choice + website names). */
+  audience: Record<string, unknown>;
+  filter: BroadcastFilter;
   customerIds: string[] | null;
   scheduledAt: string | null;
+  folderPath: string;
 }): Promise<{ broadcast_id: string; queued: number; devices: number; excluded: number; capped: number; already_sent: boolean }> {
   const { data, error } = await supabase.rpc('web_push_broadcast_send', {
     p_tenant_id: input.tenantId,
@@ -137,9 +150,10 @@ export async function sendBroadcast(input: {
     p_name: input.name,
     p_content: input.content,
     p_audience: input.audience,
-    p_filter: filterFor(input.audience),
+    p_filter: input.filter,
     p_customer_ids: input.customerIds,
     p_scheduled_at: input.scheduledAt,
+    p_folder_path: input.folderPath,
   });
   if (error) throw new Error(error.message);
   return data as { broadcast_id: string; queued: number; devices: number; excluded: number; capped: number; already_sent: boolean };
@@ -155,7 +169,7 @@ export async function listBroadcasts(tenantId: string, environment: string): Pro
   const { data, error } = await supabase.rpc('web_push_broadcast_list', {
     p_tenant_id: tenantId,
     p_environment: environment,
-    p_limit: 50,
+    p_limit: 500,
   });
   if (error) throw new Error(error.message);
   return (data ?? []) as BroadcastRow[];
@@ -244,4 +258,71 @@ export function formatDuration(seconds: number | null | undefined): string {
   if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
   if (seconds < 86400) return `${(seconds / 3600).toFixed(1)}h`;
   return `${(seconds / 86400).toFixed(1)}d`;
+}
+
+// ---------------------------------------------------------------- websites + folders (SQL 97)
+export type PushSite = { site_id: string | null; name: string | null; domain: string | null; devices: number };
+
+export async function fetchPushSites(tenantId: string, environment: string): Promise<PushSite[]> {
+  const { data, error } = await supabase.rpc('web_push_site_counts', { p_tenant_id: tenantId, p_environment: environment });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as PushSite[];
+}
+
+export type CampaignFolder = { path: string; name: string; parent_path: string };
+
+export async function fetchCampaignFolders(tenantId: string, environment: string): Promise<CampaignFolder[]> {
+  const { data, error } = await supabase
+    .from('web_push_campaign_folders')
+    .select('path, name, parent_path')
+    .eq('tenant_id', tenantId)
+    .eq('environment', environment)
+    .order('path');
+  if (error) throw new Error(error.message);
+  return (data ?? []) as CampaignFolder[];
+}
+
+/** create: path = parent folder, name = new name · rename: path = folder, name = new name · delete: path = folder */
+export async function saveCampaignFolder(
+  tenantId: string,
+  environment: string,
+  op: 'create' | 'rename' | 'delete',
+  path: string,
+  name?: string,
+): Promise<string> {
+  const { data, error } = await supabase.rpc('web_push_folder_save', {
+    p_tenant_id: tenantId, p_environment: environment, p_op: op, p_path: path, p_name: name ?? null,
+  });
+  if (error) throw new Error(error.message);
+  return String((data as { path?: string })?.path ?? '/');
+}
+
+export async function moveBroadcast(id: string, folderPath: string): Promise<void> {
+  const { error } = await supabase.rpc('web_push_broadcast_move', { p_broadcast_id: id, p_folder_path: folderPath });
+  if (error) throw new Error(error.message);
+}
+
+export type CampaignFolderNode = { path: string; name: string; directCount: number; children: CampaignFolderNode[] };
+
+/** Folder tree; counts include campaigns in subfolders. Folders only implied by a campaign's path still show. */
+export function buildCampaignFolderTree(folders: CampaignFolder[], rows: { folder_path: string }[]): CampaignFolderNode {
+  const paths = new Set<string>(['/']);
+  const addWithAncestors = (path: string) => {
+    const parts = path.split('/').filter(Boolean);
+    for (let i = 1; i <= parts.length; i += 1) paths.add('/' + parts.slice(0, i).join('/'));
+  };
+  folders.forEach((f) => addWithAncestors(f.path));
+  rows.forEach((r) => addWithAncestors(r.folder_path || '/'));
+  const inSubtree = (path: string) =>
+    rows.filter((r) => { const fp = r.folder_path || '/'; return path === '/' || fp === path || fp.startsWith(path + '/'); }).length;
+  const node = (path: string): CampaignFolderNode => ({
+    path,
+    name: path === '/' ? 'All' : path.slice(path.lastIndexOf('/') + 1),
+    directCount: inSubtree(path),
+    children: [...paths]
+      .filter((p) => p !== '/' && p.slice(0, p.lastIndexOf('/') || 1) === path)
+      .sort((a, b) => a.localeCompare(b))
+      .map(node),
+  });
+  return node('/');
 }
