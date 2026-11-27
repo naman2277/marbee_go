@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
+import { Megaphone,
   Activity,
   BarChart3,
   Bell,
@@ -66,6 +66,7 @@ import { AIAgentsTab } from '@/components/analytics/AIAgentsTab';
 import { SessionIntelligenceTab } from '@/components/analytics/SessionIntelligenceTab';
 import { AskWebsiteCopilotTab } from '@/components/analytics/AskWebsiteCopilotTab';
 import { DeveloperCopilotTab } from '@/components/analytics/DeveloperCopilotTab';
+import { WebPushBroadcasts } from '@/components/web-push/WebPushBroadcasts';
 import type { WebAnalyticsSite, WebAnalyticsEvent } from '@/lib/web-analytics-types';
 import { formatNumber } from '@/lib/utils';
 
@@ -74,7 +75,7 @@ export function WebAnalyticsPage() {
   const queryClient = useQueryClient();
 
   const [activeTab, setActiveTab] = useState<
-    'dashboard' | 'brain' | 'agents' | 'implementation' | 'settings'
+    'dashboard' | 'brain' | 'agents' | 'implementation' | 'broadcasts' | 'settings'
   >('dashboard');
   const [selectedSiteId, setSelectedSiteId] = useState<string>('');
   const [registerModalOpen, setRegisterModalOpen] = useState(false);
@@ -886,6 +887,7 @@ importScripts('${marbeeOrigin}/sdk/v1/marbee-push-sw-core.js');`
             { id: 'brain', label: '🧠 AI Brain', icon: Sparkles },
             { id: 'agents', label: '🤖 Agent Hub', icon: Bot },
             { id: 'implementation', label: '🛠️ Implementation (SDK & Web Push)', icon: Code2 },
+            { id: 'broadcasts', label: '📣 Push Broadcasts', icon: Megaphone },
             { id: 'settings', label: '🛡️ Settings (with Live Stream)', icon: Shield },
           ].map((tab) => {
             const Icon = tab.icon;
@@ -2087,6 +2089,10 @@ importScripts('${marbeeOrigin}/sdk/v1/marbee-push-sw-core.js');`
           )}
 
           {/* TAB 5: SITE SETTINGS (WITH LIVE STREAM) */}
+          {activeTab === 'broadcasts' && tenantId && (
+            <WebPushBroadcasts tenantId={tenantId} environment={environment} />
+          )}
+
           {activeTab === 'settings' && currentSite && (
             <div className="space-y-8 animate-in fade-in">
               {/* Connection Verification & Live Stream Ingestion Debugger */}
