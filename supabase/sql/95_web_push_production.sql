@@ -161,6 +161,19 @@ CREATE INDEX IF NOT EXISTS idx_web_push_outbox_tenant
   ON public.web_push_outbox (tenant_id, environment, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_web_push_outbox_delivery
   ON public.web_push_outbox (tenant_id, delivery_id) WHERE delivery_id IS NOT NULL;
+-- Daily cap is counted per UTC day the push is DUE (a send scheduled for Friday uses Friday's
+-- allowance, not today's). Existing rows: back-filled once from when they were queued.
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_schema = 'public' AND table_name = 'web_push_outbox' AND column_name = 'send_on') THEN
+    ALTER TABLE public.web_push_outbox ADD COLUMN send_on DATE;
+    UPDATE public.web_push_outbox SET send_on = (timezone('utc', greatest(created_at, next_attempt_at)))::date;
+    ALTER TABLE public.web_push_outbox ALTER COLUMN send_on SET DEFAULT (timezone('utc', now()))::date;
+    ALTER TABLE public.web_push_outbox ALTER COLUMN send_on SET NOT NULL;
+  END IF;
+END $$;
+CREATE INDEX IF NOT EXISTS idx_web_push_outbox_send_on
+  ON public.web_push_outbox (tenant_id, send_on) WHERE status <> 'skipped';
 
 ALTER TABLE public.web_push_outbox ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS web_push_outbox_member_read ON public.web_push_outbox;
@@ -249,7 +262,7 @@ AS $$
 DECLARE
   v_today DATE := CURRENT_DATE;
   v_at    TIMESTAMPTZ := greatest(coalesce(p_send_at, NOW()), NOW());
-  v_cap INT; v_used INT; v_room INT;
+  v_cap INT; v_used INT; v_room INT; v_day DATE;
   n_targets INT; n_excluded INT; n_fresh INT; n_inserted INT := 0;
 BEGIN
   UPDATE pg_temp._wp_targets t SET excluded = TRUE
@@ -275,15 +288,16 @@ BEGIN
   -- remaining room). Held until this transaction ends; other workspaces are unaffected.
   PERFORM pg_advisory_xact_lock(hashtextextended('web_push_cap:' || p_tenant_id::text, 0));
   v_cap := coalesce(public.web_push_daily_cap(p_tenant_id), 100000);
+  v_day := (timezone('utc', v_at))::date;
   SELECT count(*) INTO v_used FROM public.web_push_outbox
-  WHERE tenant_id = p_tenant_id AND created_at >= date_trunc('day', NOW()) AND status <> 'skipped';
+  WHERE tenant_id = p_tenant_id AND send_on = v_day AND status <> 'skipped';
   v_room := greatest(v_cap - v_used, 0);
 
   IF n_fresh > 0 AND v_room > 0 THEN
     INSERT INTO public.web_push_outbox (tenant_id, environment, idempotency_key, subscriber_id, customer_id,
-      content, journey_id, delivery_id, delivery_name, provider_id, next_attempt_at)
+      content, journey_id, delivery_id, delivery_name, provider_id, next_attempt_at, send_on)
     SELECT p_tenant_id, p_environment, p_idempotency_key, t.subscriber_id, t.customer_id,
-      p_content, p_journey_id, left(p_delivery_id, 200), left(p_delivery_name, 200), p_provider_id, v_at
+      p_content, p_journey_id, left(p_delivery_id, 200), left(p_delivery_name, 200), p_provider_id, v_at, v_day
     FROM pg_temp._wp_targets t
     WHERE t.fresh AND NOT t.excluded
     ORDER BY t.subscriber_id
@@ -292,7 +306,7 @@ BEGIN
       SET status = 'queued', attempts = 0, next_attempt_at = EXCLUDED.next_attempt_at, locked_until = NULL, last_error = NULL,
           sent_at = NULL, message_id = gen_random_uuid(), content = EXCLUDED.content, customer_id = EXCLUDED.customer_id,
           journey_id = EXCLUDED.journey_id, delivery_id = EXCLUDED.delivery_id, delivery_name = EXCLUDED.delivery_name,
-          created_at = NOW(), updated_at = NOW()
+          send_on = EXCLUDED.send_on, created_at = NOW(), updated_at = NOW()
       WHERE public.web_push_outbox.status IN ('failed', 'skipped');
     GET DIAGNOSTICS n_inserted = ROW_COUNT;
   END IF;

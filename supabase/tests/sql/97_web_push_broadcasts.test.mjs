@@ -171,6 +171,23 @@ const inFolder = (await as(UA, `SELECT web_push_broadcast_send($1,'production',$
 const row = (await db.query(`SELECT folder_path FROM web_push_broadcasts WHERE id = $1`, [inFolder.broadcast_id])).rows[0];
 ok(row.folder_path === '/q4' && inFolder.devices === liveN('site-b'), `send into a folder, to website B only (${JSON.stringify(inFolder)})`);
 
+// ---- the cap is per day the push goes out (Codex P1) -----------------------------------
+const later = new Date(Date.now() + 3 * 86400_000).toISOString();
+const todayLeft = (await count(UA, {})).cap_remaining;
+const laterCount = (await as(UA, `SELECT web_push_audience_count($1,'production','{}'::jsonb,NULL,$2::timestamptz) AS r`, [A, later])).rows[0].r;
+ok(todayLeft === 0 && laterCount.cap_remaining === 8, `today is full, the scheduled day is not (${todayLeft} / ${laterCount.cap_remaining})`);
+r = await send(UA, K(11), {}, null, later);
+ok(r.capped === 0 && r.queued === 3 && r.excluded === 1, `a send scheduled for another day uses that day's cap (${JSON.stringify(r)})`);
+const day = (await db.query(`SELECT DISTINCT send_on::text d FROM web_push_outbox WHERE delivery_id = $1`, [r.broadcast_id])).rows;
+ok(day.length === 1 && day[0].d === later.slice(0, 10), `rows are counted on the send day (${JSON.stringify(day)})`);
+ok((await count(UA, {})).cap_remaining === 0, "it does not use today's allowance");
+const after = (await as(UA, `SELECT web_push_audience_count($1,'production','{}'::jsonb,NULL,$2::timestamptz) AS r`, [A, later])).rows[0].r;
+ok(after.cap_remaining === 5, `and counts against its own day (${after.cap_remaining} left)`);
+
+// ---- no personalisation tokens (Codex P2) ------------------------------------------------
+ok(await throwsWith(as(UA, `SELECT web_push_broadcast_send($1,'production',$2,'Hi',$3::jsonb,'{"kind":"all"}'::jsonb) AS r`,
+  [A, K(12), JSON.stringify({ title: 'Hi {{first_name}}', body: 'x' })]), /personalisation/), '{{tokens}} are refused');
+
 for (const f of files.filter((f) => f > '97_')) await db.exec(strip(readFileSync(`supabase/sql/${f}`, 'utf8')));
 console.log(failures === 0 ? '\nALL PASSED' : `\n${failures} FAILED`);
 process.exit(failures ? 1 : 0);

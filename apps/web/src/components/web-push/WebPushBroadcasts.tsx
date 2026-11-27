@@ -22,6 +22,7 @@ import {
   fetchCampaignFolders,
   fetchPushSites,
   filterFor,
+  hasTokens,
   listBroadcasts,
   moveBroadcast,
   resolveAudienceCustomerIds,
@@ -405,26 +406,30 @@ function BroadcastComposer({ tenantId, environment, folderPath, onDone }: { tena
   );
   const countReady = kind !== 'audience' || Boolean(audienceIds.data);
 
-  // Debounced live count.
+  const scheduledAt = when === 'later' && at && !Number.isNaN(new Date(at).getTime()) ? new Date(at).toISOString() : null;
+  const capDay = scheduledAt ? scheduledAt.slice(0, 10) : null;
+
+  // Debounced live count (cap room is for the day the push goes out).
   const [countKey, setCountKey] = useState('');
   useEffect(() => {
-    const t = setTimeout(() => setCountKey(JSON.stringify([effectiveFilter, customerIds?.length ?? null, audienceId])), 350);
+    const t = setTimeout(() => setCountKey(JSON.stringify([effectiveFilter, customerIds?.length ?? null, audienceId, capDay])), 350);
     return () => clearTimeout(t);
-  }, [effectiveFilter, customerIds, audienceId]);
+  }, [effectiveFilter, customerIds, audienceId, capDay]);
   const count = useQuery({
     queryKey: ['broadcast-count', tenantId, environment, countKey],
-    queryFn: () => countAudience(tenantId, environment, effectiveFilter, customerIds),
+    queryFn: () => countAudience(tenantId, environment, effectiveFilter, customerIds, scheduledAt),
     enabled: Boolean(tenantId) && countReady && countKey !== '',
   });
 
   const payload = toPushPayload(content);
-  const scheduledAt = when === 'later' && at ? new Date(at).toISOString() : null;
   const reach = count.data ? Math.min(count.data.devices - count.data.excluded, count.data.cap_remaining) : 0;
   const problems = [
     !name.trim() && 'Give the campaign a name',
     !payload.title && 'Add a title',
     when === 'later' && (!at || new Date(at).getTime() <= Date.now()) && 'Pick a future date and time',
     kind === 'audience' && !audienceId && 'Pick an audience',
+    kind === 'audience' && audienceIds.data?.truncated && 'This audience is too large for audience targeting today — use All subscribers or filters',
+    hasTokens(content) && 'Remove personalisation like {{first_name}} — one message goes to every subscriber, including anonymous ones',
     count.data && count.data.devices === 0 && 'Nobody matches this audience yet',
   ].filter(Boolean) as string[];
 
@@ -553,7 +558,7 @@ function BroadcastComposer({ tenantId, environment, folderPath, onDone }: { tena
                 {audienceIds.isFetching && <p className="text-[11px] text-slate-500">Working out who is in this audience…</p>}
                 {audienceIds.error && <p className="text-[11px] text-red-700">{(audienceIds.error as Error).message}</p>}
                 {audienceIds.data?.truncated && (
-                  <p className="text-[11px] text-amber-700">Audience targeting currently reaches at most 5,000 customers. Use “All subscribers” or filters for larger sends.</p>
+                  <p className="text-[11px] text-amber-700">This workspace has more customers than audience targeting can check today (1,000), so it would only reach part of the audience. Use “All subscribers” or filters instead.</p>
                 )}
                 <p className="text-[11px] text-slate-500">Only subscribers linked to a customer can be reached this way. A scheduled send uses the audience as it is now.</p>
               </div>
@@ -567,7 +572,7 @@ function BroadcastComposer({ tenantId, environment, folderPath, onDone }: { tena
                   {' '}({count.data.linked.toLocaleString()} known customers, {count.data.anonymous.toLocaleString()} anonymous
                   {count.data.excluded ? `, ${count.data.excluded} excluded` : ''}).
                   {count.data.devices - count.data.excluded > count.data.cap_remaining && (
-                    <span className="text-amber-700"> Daily cap: {count.data.cap_remaining.toLocaleString()} left today — the rest will be held.</span>
+                    <span className="text-amber-700"> Daily cap: {count.data.cap_remaining.toLocaleString()} left {scheduledAt ? 'on that day' : 'today'} — the rest will be held.</span>
                   )}
                 </span>
               )}

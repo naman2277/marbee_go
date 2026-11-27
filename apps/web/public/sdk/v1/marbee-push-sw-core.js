@@ -56,6 +56,7 @@
       // Same message twice (at-least-once delivery) replaces itself instead of stacking.
       tag: data.tag || data.message_id || undefined,
       renotify: Boolean(data.tag),
+      requireInteraction: data.require_interaction === 'true',
       actions: parseActions(data).map(function (a) { return { action: a.action, title: a.title }; }),
       data: data,
     };

@@ -1,6 +1,6 @@
 // Web Push broadcasts (D-026): thin client over the SQL 97 functions. All targeting, caps,
 // exclusions and sending happen on the server; the browser only resolves a Marbee audience to
-// customer ids (today's audience engine runs in the browser, max 5,000 customers).
+// customer ids (today's audience engine runs in the browser over at most API_ROW_CAP customers).
 import { supabase } from './supabase';
 import type { WebPushContent } from './content-templates';
 import { evaluateAudienceMembers, type Audience } from './audiences';
@@ -61,6 +61,7 @@ export function toPushPayload(c: WebPushContent): Record<string, unknown> {
     badge_url: c.badge_url?.trim() || undefined,
     actions: (c.actions ?? []).filter((a) => a.title).slice(0, 2),
     ttl_seconds: c.ttl_hours ? Math.round(c.ttl_hours * 3600) : undefined,
+    require_interaction: c.require_interaction ? true : undefined,
   };
 }
 
@@ -90,7 +91,19 @@ function describeWho(a: Record<string, unknown>): string {
   return 'All subscribers';
 }
 
-/** Customer ids of a Marbee audience (customer-schema audiences only). */
+/** The Supabase API returns at most this many rows per request (supabase/config.toml max_rows). */
+export const API_ROW_CAP = 1000;
+
+/** Personalisation tokens can't be rendered: one message goes to every device, many anonymous. */
+export function hasTokens(c: { title?: string; body?: string }): boolean {
+  return /\{\{/.test(`${c.title ?? ''} ${c.body ?? ''}`);
+}
+
+/**
+ * Customer ids of a Marbee audience (customer-schema audiences only). `truncated` = the
+ * workspace has more customers than the browser-side engine can read, so the result would be
+ * a partial audience — the composer refuses to send it (TD-31).
+ */
 export async function resolveAudienceCustomerIds(
   tenantId: string,
   environment: string,
@@ -111,7 +124,14 @@ export async function resolveAudienceCustomerIds(
     limit: 5000,
   });
   const ids = members.map((m) => String(m.id)).filter(Boolean);
-  return { ids, truncated: total > ids.length || ids.length >= 5000 };
+  const { count, error } = await supabase
+    .from(schema.table_name!)
+    .select('id', { count: 'exact', head: true })
+    .eq('tenant_id', tenantId)
+    .eq('environment', environment);
+  if (error) throw new Error(error.message);
+  const scanned = Math.min(count ?? 0, API_ROW_CAP);
+  return { ids, truncated: (count ?? 0) > scanned || total > ids.length };
 }
 
 export async function countAudience(
@@ -119,12 +139,14 @@ export async function countAudience(
   environment: string,
   filter: BroadcastFilter,
   customerIds: string[] | null,
+  sendAt: string | null = null,
 ): Promise<AudienceCount> {
   const { data, error } = await supabase.rpc('web_push_audience_count', {
     p_tenant_id: tenantId,
     p_environment: environment,
     p_filter: filter,
     p_customer_ids: customerIds,
+    p_send_at: sendAt,
   });
   if (error) throw new Error(error.message);
   return data as AudienceCount;

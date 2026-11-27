@@ -182,8 +182,10 @@ EXCEPTION WHEN undefined_object THEN NULL; END $$;
 GRANT EXECUTE ON FUNCTION public.web_push_fill_broadcast_targets(UUID, TEXT, JSONB, UUID[]) TO service_role;
 
 -- ---- Preview: how many devices would this reach? (any member of the workspace) ------
+DROP FUNCTION IF EXISTS public.web_push_audience_count(UUID, TEXT, JSONB, UUID[]);
 CREATE OR REPLACE FUNCTION public.web_push_audience_count(
-  p_tenant_id UUID, p_environment TEXT, p_filter JSONB DEFAULT '{}', p_customer_ids UUID[] DEFAULT NULL
+  p_tenant_id UUID, p_environment TEXT, p_filter JSONB DEFAULT '{}', p_customer_ids UUID[] DEFAULT NULL,
+  p_send_at TIMESTAMPTZ DEFAULT NULL
 )
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -192,6 +194,7 @@ SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_today DATE := CURRENT_DATE;
+  v_day DATE := (timezone('utc', greatest(coalesce(p_send_at, NOW()), NOW())))::date;
   n_devices INT; n_linked INT; n_excluded INT; v_cap INT; v_used INT;
 BEGIN
   IF auth.uid() IS NULL OR NOT public.user_has_tenant_access(p_tenant_id) THEN
@@ -208,16 +211,16 @@ BEGIN
   FROM pg_temp._wp_targets t;
   v_cap := coalesce(public.web_push_daily_cap(p_tenant_id), 100000);
   SELECT count(*) INTO v_used FROM public.web_push_outbox
-  WHERE tenant_id = p_tenant_id AND created_at >= date_trunc('day', NOW()) AND status <> 'skipped';
+  WHERE tenant_id = p_tenant_id AND send_on = v_day AND status <> 'skipped';
   RETURN jsonb_build_object(
     'devices', n_devices, 'linked', n_linked, 'anonymous', n_devices - n_linked,
     'excluded', n_excluded, 'daily_cap', v_cap, 'cap_remaining', greatest(v_cap - v_used, 0));
 END;
 $$;
-REVOKE ALL ON FUNCTION public.web_push_audience_count(UUID, TEXT, JSONB, UUID[]) FROM PUBLIC;
-DO $$ BEGIN EXECUTE 'REVOKE ALL ON FUNCTION public.web_push_audience_count(UUID, TEXT, JSONB, UUID[]) FROM anon';
+REVOKE ALL ON FUNCTION public.web_push_audience_count(UUID, TEXT, JSONB, UUID[], TIMESTAMPTZ) FROM PUBLIC;
+DO $$ BEGIN EXECUTE 'REVOKE ALL ON FUNCTION public.web_push_audience_count(UUID, TEXT, JSONB, UUID[], TIMESTAMPTZ) FROM anon';
 EXCEPTION WHEN undefined_object THEN NULL; END $$;
-GRANT EXECUTE ON FUNCTION public.web_push_audience_count(UUID, TEXT, JSONB, UUID[]) TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.web_push_audience_count(UUID, TEXT, JSONB, UUID[], TIMESTAMPTZ) TO authenticated, service_role;
 
 -- ---- Send (now or scheduled) — needs journeys.publish -------------------------------
 DROP FUNCTION IF EXISTS public.web_push_broadcast_send(UUID, TEXT, UUID, TEXT, JSONB, JSONB, JSONB, UUID[], TIMESTAMPTZ);
@@ -255,6 +258,10 @@ BEGIN
   IF v_name = '' THEN RAISE EXCEPTION 'broadcast name is required' USING ERRCODE = 'check_violation'; END IF;
   IF p_content IS NULL OR jsonb_typeof(p_content) <> 'object' OR coalesce(btrim(p_content->>'title'), '') = '' THEN
     RAISE EXCEPTION 'push title is required' USING ERRCODE = 'check_violation';
+  END IF;
+  -- Broadcast content is the same for every device (many are anonymous): no {{personalisation}}.
+  IF concat_ws(' ', p_content->>'title', p_content->>'body') ~ '\{\{' THEN
+    RAISE EXCEPTION 'personalisation tokens like {{first_name}} are not supported in web push campaigns' USING ERRCODE = 'check_violation';
   END IF;
   IF length(p_content::text) > 8000 THEN
     RAISE EXCEPTION 'push content is too large (max 8 KB)' USING ERRCODE = 'check_violation';
