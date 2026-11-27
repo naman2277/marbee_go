@@ -20,6 +20,7 @@ import { AudiencePage } from '@/pages/AudiencePage';
 import { AudienceDetailPage } from '@/pages/AudienceDetailPage';
 import { JourneysPage, JourneyEditorPage } from '@/pages/JourneysPage';
 import { CampaignsPage } from '@/pages/CampaignsPage';
+import { WebPushCampaignsPage, WebPushCampaignReportPage } from '@/pages/campaigns/WebPushCampaignsPage';
 import { CampaignWizardPage } from '@/pages/campaigns/CampaignWizardPage';
 import { CampaignDashboardPage } from '@/pages/campaigns/CampaignDashboardPage';
 import { SchemasPage } from '@/pages/SchemasPage';
@@ -182,6 +183,8 @@ function AppRoutes() {
       <Route path="/subscriptions/:id" element={<ProtectedRoute><SubscriptionDetailPage /></ProtectedRoute>} />
       <Route path="/campaigns" element={<ProtectedRoute><CampaignsPage /></ProtectedRoute>} />
       <Route path="/campaigns/new" element={<ProtectedRoute><CampaignWizardPage /></ProtectedRoute>} />
+      <Route path="/campaigns/web-push" element={<ProtectedRoute><WebPushCampaignsPage /></ProtectedRoute>} />
+      <Route path="/campaigns/web-push/:id" element={<ProtectedRoute><WebPushCampaignReportPage /></ProtectedRoute>} />
       <Route path="/campaigns/:id" element={<ProtectedRoute><CampaignDashboardPage /></ProtectedRoute>} />
       <Route path="/campaigns/:id/legacy" element={<ProtectedRoute><JourneyEditorPage /></ProtectedRoute>} />
       <Route path="/journeys" element={<ProtectedRoute><JourneysPage /></ProtectedRoute>} />

@@ -7,7 +7,7 @@ import {
   Database, Search, Plug, Clock, Workflow, ShieldCheck, Route,
   Megaphone, PieChart, IndianRupee, Settings, Share2, Key, Lock,
   Gauge, BookOpen, Shield, ChevronDown, Building2, LineChart,
-  Award, Brain, Layers, Tag, LayoutGrid, Gift, Cpu, Bot, CheckSquare,
+  Award, Brain, Layers, Tag, LayoutGrid, Gift, Cpu, Bot, CheckSquare, BellRing,
 } from 'lucide-react';
 import { NAV_SECTIONS } from '@marbee/shared';
 import { cn } from '@/lib/utils';
@@ -34,7 +34,7 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   Database, Search, Plug, Clock, Workflow, ShieldCheck, Route,
   Megaphone, PieChart, IndianRupee, Settings, Share2, Key, Lock,
   Gauge, BookOpen, Shield, LineChart, Award, Brain, Layers, Tag, LayoutGrid,
-  Gift, Cpu, Bot, CheckSquare,
+  Gift, Cpu, Bot, CheckSquare, BellRing,
 };
 
 export function Sidebar() {

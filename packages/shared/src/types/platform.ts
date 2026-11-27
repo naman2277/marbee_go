@@ -62,6 +62,7 @@ export const NAV_SECTIONS = [
     title: 'Campaigns',
     items: [
       { label: 'Campaigns', path: '/campaigns', icon: 'Megaphone' },
+      { label: 'Web Push Campaigns', path: '/campaigns/web-push', icon: 'BellRing' },
       { subheader: 'Real-Time Messaging' },
       { label: 'Overview', path: '/real-time', icon: 'Zap' },
       { label: 'Message Templates', path: '/real-time/templates', icon: 'LayoutTemplate' },

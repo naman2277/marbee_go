@@ -1,8 +1,9 @@
 // Web Push → Broadcasts (D-026): send one push to all subscribers, a filtered group or a
 // Marbee audience, now or scheduled, and follow the results. Sending runs on the server.
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarClock, Megaphone, RefreshCw, Send, Users, X } from 'lucide-react';
+import { BarChart3, CalendarClock, Megaphone, RefreshCw, Send, Users, X } from 'lucide-react';
 import { Button, Card } from '@/components/ui';
 import { WebPushComposer } from '@/components/content-templates/channel-studio/WebPushComposer';
 import { WebPushPreview } from '@/components/content-templates/channel-studio/WebPushPreview';
@@ -83,7 +84,7 @@ function BroadcastList({ tenantId, environment, onNew }: { tenantId: string; env
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-bold text-slate-900">Broadcasts</h3>
+          <h3 className="text-sm font-bold text-slate-900">All web push campaigns</h3>
           <p className="text-xs text-slate-500">One push to all subscribers, a filtered group or an audience. Sent from the server — you can close this tab.</p>
         </div>
         <div className="flex gap-2">
@@ -91,7 +92,7 @@ function BroadcastList({ tenantId, environment, onNew }: { tenantId: string; env
             <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} /> Refresh
           </Button>
           <Button size="sm" onClick={onNew}>
-            <Megaphone className="mr-1.5 h-3.5 w-3.5" /> New broadcast
+            <Megaphone className="mr-1.5 h-3.5 w-3.5" /> New campaign
           </Button>
         </div>
       </div>
@@ -102,7 +103,7 @@ function BroadcastList({ tenantId, environment, onNew }: { tenantId: string; env
       ) : data.length === 0 ? (
         <Card className="p-8 text-center">
           <Megaphone className="mx-auto h-6 w-6 text-slate-400" />
-          <p className="mt-2 text-sm font-semibold text-slate-800">No broadcasts yet</p>
+          <p className="mt-2 text-sm font-semibold text-slate-800">No web push campaigns yet</p>
           <p className="text-xs text-slate-500">Send your first push to everyone who subscribed on your website.</p>
         </Card>
       ) : (
@@ -110,7 +111,7 @@ function BroadcastList({ tenantId, environment, onNew }: { tenantId: string; env
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50 text-slate-500">
               <tr>
-                <th className="px-3 py-2 font-semibold">Broadcast</th>
+                <th className="px-3 py-2 font-semibold">Campaign</th>
                 <th className="px-3 py-2 font-semibold">Status</th>
                 <th className="px-3 py-2 font-semibold">When</th>
                 <th className="px-3 py-2 text-right font-semibold">Queued</th>
@@ -128,7 +129,7 @@ function BroadcastList({ tenantId, environment, onNew }: { tenantId: string; env
                 return (
                   <tr key={b.id} className="align-top">
                     <td className="px-3 py-2">
-                      <p className="font-semibold text-slate-900">{b.name}</p>
+                      <Link to={`/campaigns/web-push/${b.id}`} className="font-semibold text-slate-900 hover:text-brand-700 hover:underline">{b.name}</Link>
                       <p className="text-slate-500">{String(b.content.title ?? '')}</p>
                       <p className="text-[11px] text-slate-400">{describeAudience(b.audience)}</p>
                     </td>
@@ -142,7 +143,15 @@ function BroadcastList({ tenantId, environment, onNew }: { tenantId: string; env
                     <td className="px-3 py-2 text-right tabular-nums">{b.failed}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{b.clicked}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{ctr}</td>
-                    <td className="px-3 py-2 text-right">
+                    <td className="whitespace-nowrap px-3 py-2 text-right">
+                      <Link
+                        to={`/campaigns/web-push/${b.id}`}
+                        title="Open report"
+                        aria-label={`Open report for ${b.name}`}
+                        className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-brand-700 hover:bg-brand-50"
+                      >
+                        <BarChart3 className="h-3.5 w-3.5" /> Report
+                      </Link>
                       {(b.status === 'scheduled' || (b.status === 'sending' && b.queued > 0)) && (
                         <Button
                           variant="ghost"
@@ -231,7 +240,7 @@ function BroadcastComposer({ tenantId, environment, onDone }: { tenantId: string
   const scheduledAt = when === 'later' && at ? new Date(at).toISOString() : null;
   const reach = count.data ? Math.min(count.data.devices - count.data.excluded, count.data.cap_remaining) : 0;
   const problems = [
-    !name.trim() && 'Give the broadcast a name',
+    !name.trim() && 'Give the campaign a name',
     !payload.title && 'Add a title',
     when === 'later' && (!at || new Date(at).getTime() <= Date.now()) && 'Pick a future date and time',
     kind === 'audience' && !audienceId && 'Pick an audience',
@@ -242,7 +251,7 @@ function BroadcastComposer({ tenantId, environment, onDone }: { tenantId: string
     mutationFn: () => sendBroadcast({ tenantId, environment, clientKey, name: name.trim(), content: payload, audience: choice, customerIds, scheduledAt }),
     onSuccess: (r) => {
       void qc.invalidateQueries({ queryKey: ['web-push-broadcasts', tenantId, environment] });
-      setNotice(r.already_sent ? 'This broadcast was already sent.' : `${scheduledAt ? 'Scheduled' : 'Sending'}: ${r.queued} push${r.queued === 1 ? '' : 'es'} queued${r.capped ? `, ${r.capped} held by the daily cap` : ''}.`);
+      setNotice(r.already_sent ? 'This campaign was already sent.' : `${scheduledAt ? 'Scheduled' : 'Sending'}: ${r.queued} push${r.queued === 1 ? '' : 'es'} queued${r.capped ? `, ${r.capped} held by the daily cap` : ''}.`);
       setTimeout(onDone, 1200);
     },
     onError: (e) => { setConfirming(false); setNotice((e as Error).message); },
@@ -264,7 +273,7 @@ function BroadcastComposer({ tenantId, environment, onDone }: { tenantId: string
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-bold text-slate-900">New broadcast</h3>
+        <h3 className="text-sm font-bold text-slate-900">New web push campaign</h3>
         <Button variant="ghost" size="sm" onClick={onDone}><X className="mr-1 h-3.5 w-3.5" /> Close</Button>
       </div>
 
@@ -390,7 +399,7 @@ function BroadcastComposer({ tenantId, environment, onDone }: { tenantId: string
           {problems.length > 0 && <ul className="list-disc pl-5 text-[11px] text-slate-500">{problems.map((p) => <li key={p}>{p}</li>)}</ul>}
           {!confirming ? (
             <Button className="w-full" disabled={problems.length > 0 || !count.data} onClick={() => setConfirming(true)}>
-              <Megaphone className="mr-1.5 h-4 w-4" /> {when === 'later' ? 'Schedule broadcast' : 'Send broadcast'}
+              <Megaphone className="mr-1.5 h-4 w-4" /> {when === 'later' ? 'Schedule campaign' : 'Send campaign'}
             </Button>
           ) : (
             <Card className="space-y-2 border-brand-200 p-3">

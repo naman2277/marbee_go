@@ -160,3 +160,88 @@ export async function listBroadcasts(tenantId: string, environment: string): Pro
   if (error) throw new Error(error.message);
   return (data ?? []) as BroadcastRow[];
 }
+
+// ---------------------------------------------------------------- campaign report (SQL 98)
+export type ReportSegment = { name: string; targeted: number; delivered: number; clicked: number };
+
+export type BroadcastReport = {
+  broadcast: {
+    id: string;
+    name: string;
+    content: Record<string, unknown>;
+    audience: Record<string, unknown>;
+    scheduled_at: string | null;
+    created_at: string;
+    cancelled_at: string | null;
+    result: { queued?: number; devices?: number; excluded?: number; capped?: number };
+    status: BroadcastRow['status'];
+  };
+  summary: {
+    targeted: number;
+    queued: number;
+    delivered: number;
+    failed: number;
+    skipped: number;
+    clicked: number;
+    clicked_known: number;
+    clicked_anonymous: number;
+    excluded_at_send: number;
+    capped_at_send: number;
+    first_sent_at: string | null;
+    last_sent_at: string | null;
+    first_click_at: string | null;
+    last_click_at: string | null;
+    median_seconds_to_click: number | null;
+    p90_seconds_to_click: number | null;
+  };
+  by_action: { action: string; clicks: number }[];
+  by_browser: ReportSegment[];
+  by_os: ReportSegment[];
+  by_device: ReportSegment[];
+  timeline: { t: string; delivered: number; clicked: number }[];
+  bucket: number | null;
+  issues: { status: 'failed' | 'skipped'; reason: string; count: number }[];
+  recent_clicks: {
+    clicked_at: string;
+    action: string;
+    browser: string;
+    os: string;
+    device: string;
+    seconds_to_click: number | null;
+    customer_id: string | null;
+    customer: string | null;
+  }[];
+};
+
+export async function fetchBroadcastReport(id: string): Promise<BroadcastReport> {
+  const { data, error } = await supabase.rpc('web_push_broadcast_report', { p_broadcast_id: id });
+  if (error) throw new Error(error.message);
+  return data as BroadcastReport;
+}
+
+export type CtaRow = { key: string; label: string; kind: 'body' | 'button' | 'other'; url: string | null; clicks: number };
+
+/** Clicks per call-to-action: the notification body plus each button, in the order shown. */
+export function ctaBreakdown(content: Record<string, unknown>, byAction: { action: string; clicks: number }[]): CtaRow[] {
+  const clicks = new Map(byAction.map((x) => [x.action, x.clicks]));
+  const actions = Array.isArray(content.actions) ? (content.actions as { action?: string; title?: string; url?: string }[]) : [];
+  const rows: CtaRow[] = [
+    { key: 'body', label: 'Notification (body click)', kind: 'body', url: (content.click_url as string) ?? null, clicks: clicks.get('body') ?? 0 },
+  ];
+  actions.slice(0, 2).forEach((a, i) => {
+    const key = a.action || `action_${i + 1}`;
+    rows.push({ key, label: `Button ${i + 1}: ${a.title || 'Open'}`, kind: 'button', url: a.url || (content.click_url as string) || null, clicks: clicks.get(key) ?? 0 });
+  });
+  const known = new Set(rows.map((r) => r.key));
+  const other = byAction.filter((x) => !known.has(x.action)).reduce((s, x) => s + x.clicks, 0);
+  if (other > 0) rows.push({ key: 'other', label: 'Other', kind: 'other', url: null, clicks: other });
+  return rows;
+}
+
+export function formatDuration(seconds: number | null | undefined): string {
+  if (seconds == null) return '—';
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
+  if (seconds < 86400) return `${(seconds / 3600).toFixed(1)}h`;
+  return `${(seconds / 86400).toFixed(1)}d`;
+}
