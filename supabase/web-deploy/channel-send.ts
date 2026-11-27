@@ -299,6 +299,8 @@ type PushContent = {
   ttl_seconds?: number;
   actions?: PushAction[];
   track_clicks?: boolean;
+  /** Keep the notification on screen until the user acts on it (Chrome/Edge desktop). */
+  require_interaction?: boolean;
 };
 
 type PushContext = {
@@ -379,6 +381,7 @@ function normalizeContent(input: Record<string, unknown>): PushContent {
       url: httpUrl(a?.url),
     })),
     track_clicks: input.track_clicks !== false && input.track_opens !== false && input.trackOpens !== false,
+    require_interaction: input.require_interaction === true || input.requireInteraction === true,
   };
 }
 
@@ -426,6 +429,7 @@ function buildFcmMessageRaw(token: string, content: PushContent, ctx: PushContex
     click_url: content.click_url ?? '/',
     actions_json: JSON.stringify(content.actions ?? []),
     track_clicks: content.track_clicks === false ? 'false' : 'true',
+    require_interaction: content.require_interaction ? 'true' : '',
     engage_url: ctx.engage_url ?? '',
   };
   return {
