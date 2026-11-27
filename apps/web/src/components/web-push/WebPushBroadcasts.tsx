@@ -92,12 +92,6 @@ function CampaignExplorer({ tenantId, environment, folder, onFolder, onNew }: {
   });
   const folders = useQuery({ queryKey: foldersKey, queryFn: () => fetchCampaignFolders(tenantId, environment), enabled: Boolean(tenantId) });
   const tree = useMemo(() => buildCampaignFolderTree(folders.data ?? [], data), [folders.data, data]);
-  const allFolderPaths = useMemo(() => {
-    const out: string[] = [];
-    const walk = (n: typeof tree) => { out.push(n.path); n.children.forEach(walk); };
-    walk(tree);
-    return out;
-  }, [tree]);
 
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<'' | BroadcastRow['status']>('');
@@ -310,17 +304,6 @@ function CampaignExplorer({ tenantId, environment, folder, onFolder, onNew }: {
                             >
                               <BarChart3 className="h-3.5 w-3.5" /> Report
                             </Link>
-                            <select
-                              aria-label={`Move ${b.name} to folder`}
-                              value=""
-                              onChange={(e) => { if (e.target.value) move.mutate({ id: b.id, path: e.target.value }); }}
-                              className="ml-1 rounded-lg border border-slate-200 px-1.5 py-1 text-[11px] text-slate-600"
-                            >
-                              <option value="">Move…</option>
-                              {allFolderPaths.filter((p) => p !== (b.folder_path || '/')).map((p) => (
-                                <option key={p} value={p}>{p === '/' ? 'All (top level)' : p.slice(1)}</option>
-                              ))}
-                            </select>
                             {(b.status === 'scheduled' || (b.status === 'sending' && b.queued > 0)) && (
                               <Button
                                 variant="ghost"
