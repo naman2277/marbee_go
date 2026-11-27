@@ -86,9 +86,11 @@ function CampaignExplorer({ tenantId, environment, folder, onFolder, onNew }: {
   const qc = useQueryClient();
   const listKey = ['web-push-broadcasts', tenantId, environment];
   const foldersKey = ['web-push-campaign-folders', tenantId, environment];
+  const [limit, setLimit] = useState(500);
   const { data = [], isLoading, error, refetch, isFetching } = useQuery({
-    queryKey: listKey,
-    queryFn: () => listBroadcasts(tenantId, environment),
+    queryKey: [...listKey, limit],
+    queryFn: () => listBroadcasts(tenantId, environment, limit),
+    placeholderData: (prev) => prev,
     enabled: Boolean(tenantId),
     refetchInterval: 10_000,
   });
@@ -340,6 +342,14 @@ function CampaignExplorer({ tenantId, environment, folder, onFolder, onNew }: {
                 </table>
               </div>
             )}
+            {data.length >= limit && (
+              <div className="text-center">
+                <Button variant="secondary" size="sm" disabled={isFetching} onClick={() => setLimit((l) => l + 500)}>
+                  Load older campaigns
+                </Button>
+                <p className="mt-1 text-[11px] text-slate-400">Showing the newest {data.length.toLocaleString()} campaigns; folder counts and search cover these.</p>
+              </div>
+            )}
             <p className="text-[11px] text-slate-400">Tip: drag a campaign onto a folder to move it. Deleting a folder never deletes campaigns.</p>
           </div>
         </div>
@@ -444,7 +454,7 @@ function BroadcastComposer({ tenantId, environment, folderPath, onDone }: { tena
     when === 'later' && (!at || new Date(at).getTime() <= Date.now()) && 'Pick a future date and time',
     kind === 'audience' && !audienceId && 'Pick an audience',
     kind === 'audience' && audienceIds.data?.truncated && 'This audience is too large for audience targeting today — use All subscribers or filters',
-    hasTokens(content) && 'Remove personalisation like {{first_name}} — one message goes to every subscriber, including anonymous ones',
+    hasTokens(payload) && 'Remove personalisation like {{first_name}} (title, text, buttons and links) — one message goes to every subscriber, including anonymous ones',
     count.data && count.data.devices === 0 && 'Nobody matches this audience yet',
   ].filter(Boolean) as string[];
 

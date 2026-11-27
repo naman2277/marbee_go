@@ -94,9 +94,10 @@ function describeWho(a: Record<string, unknown>): string {
 /** The Supabase API returns at most this many rows per request (supabase/config.toml max_rows). */
 export const API_ROW_CAP = 1000;
 
-/** Personalisation tokens can't be rendered: one message goes to every device, many anonymous. */
-export function hasTokens(c: { title?: string; body?: string }): boolean {
-  return /\{\{/.test(`${c.title ?? ''} ${c.body ?? ''}`);
+/** Personalisation tokens can't be rendered: one message goes to every device, many anonymous.
+ *  Checks everything that is sent — title, body, button labels and all URLs. */
+export function hasTokens(payload: Record<string, unknown>): boolean {
+  return /\{\{/.test(JSON.stringify(payload));
 }
 
 /**
@@ -193,11 +194,11 @@ export async function deleteBroadcast(id: string): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
-export async function listBroadcasts(tenantId: string, environment: string): Promise<BroadcastRow[]> {
+export async function listBroadcasts(tenantId: string, environment: string, limit = 500): Promise<BroadcastRow[]> {
   const { data, error } = await supabase.rpc('web_push_broadcast_list', {
     p_tenant_id: tenantId,
     p_environment: environment,
-    p_limit: 500,
+    p_limit: limit,
   });
   if (error) throw new Error(error.message);
   return (data ?? []) as BroadcastRow[];

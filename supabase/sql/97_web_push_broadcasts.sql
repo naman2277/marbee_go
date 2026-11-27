@@ -260,7 +260,7 @@ BEGIN
     RAISE EXCEPTION 'push title is required' USING ERRCODE = 'check_violation';
   END IF;
   -- Broadcast content is the same for every device (many are anonymous): no {{personalisation}}.
-  IF concat_ws(' ', p_content->>'title', p_content->>'body') ~ '\{\{' THEN
+  IF p_content::text ~ '\{\{' THEN   -- title, body, button labels and every URL
     RAISE EXCEPTION 'personalisation tokens like {{first_name}} are not supported in web push campaigns' USING ERRCODE = 'check_violation';
   END IF;
   IF length(p_content::text) > 8000 THEN
@@ -370,7 +370,7 @@ BEGIN
   WITH b AS (
     SELECT * FROM public.web_push_broadcasts wb
     WHERE wb.tenant_id = p_tenant_id AND wb.environment = p_environment
-    ORDER BY wb.created_at DESC LIMIT greatest(least(coalesce(p_limit, 50), 1000), 1)
+    ORDER BY wb.created_at DESC LIMIT greatest(least(coalesce(p_limit, 50), 10000), 1)
   ), o AS (
     SELECT ob.delivery_id,
       count(*) FILTER (WHERE ob.status IN ('queued', 'sending'))::int AS q,

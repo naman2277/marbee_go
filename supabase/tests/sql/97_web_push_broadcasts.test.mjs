@@ -187,6 +187,8 @@ ok(after.cap_remaining === 5, `and counts against its own day (${after.cap_remai
 // ---- no personalisation tokens (Codex P2) ------------------------------------------------
 ok(await throwsWith(as(UA, `SELECT web_push_broadcast_send($1,'production',$2,'Hi',$3::jsonb,'{"kind":"all"}'::jsonb) AS r`,
   [A, K(12), JSON.stringify({ title: 'Hi {{first_name}}', body: 'x' })]), /personalisation/), '{{tokens}} are refused');
+ok(await throwsWith(as(UA, `SELECT web_push_broadcast_send($1,'production',$2,'Hi',$3::jsonb,'{"kind":"all"}'::jsonb) AS r`,
+  [A, K(14), JSON.stringify({ title: 'Hi', body: 'x', actions: [{ title: 'Go', url: 'https://s.test/?u={{customer_id}}' }] })]), /personalisation/), '{{tokens}} in buttons / links are refused too');
 
 // ---- delete ------------------------------------------------------------------------------
 const doomed = (await send(UA, K(13), {}, null, new Date(Date.now() + 5 * 86400_000).toISOString())).broadcast_id;
