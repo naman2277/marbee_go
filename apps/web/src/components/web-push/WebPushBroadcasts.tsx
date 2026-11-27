@@ -7,6 +7,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { BarChart3, CalendarClock, FolderPlus, Globe, Megaphone, Pencil, RefreshCw, Search, Send, Trash2, Users, X } from 'lucide-react';
 import { Button, Card } from '@/components/ui';
 import { JourneyFolderSidebar } from '@/components/journeys/JourneyFolderSidebar';
+import { ConfirmDialog } from '@/components/audiences/ConfirmDialog';
 import { JOURNEY_DRAG_MIME } from '@/lib/journey-folders';
 import { WebPushComposer } from '@/components/content-templates/channel-studio/WebPushComposer';
 import { WebPushPreview } from '@/components/content-templates/channel-studio/WebPushPreview';
@@ -105,6 +106,12 @@ function CampaignExplorer({ tenantId, environment, folder, onFolder, onNew }: {
   const [msg, setMsg] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<
+    | { kind: 'delete'; id: string; name: string; unsent: boolean }
+    | { kind: 'cancel'; id: string; name: string }
+    | { kind: 'folder'; name: string }
+    | null
+  >(null);
 
   const refresh = () => {
     void qc.invalidateQueries({ queryKey: listKey });
@@ -179,7 +186,7 @@ function CampaignExplorer({ tenantId, environment, folder, onFolder, onNew }: {
                     <Pencil className="mr-1 h-3.5 w-3.5" /> Rename
                   </Button>
                   <Button variant="ghost" size="sm" disabled={folderOp.isPending}
-                    onClick={() => { if (window.confirm(`Delete folder "${folderLabel(folder)}"? Campaigns inside move up one level; nothing is deleted.`)) folderOp.mutate({ op: 'delete' }); }}>
+                    onClick={() => setConfirm({ kind: 'folder', name: folderLabel(folder) })}>
                     <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
                   </Button>
                 </>
@@ -314,10 +321,7 @@ function CampaignExplorer({ tenantId, environment, folder, onFolder, onNew }: {
                               title="Delete campaign"
                               aria-label={`Delete ${b.name}`}
                               disabled={remove.isPending}
-                              onClick={() => {
-                                const unsent = b.status === 'scheduled' || b.queued > 0;
-                                if (window.confirm(`Delete "${b.name}"? This can't be undone.${unsent ? ' Pushes not yet sent will not go out.' : ''} Its report will be removed; customer click history is kept.`)) remove.mutate(b.id);
-                              }}
+                              onClick={() => setConfirm({ kind: 'delete', id: b.id, name: b.name, unsent: b.status === 'scheduled' || b.queued > 0 })}
                               className="ml-0.5 inline-flex items-center rounded-lg p-1.5 align-middle text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
@@ -327,9 +331,7 @@ function CampaignExplorer({ tenantId, environment, folder, onFolder, onNew }: {
                                 variant="ghost"
                                 size="sm"
                                 disabled={cancel.isPending}
-                                onClick={() => {
-                                  if (window.confirm(`Cancel "${b.name}"? Pushes not yet sent will not go out.`)) cancel.mutate(b.id);
-                                }}
+                                onClick={() => setConfirm({ kind: 'cancel', id: b.id, name: b.name })}
                               >
                                 <X className="mr-1 h-3.5 w-3.5" /> Cancel
                               </Button>
@@ -351,6 +353,32 @@ function CampaignExplorer({ tenantId, environment, folder, onFolder, onNew }: {
               </div>
             )}
             <p className="text-[11px] text-slate-400">Tip: drag a campaign onto a folder to move it. Deleting a folder never deletes campaigns.</p>
+            <ConfirmDialog
+              open={confirm !== null}
+              title={
+                confirm?.kind === 'delete' ? `Delete “${confirm.name}”?`
+                  : confirm?.kind === 'cancel' ? `Cancel “${confirm.name}”?`
+                    : `Delete folder “${confirm?.name ?? ''}”?`
+              }
+              message={
+                confirm?.kind === 'delete'
+                  ? `This can't be undone.${confirm.unsent ? ' Pushes not yet sent will not go out.' : ''} Its report will be removed; customer click history is kept.`
+                  : confirm?.kind === 'cancel'
+                    ? 'Pushes not yet sent will not go out. Pushes already delivered stay delivered.'
+                    : 'Campaigns inside move up one level — no campaign is deleted.'
+              }
+              confirmLabel={confirm?.kind === 'cancel' ? 'Cancel campaign' : confirm?.kind === 'folder' ? 'Delete folder' : 'Delete campaign'}
+              loadingLabel={confirm?.kind === 'cancel' ? 'Cancelling…' : 'Deleting…'}
+              loading={remove.isPending || cancel.isPending || folderOp.isPending}
+              onCancel={() => setConfirm(null)}
+              onConfirm={() => {
+                if (!confirm) return;
+                const done = { onSettled: () => setConfirm(null) };
+                if (confirm.kind === 'delete') remove.mutate(confirm.id, done);
+                else if (confirm.kind === 'cancel') cancel.mutate(confirm.id, done);
+                else folderOp.mutate({ op: 'delete' }, done);
+              }}
+            />
           </div>
         </div>
       </div>
