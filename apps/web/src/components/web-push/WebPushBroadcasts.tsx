@@ -18,6 +18,7 @@ import {
   buildCampaignFolderTree,
   cancelBroadcast,
   countAudience,
+  deleteBroadcast,
   describeAudience,
   fetchCampaignFolders,
   fetchPushSites,
@@ -108,6 +109,7 @@ function CampaignExplorer({ tenantId, environment, folder, onFolder, onNew }: {
     void qc.invalidateQueries({ queryKey: foldersKey });
   };
   const cancel = useMutation({ mutationFn: cancelBroadcast, onSuccess: refresh });
+  const remove = useMutation({ mutationFn: deleteBroadcast, onSuccess: refresh, onError: (e) => setMsg((e as Error).message) });
   const move = useMutation({
     mutationFn: ({ id, path }: { id: string; path: string }) => moveBroadcast(id, path),
     onSuccess: refresh,
@@ -305,6 +307,19 @@ function CampaignExplorer({ tenantId, environment, folder, onFolder, onNew }: {
                             >
                               <BarChart3 className="h-3.5 w-3.5" /> Report
                             </Link>
+                            <button
+                              type="button"
+                              title="Delete campaign"
+                              aria-label={`Delete ${b.name}`}
+                              disabled={remove.isPending}
+                              onClick={() => {
+                                const unsent = b.status === 'scheduled' || b.queued > 0;
+                                if (window.confirm(`Delete "${b.name}"? This can't be undone.${unsent ? ' Pushes not yet sent will not go out.' : ''} Its report will be removed; customer click history is kept.`)) remove.mutate(b.id);
+                              }}
+                              className="ml-0.5 inline-flex items-center rounded-lg p-1.5 align-middle text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
                             {(b.status === 'scheduled' || (b.status === 'sending' && b.queued > 0)) && (
                               <Button
                                 variant="ghost"

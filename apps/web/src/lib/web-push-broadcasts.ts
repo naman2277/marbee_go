@@ -187,6 +187,12 @@ export async function cancelBroadcast(id: string): Promise<number> {
   return Number((data as { cancelled?: number })?.cancelled ?? 0);
 }
 
+/** Stops unsent pushes and removes the campaign (click history stays in customer timelines). */
+export async function deleteBroadcast(id: string): Promise<void> {
+  const { error } = await supabase.rpc('web_push_broadcast_delete', { p_broadcast_id: id });
+  if (error) throw new Error(error.message);
+}
+
 export async function listBroadcasts(tenantId: string, environment: string): Promise<BroadcastRow[]> {
   const { data, error } = await supabase.rpc('web_push_broadcast_list', {
     p_tenant_id: tenantId,

@@ -322,6 +322,33 @@ DO $$ BEGIN EXECUTE 'REVOKE ALL ON FUNCTION public.web_push_broadcast_cancel(UUI
 EXCEPTION WHEN undefined_object THEN NULL; END $$;
 GRANT EXECUTE ON FUNCTION public.web_push_broadcast_cancel(UUID) TO authenticated, service_role;
 
+-- ---- Delete a campaign — needs journeys.publish --------------------------------------
+-- Stops anything not yet sent, then removes the campaign. Delivery/click history in
+-- engagement_log is kept (customer timelines); outbox rows age out with the normal prune.
+CREATE OR REPLACE FUNCTION public.web_push_broadcast_delete(p_broadcast_id UUID)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE b public.web_push_broadcasts%ROWTYPE; n INT;
+BEGIN
+  SELECT * INTO b FROM public.web_push_broadcasts WHERE id = p_broadcast_id;
+  IF NOT FOUND OR auth.uid() IS NULL OR NOT public.user_has_permission(b.tenant_id, 'journeys.publish') THEN
+    RAISE EXCEPTION 'Broadcast not found' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  UPDATE public.web_push_outbox SET status = 'skipped', last_error = 'campaign deleted', locked_until = NULL, updated_at = NOW()
+  WHERE tenant_id = b.tenant_id AND environment = b.environment AND delivery_id = b.id::text AND status = 'queued';
+  GET DIAGNOSTICS n = ROW_COUNT;
+  DELETE FROM public.web_push_broadcasts WHERE id = b.id;
+  RETURN jsonb_build_object('deleted', true, 'stopped', n);
+END;
+$$;
+REVOKE ALL ON FUNCTION public.web_push_broadcast_delete(UUID) FROM PUBLIC;
+DO $$ BEGIN EXECUTE 'REVOKE ALL ON FUNCTION public.web_push_broadcast_delete(UUID) FROM anon';
+EXCEPTION WHEN undefined_object THEN NULL; END $$;
+GRANT EXECUTE ON FUNCTION public.web_push_broadcast_delete(UUID) TO authenticated, service_role;
+
 -- ---- List with live results (any member) ------------------------------------------
 DROP FUNCTION IF EXISTS public.web_push_broadcast_list(UUID, TEXT, INT);
 CREATE OR REPLACE FUNCTION public.web_push_broadcast_list(p_tenant_id UUID, p_environment TEXT, p_limit INT DEFAULT 50)

@@ -188,6 +188,15 @@ ok(after.cap_remaining === 5, `and counts against its own day (${after.cap_remai
 ok(await throwsWith(as(UA, `SELECT web_push_broadcast_send($1,'production',$2,'Hi',$3::jsonb,'{"kind":"all"}'::jsonb) AS r`,
   [A, K(12), JSON.stringify({ title: 'Hi {{first_name}}', body: 'x' })]), /personalisation/), '{{tokens}} are refused');
 
+// ---- delete ------------------------------------------------------------------------------
+const doomed = (await send(UA, K(13), {}, null, new Date(Date.now() + 5 * 86400_000).toISOString())).broadcast_id;
+ok(await throwsWith(as(UV, `SELECT web_push_broadcast_delete($1)`, [doomed]), /not found/), 'viewer cannot delete');
+ok(await throwsWith(as(UB, `SELECT web_push_broadcast_delete($1)`, [doomed]), /not found/), 'other workspace cannot delete');
+const del = (await as(UA, `SELECT web_push_broadcast_delete($1) AS r`, [doomed])).rows[0].r;
+const left = (await db.query(`SELECT count(*) FILTER (WHERE status = 'queued')::int q FROM web_push_outbox WHERE delivery_id = $1`, [doomed])).rows[0];
+const gone = (await db.query(`SELECT count(*)::int n FROM web_push_broadcasts WHERE id = $1`, [doomed])).rows[0].n;
+ok(del.deleted && del.stopped > 0 && left.q === 0 && gone === 0, `delete stops unsent pushes and removes the campaign (${JSON.stringify(del)})`);
+
 for (const f of files.filter((f) => f > '97_')) await db.exec(strip(readFileSync(`supabase/sql/${f}`, 'utf8')));
 console.log(failures === 0 ? '\nALL PASSED' : `\n${failures} FAILED`);
 process.exit(failures ? 1 : 0);
