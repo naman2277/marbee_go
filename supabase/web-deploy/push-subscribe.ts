@@ -387,6 +387,8 @@ serve(async (req) => {
     };
     // Never un-link a known customer because this request couldn't identify them.
     if (customerId) row.customer_id = customerId;
+    // Which website this browser subscribed on — only from the verified site key, never the body.
+    if (ctx.via === 'site_key' && ctx.siteId) row.site_id = ctx.siteId;
 
     const { data, error } = await supabase.from('web_push_subscribers')
       .upsert(row, { onConflict: 'tenant_id,environment,fcm_token' })

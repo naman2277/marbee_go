@@ -56,13 +56,14 @@
       // Same message twice (at-least-once delivery) replaces itself instead of stacking.
       tag: data.tag || data.message_id || undefined,
       renotify: Boolean(data.tag),
+      requireInteraction: data.require_interaction === 'true',
       actions: parseActions(data).map(function (a) { return { action: a.action, title: a.title }; }),
       data: data,
     };
     event.waitUntil(self.registration.showNotification(title, options));
   });
 
-  function reportClick(data) {
+  function reportClick(data, action) {
     if (data.marbee !== '1' || data.track_clicks === 'false' || !data.engage_url || !data.message_id || !data.tenant_id) {
       return Promise.resolve();
     }
@@ -75,6 +76,7 @@
           environment: data.environment || 'production',
           message_id: data.message_id,
           event: 'clicked',
+          action: action || undefined,
         }),
         keepalive: true,
       }).catch(function () { /* tracking must never block the click */ });
@@ -105,7 +107,7 @@
       url = legacyOpenUrl(data);
     }
     // Open first (needs the user gesture), report in parallel.
-    event.waitUntil(Promise.all([focusOrOpen(url), reportClick(data)]));
+    event.waitUntil(Promise.all([focusOrOpen(url), reportClick(data, event.action)]));
   }
 
   self.addEventListener('notificationclick', handleClick);

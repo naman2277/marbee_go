@@ -360,6 +360,8 @@ type EngageRequest = {
   title?: string;
   body?: string;
   click_url?: string;
+  /** Which notification button was clicked (the SW's event.action); absent = the body. */
+  action?: string;
 };
 
 serve(async (req) => {
@@ -395,6 +397,12 @@ serve(async (req) => {
     if (event !== 'opened' && event !== 'clicked') {
       return errorResponse('event must be opened or clicked', 400);
     }
+
+    // Only the button id is taken from the request (shape-checked, never a URL); the report
+    // maps it to the button title from the stored broadcast content.
+    const clickedAction = event === 'clicked' && typeof payload.action === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(payload.action)
+      ? payload.action
+      : undefined;
 
     const supabase = getServiceClient();
     if (!(await tenantIsActive(supabase, tenantId))) return errorResponse('This workspace is suspended', 403);
@@ -451,7 +459,7 @@ serve(async (req) => {
       message_id: messageId,
       event,
       journey_id: journeyId,
-      metadata: { ...meta, engagement_source: 'push_open' },
+      metadata: { ...meta, engagement_source: 'push_open', ...(clickedAction ? { clicked_action: clickedAction } : {}) },
     });
 
     if (insertError) {
