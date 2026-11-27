@@ -25,12 +25,19 @@ npm run dev:all
 
 This starts three apps in one window. Ctrl+C stops all of them.
 
+**Port rule:** 5173, 5174 and 5175 **always serve the main Marbee folder** (`D:\My Projects\Marbee v2\Marbee`),
+so they show what is merged, even when `dev:all` is run from a Claude session's worktree. A session's
+unmerged branch is previewed on **5181** instead, never on 5173.
+
 | App | Link | What it is |
 |---|---|---|
-| web | http://localhost:5173 | the Marbee app |
-| console | http://localhost:5174 | Platform Console (real sign-in + MFA) |
-| console-mock | http://localhost:5175 | Console with sample data (no sign-in) |
+| web | http://localhost:5173 | the Marbee app, from the **main folder** |
+| console | http://localhost:5174 | Platform Console (real sign-in + MFA), main folder |
+| console-mock | http://localhost:5175 | Console with sample data (no sign-in), main folder |
+| web-branch | http://localhost:5181 | a session's **branch preview** (only exists when run from a worktree) |
 | push-test-site | http://localhost:5500 | fake brand site for Web Push tests (start on its own: `npm run dev:push-site`) |
+
+The main folder shows the latest merged work only after you update it there: `git pull`.
 
 Start only some of them: `npm run dev:all -- web console`. If an app is already running, it is skipped,
 not started twice.
@@ -63,10 +70,14 @@ public JavaScript.
 ## For Claude sessions
 
 `.claude/launch.json` has the same apps by name, so `preview_start` works in any worktree:
-`marbee-web` (5173), `marbee-console` (5174), `marbee-console-mock` (5175), `push-test-site` (5500),
-plus `web-landing` (5199) and `marbee-web-journeys` (63158) — the web app on spare ports for when 5173
-is taken by another session. Ports are strict: if one is busy, the start fails instead of silently
-moving to another port. Check with `npm run health`.
+
+- `marbee-web` (5173), `marbee-console` (5174), `marbee-console-mock` (5175), `push-test-site` (5500):
+  these always run the **main folder**, never your branch. If one is already up, use it as it is.
+- `marbee-web-branch` (5181): **your branch**. Use this to preview unmerged work.
+- `web-landing` (5199), `marbee-web-journeys` (63158): your branch on extra ports.
+
+**Never serve a branch on 5173.** It hides merged features from the founder. Ports are strict: if one is busy,
+the start fails instead of silently moving to another port. Check with `npm run health`.
 
 The list of apps lives in one file, `scripts/dev/apps.mjs`. Add a new app there **and** in
 `.claude/launch.json`.

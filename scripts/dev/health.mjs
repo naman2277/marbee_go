@@ -14,10 +14,11 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { APPS, ROOT, appByName, probe } from './apps.mjs';
 
-function readEnv(app) {
+/** Env of one app folder (root = the checkout that app runs from: main folder or this worktree). */
+function readEnv(app, root = ROOT) {
   const vars = {};
   for (const f of ['.env', '.env.local']) {
-    const file = join(ROOT, 'apps', app, f);
+    const file = join(root, 'apps', app, f);
     if (!existsSync(file)) continue;
     for (const line of readFileSync(file, 'utf8').split(/\r?\n/)) {
       const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
@@ -35,21 +36,30 @@ async function main() {
   for (const app of chosen) {
     const r = await probe(app);
     // Apps that dev:all doesn't start (push-test-site) only count when you name them.
-    const optional = !app.inDevAll && !names.length;
+    const optional = (!app.inDevAll || app.name === 'web-branch') && !names.length;
     if (!r.ok && !optional) allOk = false;
     const mark = r.ok ? '\x1b[32mUP  \x1b[0m' : optional ? '\x1b[90mOFF \x1b[0m' : '\x1b[31mDOWN\x1b[0m';
-    const note = r.ok ? '' : optional ? '— optional; start with: npm run dev:push-site' : '— ' + r.why;
+    const hint = app.name === 'web-branch' ? 'npm.cmd run dev:all -- web-branch' : 'npm.cmd run dev:push-site';
+    const note = r.ok ? '' : optional ? `— optional; start with: ${hint}` : '— ' + r.why;
     console.log(`  ${mark} ${app.name.padEnd(15)} http://localhost:${app.port}  ${note}`);
   }
 
   // Env + backend reachability (names only, never values).
   console.log('');
-  for (const a of ['web', 'console']) {
-    const v = readEnv(a);
+  // One line per app folder that needs Supabase settings (main folder, and this worktree's branch).
+  const seen = new Set();
+  for (const app of APPS.filter((a) => a.needsEnv)) {
+    const dir = app.cwd.split('/').pop();
+    const key = `${app.root}|${dir}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const label = `${app.root === ROOT ? '' : 'main folder '}apps/${dir}${app.name === 'web-branch' ? ' (branch)' : ''}`;
+    const v = readEnv(dir, app.root);
     const missing = ['VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY'].filter((k) => !v[k]);
-    console.log(missing.length ? `  \x1b[31mENV \x1b[0m apps/${a}: missing ${missing.join(', ')} — run: npm run dev:env` : `  \x1b[32mENV \x1b[0m apps/${a}: Supabase URL + anon key set`);
+    if (missing.length) allOk = false;
+    console.log(missing.length ? `  \x1b[31mENV \x1b[0m ${label}: missing ${missing.join(', ')} — run: npm.cmd run dev:env` : `  \x1b[32mENV \x1b[0m ${label}: Supabase URL + anon key set`);
   }
-  const web = readEnv('web');
+  const web = readEnv('web', appByName('web').root);
   if (web.VITE_SUPABASE_URL && web.VITE_SUPABASE_ANON_KEY) {
     const host = new URL(web.VITE_SUPABASE_URL).host;
     try {
@@ -64,7 +74,7 @@ async function main() {
     }
   }
 
-  if (!allOk) console.log('\nStart apps with:  npm run dev:all     Runbook: docs/cpo/runbooks/local-dev.md');
+  if (!allOk) console.log('\nStart apps with:  npm.cmd run dev:all     Runbook: docs/cpo/runbooks/local-dev.md');
   process.exit(allOk ? 0 : 1);
 }
 

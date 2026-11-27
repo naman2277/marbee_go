@@ -3,18 +3,52 @@
   "configurations": [
     {
       "name": "marbee-web",
-      "runtimeExecutable": "npm",
+      "runtimeExecutable": "node",
       "runtimeArgs": [
-        "run",
-        "dev",
-        "--prefix",
-        "apps/web",
-        "--",
-        "--port",
-        "5173",
-        "--strictPort"
+        "scripts/dev/run.mjs",
+        "web"
       ],
       "port": 5173,
+      "autoPort": false
+    },
+    {
+      "name": "marbee-console",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "scripts/dev/run.mjs",
+        "console"
+      ],
+      "port": 5174,
+      "autoPort": false
+    },
+    {
+      "name": "marbee-console-mock",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "scripts/dev/run.mjs",
+        "console-mock"
+      ],
+      "port": 5175,
+      "autoPort": false
+    },
+    {
+      "name": "marbee-web-branch",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "scripts/dev/run.mjs",
+        "web-branch"
+      ],
+      "port": 5181,
+      "autoPort": false
+    },
+    {
+      "name": "push-test-site",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "scripts/dev/run.mjs",
+        "push-test-site"
+      ],
+      "port": 5500,
       "autoPort": false
     },
     {
@@ -30,33 +64,8 @@
         "5199",
         "--strictPort"
       ],
-      "port": 5199
-    },
-    {
-      "name": "marbee-console",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": [
-        "run",
-        "dev",
-        "--prefix",
-        "apps/console",
-        "--",
-        "--port",
-        "5174",
-        "--strictPort"
-      ],
-      "port": 5174
-    },
-    {
-      "name": "marbee-console-mock",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": [
-        "run",
-        "dev:mock",
-        "--prefix",
-        "apps/console"
-      ],
-      "port": 5175
+      "port": 5199,
+      "autoPort": false
     },
     {
       "name": "marbee-web-journeys",
@@ -71,15 +80,8 @@
         "63158",
         "--strictPort"
       ],
-      "port": 63158
-    },
-    {
-      "name": "push-test-site",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "tools/push-test-site/serve.mjs"
-      ],
-      "port": 5500
+      "port": 63158,
+      "autoPort": false
     }
   ]
 }

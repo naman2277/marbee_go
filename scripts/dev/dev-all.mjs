@@ -4,6 +4,9 @@
 //   npm run dev:all                       # web 5173 + console 5174 + console-mock 5175
 //   npm run dev:all -- web console-mock   # only the ones you name (push-test-site too)
 //
+// 5173/5174/5175 ALWAYS serve the MAIN Marbee folder, even when you run this from a Claude
+// session's worktree. In a worktree, that branch's own web app runs on 5181 (web-branch).
+//
 // An app whose port already answers is skipped ("already running"), so it is safe to run twice.
 // Check them any time with:  npm run health
 // No extra npm packages: plain Node child processes.
@@ -11,7 +14,7 @@
 import { spawn, execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { APPS, ROOT, appByName, probe } from './apps.mjs';
+import { APPS, ROOT, MAIN_ROOT, appByName, probe } from './apps.mjs';
 
 const isWin = process.platform === 'win32';
 const names = process.argv.slice(2).filter((a) => !a.startsWith('-'));
@@ -22,9 +25,11 @@ if (unknown.length) {
 }
 const chosen = names.length ? names.map(appByName) : APPS.filter((a) => a.inDevAll);
 
-if (!existsSync(join(ROOT, 'node_modules'))) {
-  console.error('Dependencies are not installed here yet. Run this once, then try again:\n  npm install');
-  process.exit(1);
+for (const root of new Set(chosen.map((a) => a.root))) {
+  if (!existsSync(join(root, 'node_modules'))) {
+    console.error(`Dependencies are not installed in ${root} yet. In that folder run this once, then try again:\n  npm.cmd install`);
+    process.exit(1);
+  }
 }
 
 // Fill in a missing .env.local (browser-safe values only) before anything starts.
@@ -37,9 +42,10 @@ for (const [i, app] of chosen.entries()) {
   const tag = `\x1b[${colors[i % colors.length]}m[${app.name}:${app.port}]\x1b[0m`;
   const already = await probe(app);
   if (already.ok) { console.log(`${tag} already running at http://localhost:${app.port} — skipped`); continue; }
+  if (app.root !== ROOT) console.log(`${tag} serving the main folder ${MAIN_ROOT.replace(/\\/g, '/')}`);
 
   // Windows needs a shell to find npm.cmd; pass one fixed command string (args come from apps.mjs, never from input).
-  const opts = { cwd: join(ROOT, app.cwd), env: { ...process.env, FORCE_COLOR: '1' } };
+  const opts = { cwd: join(app.root, app.cwd), env: { ...process.env, FORCE_COLOR: '1' } };
   const child = isWin
     ? spawn([app.cmd, ...app.args].join(' '), { ...opts, shell: true })
     : spawn(app.cmd, app.args, opts);
